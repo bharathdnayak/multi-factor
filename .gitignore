@@ -21,3 +21,9 @@ env/
 # IDEs
 .vscode/
 .idea/
+
+# Secret configs
+security/config.json
+
+# Active keys
+models/.active_otp
