@@ -1,14 +1,38 @@
 import os
 import pickle
-import hashlib
 import numpy as np
 from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
+def categorize_process(proc_name):
+    """
+    Groups window processes into 5 semantic categories for classification stability:
+    0: IDE/Development
+    1: Browsers
+    2: System Tools & Terminals
+    3: Office/Productivity
+    4: Other/Background
+    """
+    proc_name = str(proc_name).lower()
+    dev_tools = ["code.exe", "pycharm.exe", "notepad++.exe", "sublime_text.exe", "python.exe", "git.exe", "studio.exe"]
+    browsers = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "safari.exe"]
+    terminals = ["cmd.exe", "powershell.exe", "bash.exe", "conhost.exe", "regedit.exe", "taskmgr.exe", "processhacker.exe"]
+    productivity = ["winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "outlook.exe", "acrodist.exe", "acrobat.exe"]
+    
+    if any(x in proc_name for x in dev_tools):
+        return 0
+    if any(x in proc_name for x in browsers):
+        return 1
+    if any(x in proc_name for x in terminals):
+        return 2
+    if any(x in proc_name for x in productivity):
+        return 3
+    return 4
+
 class BehavioralModels:
     def __init__(self):
-        # Feature selectors
+        # Feature selectors matching Member 1's telemetry payload
         self.biometric_feature_keys = [
             "dwell_mean", "dwell_std", 
             "flight_mean", "flight_std", 
@@ -21,24 +45,22 @@ class BehavioralModels:
 
         # ML Models and Preprocessing Scalers
         self.oc_svm = OneClassSVM(kernel="rbf", gamma="scale", nu=0.05)
-        self.i_forest = IsolationForest(contamination=0.05, random_state=42)
+        self.i_forest = IsolationForest(contamination=0.01, random_state=42)
         
         self.biometric_scaler = StandardScaler()
         self.context_scaler = StandardScaler()
         
+        # Auto-calibrated thresholds
+        self.biometric_threshold = 0.0
+        self.context_threshold = 0.0
+        
         self.is_trained = False
-
-    def hash_app_name(self, app_name):
-        """Converts an executable string (e.g., 'chrome.exe') to a bounded integer [0, 99] using MD5."""
-        if not app_name:
-            return 0
-        return int(hashlib.md5(str(app_name).lower().encode('utf-8')).hexdigest(), 16) % 100
 
     def extract_features(self, json_data):
         """Extracts and formats biometric and context vectors from a single telemetry row."""
-        # Convert app name to numeric feature
+        # Convert app name to numeric feature using semantic categorization
         app_name = json_data.get("active_app", "unknown")
-        app_hash = self.hash_app_name(app_name)
+        app_hash = categorize_process(app_name)
         
         # Biometrics vector
         biometrics = []
@@ -68,7 +90,7 @@ class BehavioralModels:
         X_bio = np.array(X_bio)
         X_ctx = np.array(X_ctx)
         
-        # 1. Scale features (essential for SVM)
+        # 1. Scale features
         X_bio_scaled = self.biometric_scaler.fit_transform(X_bio)
         X_ctx_scaled = self.context_scaler.fit_transform(X_ctx)
         
@@ -76,14 +98,20 @@ class BehavioralModels:
         self.oc_svm.fit(X_bio_scaled)
         self.i_forest.fit(X_ctx_scaled)
         
+        # 3. Auto-Calibrate Anomaly Thresholds
+        bio_decisions = self.oc_svm.decision_function(X_bio_scaled)
+        ctx_decisions = self.i_forest.decision_function(X_ctx_scaled)
+        
+        # 5th percentile for biometrics (allows 5% False Alarm rate on normal typing)
+        self.biometric_threshold = float(np.percentile(bio_decisions, 5))
+        # 2nd percentile for context (allows 2% False Alarm rate on normal contexts)
+        self.context_threshold = float(np.percentile(ctx_decisions, 2))
+        
         self.is_trained = True
-        print("[INFO] Models trained successfully on baseline data.", flush=True)
+        print(f"[INFO] Models trained successfully. Calibrated Biometric Thresh: {self.biometric_threshold:.6f}, Context Thresh: {self.context_threshold:.6f}", flush=True)
 
     def score(self, json_data):
-        """Computes anomaly scores.
-        
-        OC-SVM decision_function: larger values = normal, smaller values = anomalous.
-        IsolationForest decision_function: larger values = normal, smaller values = anomalous.
+        """Computes confidence/normality scores in range [0.0, 1.0].
         
         Returns:
             svm_score: Normalized value [0.0, 1.0] where 1.0 is normal, 0.0 is anomalous.
@@ -94,7 +122,6 @@ class BehavioralModels:
             
         bio, ctx = self.extract_features(json_data)
         
-        # Scale inputs using fitted training scalers
         bio_scaled = self.biometric_scaler.transform(bio.reshape(1, -1))
         ctx_scaled = self.context_scaler.transform(ctx.reshape(1, -1))
         
@@ -102,25 +129,22 @@ class BehavioralModels:
         svm_raw = self.oc_svm.decision_function(bio_scaled)[0]
         if_raw = self.i_forest.decision_function(ctx_scaled)[0]
         
-        # Normalize decision scores into [0, 1] range
-        # OC-SVM decision function typically ranges from negative (outlier) to positive (inlier)
-        # We apply sigmoid or soft-clipping normalization
-        svm_score = 1.0 / (1.0 + np.exp(-5.0 * svm_raw))
-        
-        # Isolation Forest decision score ranges from roughly -0.5 to +0.5
-        # Normalize to [0, 1] using standard Min-Max mapping
-        if_score = 1.0 / (1.0 + np.exp(-8.0 * if_raw))
+        # Sigmoid normalization centered around auto-calibrated thresholds
+        svm_score = 1.0 / (1.0 + np.exp(-25.0 * (svm_raw - self.biometric_threshold)))
+        if_score = 1.0 / (1.0 + np.exp(-45.0 * (if_raw - (self.context_threshold + 0.02))))
         
         return float(svm_score), float(if_score)
 
     def save(self, filepath="ml_engine/trained_models.pkl"):
-        """Saves the models and scalers together as a single serialized pickle file."""
+        """Saves the models, scalers, and thresholds together as a single serialized pickle file."""
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         data_to_save = {
             "oc_svm": self.oc_svm,
             "i_forest": self.i_forest,
             "biometric_scaler": self.biometric_scaler,
             "context_scaler": self.context_scaler,
+            "biometric_threshold": self.biometric_threshold,
+            "context_threshold": self.context_threshold,
             "is_trained": self.is_trained
         }
         with open(filepath, "wb") as f:
@@ -128,7 +152,7 @@ class BehavioralModels:
         print(f"[INFO] Saved model checkpoint to '{filepath}'", flush=True)
 
     def load(self, filepath="ml_engine/trained_models.pkl"):
-        """Loads models and scalers from a pickle file."""
+        """Loads models, scalers, and thresholds from a pickle file."""
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Model file not found at '{filepath}'")
             
@@ -139,5 +163,7 @@ class BehavioralModels:
         self.i_forest = data["i_forest"]
         self.biometric_scaler = data["biometric_scaler"]
         self.context_scaler = data["context_scaler"]
+        self.biometric_threshold = data.get("biometric_threshold", 0.0)
+        self.context_threshold = data.get("context_threshold", 0.0)
         self.is_trained = data["is_trained"]
         print(f"[INFO] Loaded model checkpoint from '{filepath}'", flush=True)

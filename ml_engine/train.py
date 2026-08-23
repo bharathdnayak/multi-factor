@@ -3,10 +3,14 @@ import sys
 import json
 import argparse
 import numpy as np
-import pandas as pd
-from models import BehavioralModels
+import joblib
+from datetime import datetime
 
-# Optional import for plotting
+# Append project root to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ml_engine.models import BehavioralModels
+
 try:
     import matplotlib.pyplot as plt
     PLOT_AVAILABLE = True
@@ -77,11 +81,11 @@ def run_simulation():
     print("=== STARTING MODEL PERFORMANCE SIMULATION ===", flush=True)
     
     # 1. Generate data
-    train_data = generate_synthetic_data(num_samples=4000, is_attacker=False)
-    test_owner = generate_synthetic_data(num_samples=1000, is_attacker=False)
-    test_attacker = generate_synthetic_data(num_samples=1000, is_attacker=True)
+    train_data = generate_synthetic_data(num_samples=1000, is_attacker=False)
+    test_owner = generate_synthetic_data(num_samples=300, is_attacker=False)
+    test_attacker = generate_synthetic_data(num_samples=300, is_attacker=True)
     
-    # 2. Train models
+    # 2. Train models (Auto-Calibration is performed inside models.train())
     models = BehavioralModels()
     models.train(train_data)
     
@@ -109,9 +113,9 @@ def run_simulation():
         attacker_if_scores.append(iforest)
         attacker_fused_scores.append(w1 * svm + w2 * iforest)
         
-    # Calculate classification metrics
-    # Threat trigger is Risk > 0.80, which means Fused Score < 0.20 (since fused score represents confidence/normality)
-    threshold = 0.45  # normal confidence threshold
+    # Threat trigger is Risk > 0.80, which corresponds to Fused Score < 0.20
+    # Let's set a standard normality/confidence threshold at 0.50
+    threshold = 0.50
     
     owner_correct = sum(1 for s in owner_fused_scores if s >= threshold)
     attacker_correct = sum(1 for s in attacker_fused_scores if s < threshold)
@@ -130,15 +134,15 @@ def run_simulation():
     print(f"False Alarm Rate (False Positives):  {(100 - tpr):.2f}%")
     print("="*45)
 
-    # 4. Generate visual plot for presentation slide
+    # 4. Generate visual plot
     if PLOT_AVAILABLE:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
         
         # Plot 1: Keystroke/Mouse Biometrics Anomaly Scores (One-Class SVM)
         ax1.hist(owner_svm_scores, bins=15, alpha=0.6, label="Owner (Normal)", color="g")
         ax1.hist(attacker_svm_scores, bins=15, alpha=0.6, label="Attacker (Anomaly)", color="r")
-        ax1.set_title("Biometric Dynamics Scores (OC-SVM)")
-        ax1.set_xlabel("Normality Score [0.0 = Anomaly, 1.0 = Normal]")
+        ax1.set_title("Biometric Dynamics Confidence (OC-SVM)")
+        ax1.set_xlabel("Confidence [0.0 = Anomaly, 1.0 = Normal]")
         ax1.set_ylabel("Frequency")
         ax1.legend()
         ax1.grid(True, linestyle="--", alpha=0.5)
@@ -146,13 +150,13 @@ def run_simulation():
         # Plot 2: Context Anomaly Scores (Isolation Forest)
         ax2.hist(owner_if_scores, bins=15, alpha=0.6, label="Owner (Normal)", color="g")
         ax2.hist(attacker_if_scores, bins=15, alpha=0.6, label="Attacker (Anomaly)", color="r")
-        ax2.set_title("Context Activity Scores (Isolation Forest)")
-        ax2.set_xlabel("Normality Score [0.0 = Anomaly, 1.0 = Normal]")
+        ax2.set_title("Context Activity Confidence (Isolation Forest)")
+        ax2.set_xlabel("Confidence [0.0 = Anomaly, 1.0 = Normal]")
         ax2.set_ylabel("Frequency")
         ax2.legend()
         ax2.grid(True, linestyle="--", alpha=0.5)
 
-        plt.suptitle("Continuous Authentication - Model Score Separation Profile")
+        plt.suptitle("Continuous Authentication - Model Performance (Auto-Calibrated)")
         plt.tight_layout()
         
         chart_name = "model_performance.png"
@@ -164,6 +168,30 @@ def run_simulation():
     # Save models
     models.save("ml_engine/trained_models.pkl")
 
+def adapt_to_verified_drift(log_file="telemetry_data.jsonl", limit=2000):
+    """
+    Trims the active rolling history log files to keep baseline statistics fresh,
+    then retrains the models on the updated baseline.
+    """
+    print("\nAdapting to verified behavior drift (retraining)...", flush=True)
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, "r") as f:
+                lines = f.readlines()
+            if len(lines) > limit:
+                with open(log_file, "w") as f:
+                    f.writelines(lines[-limit:])
+                print(f"[INFO] Trimmed {log_file} to latest {limit} entries.", flush=True)
+        except Exception as e:
+            print(f"[WARNING] Failed to trim log file: {e}", file=sys.stderr)
+            
+    # Retrain
+    real_rows = load_real_data(log_file)
+    if real_rows:
+        models = BehavioralModels()
+        models.train(real_rows)
+        models.save("ml_engine/trained_models.pkl")
+
 def main():
     parser = argparse.ArgumentParser(description="Continuous Authentication - ML Model Training Pipeline")
     parser.add_argument("--simulate", action="store_true", help="Run model simulation with synthetic data and plot metrics")
@@ -173,17 +201,14 @@ def main():
         run_simulation()
         return
 
-    # Real training flow
     print("=== STARTING MODEL TRAINING PIPELINE ===", flush=True)
     real_rows = load_real_data("telemetry_data.jsonl")
     
-    # We require at least 15 telemetry rows (approx. 2.5 minutes of active session log)
     MIN_ROWS = 15
     if len(real_rows) < MIN_ROWS:
         print(f"\n[WARNING] Insufficient data. Found only {len(real_rows)} rows in 'telemetry_data.jsonl'.", file=sys.stderr)
         print(f"Please run the telemetry agent first to capture the owner's baseline patterns:", file=sys.stderr)
         print(f"    python telemetry/agent.py\n", file=sys.stderr)
-        print(f"Collect at least {MIN_ROWS} data rows (approx. 2.5 minutes of typing/mouse activity) before training.", file=sys.stderr)
         sys.exit(1)
         
     print(f"[INFO] Loaded {len(real_rows)} baseline records from 'telemetry_data.jsonl'.", flush=True)
@@ -191,6 +216,18 @@ def main():
     models = BehavioralModels()
     models.train(real_rows)
     models.save("ml_engine/trained_models.pkl")
+    
+    # Train PyTorch sequence SVDD model if raw keystroke file exists
+    ks_path = os.path.join("data", "raw", "keystrokes.csv")
+    if os.path.exists(ks_path):
+        print("\n[INFO] Found raw keystroke timing file. Training Deep SVDD 1D-CNN...", flush=True)
+        try:
+            from ml_engine.sequence_model import DeepSVDDDetector
+            svdd = DeepSVDDDetector()
+            svdd.train(ks_path)
+        except Exception as e:
+            print(f"[WARNING] PyTorch Sequence training failed: {e}", file=sys.stderr)
+            
     print("[SUCCESS] Training pipeline execution finished.", flush=True)
 
 if __name__ == "__main__":

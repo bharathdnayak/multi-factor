@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local raw data and logs
+data/
+telemetry_data.jsonl
+*.jsonl
+*.csv
+
+# Local models directory
+models/
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
