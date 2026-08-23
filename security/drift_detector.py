@@ -66,7 +66,6 @@ class ThreatEvaluator:
         
         if not self.models_loaded:
             # Fallback heuristic if models are not trained yet
-            # Flag high risk if process context CPU is extremely high or app is unknown cmd
             cpu = telemetry_row.get("cpu_usage", 0.0)
             app = str(telemetry_row.get("active_app", "")).lower()
             heur_risk = 0.85 if (cpu > 60.0 or "cmd" in app or "powershell" in app) else 0.10
@@ -137,6 +136,43 @@ class ThreatEvaluator:
         print("[SECURITY] Invalid OTP code entered.", flush=True)
         return False
 
+    def start_daemon(self, telemetry_file="telemetry_data.jsonl"):
+        """
+        Starts a live tailing file watcher on the telemetry log,
+        scoring new events in real time and spawning the lock screen on breach.
+        """
+        log_path = os.path.join(project_dir, telemetry_file)
+        print(f"[DAEMON] Starting threat evaluation daemon. Monitoring '{log_path}'...", flush=True)
+        
+        # Wait for file creation if it doesn't exist
+        while not os.path.exists(log_path):
+            time.sleep(1.0)
+            
+        with open(log_path, "r") as f:
+            # Go to the end of the file to ignore historic entries
+            f.seek(0, 2)
+            
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(0.5)
+                    continue
+                    
+                line = line.strip()
+                if line:
+                    try:
+                        row = json.loads(line)
+                        f_risk, s_risk, triggered = self.evaluate_row(row)
+                        print(f"[DAEMON] Scored event. Risk: {f_risk:.4f} | Smoothed (30s): {s_risk:.4f}", flush=True)
+                        
+                        if triggered:
+                            print("[DAEMON] Intrusion breach triggered! Spawning verification UI...", flush=True)
+                            # Import lock handler and launch the prompt
+                            from security.lock_handler import launch_verification_lock
+                            launch_verification_lock(self)
+                    except Exception as e:
+                        print(f"[DAEMON] [ERROR] Processing line failed: {e}", file=sys.stderr, flush=True)
+
     def _save_active_otp(self, otp):
         otp_file = os.path.join(project_dir, "models", ".active_otp")
         os.makedirs(os.path.dirname(otp_file), exist_ok=True)
@@ -165,13 +201,9 @@ class ThreatEvaluator:
                 pass
 
 if __name__ == "__main__":
-    # Test script running evaluator logic on mock values
+    # If run directly as a script, act as the background watcher daemon
     evaluator = ThreatEvaluator()
-    dummy_row = {
-        "cpu_usage": 80.0,
-        "active_app": "cmd.exe",
-        "ram_usage_mb": 500.0,
-        "hour_of_day": 23
-    }
-    print("Evaluating high-risk telemetry entry...")
-    evaluator.evaluate_row(dummy_row)
+    try:
+        evaluator.start_daemon()
+    except KeyboardInterrupt:
+        print("[DAEMON] Exiting cleanly.", flush=True)
