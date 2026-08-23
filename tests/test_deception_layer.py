@@ -35,11 +35,20 @@ class TestDeceptionUI(unittest.TestCase):
         print("\n--- Testing PyQt6 Honey Desktop & Terminal Initialization ---")
         from deception.honey_desktop import HoneypotDesktop
         
-        # Instantiate desktop container without showing to test UI bindings
         desktop = HoneypotDesktop()
         self.assertIsNotNone(desktop.terminal)
         self.assertTrue(os.path.exists(desktop.sandbox_dir))
         print("[OK] HoneypotDesktop widget initialized successfully.")
+
+    def test_forensic_dashboard_initialization(self):
+        print("\n--- Testing PyQt6 Forensic Recovery Dashboard Initialization ---")
+        from dashboard.forensic_dashboard import ForensicDashboard
+        
+        dash = ForensicDashboard()
+        self.assertIsNotNone(dash.image_display)
+        self.assertIsNotNone(dash.log_console)
+        self.assertIsNotNone(dash.sandbox_list)
+        print("[OK] ForensicDashboard widget initialized successfully.")
 
 if __name__ == "__main__":
     unittest.main()

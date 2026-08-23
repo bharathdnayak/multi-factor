@@ -1,27 +1,33 @@
 import sys
 import os
 import time
+import threading
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QGridLayout
+from PyQt6.QtCore import Qt, QSize, QObject, pyqtSignal
+from PyQt6.QtGui import QFont, QColor, QPalette, QBrush, QPixmap
+from pynput import keyboard
 
 # Append project root
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_dir)
 
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QGridLayout
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QColor, QPalette, QBrush, QImage
+class HotkeySignals(QObject):
+    """Signals to communicate safely from background keyboard threads to the UI thread."""
+    trigger_lock = pyqtSignal()
 
 class HoneyShell(QFrame):
     """
     Mock Terminal Emulator (Honeypot Command Prompt).
     Intercepts attacker commands, outputs fake directory structures,
-    and diverts any file creation/write operations to data/sandbox/
+    logs operations to forensics log, and diverts writes to sandbox folder.
     """
-    def __init__(self, sandbox_dir):
+    def __init__(self, sandbox_dir, log_dir):
         super().__init__()
         self.sandbox_dir = sandbox_dir
+        self.log_path = os.path.join(log_dir, "honeypot_commands.log")
         self.current_dir = "C:\\Users\\Administrator"
         
-        # In-memory virtual mock filesystem
+        # Virtual mock filesystem
         self.virtual_fs = {
             "C:\\Users\\Administrator": ["Documents", "Downloads", "Desktop"],
             "C:\\Users\\Administrator\\Desktop": ["confidential_passwords.txt", "network_map.pdf", "Terminal.lnk"],
@@ -100,6 +106,15 @@ class HoneyShell(QFrame):
     def hide_prompt_fake(self):
         self.console.append(f"\n{self.current_dir}> [Access Denied: Administrative Session Lock Active]")
 
+    def log_action(self, cmd_raw):
+        """Saves command sequence logs to the forensics file."""
+        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+        try:
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {cmd_raw}\n")
+        except Exception:
+            pass
+
     def process_command(self):
         cmd_raw = self.input_field.text().strip()
         self.input_field.clear()
@@ -108,6 +123,9 @@ class HoneyShell(QFrame):
             return
             
         self.console.append(f"{self.current_dir}> {cmd_raw}")
+        
+        # Log command forensics
+        self.log_action(cmd_raw)
         
         # Command Parsing
         parts = cmd_raw.split()
@@ -137,7 +155,7 @@ class HoneyShell(QFrame):
                         "   Default Gateway . . . . . . . . . : 192.168.1.1")
         elif base_cmd in ["whoami"]:
             response = "desktop-main\\administrator"
-        elif base_cmd in ["help"]:
+        elif base_cmd == "help":
             response = "Supported Commands: help, cd, dir, ls, type, cat, echo, ipconfig, whoami, cls, clear"
         else:
             response = f"'{base_cmd}' is not recognized as an internal or external command,\noperable program or batch file."
@@ -145,7 +163,6 @@ class HoneyShell(QFrame):
         if response:
             self.console.append(response + "\n")
             
-        # Scroll console to bottom
         self.console.ensureCursorVisible()
 
     def _handle_dir(self):
@@ -156,10 +173,8 @@ class HoneyShell(QFrame):
         res = f" Directory of {self.current_dir}\n\n"
         for idx, item in enumerate(items):
             if "." in item:
-                # Mock File
                 res += f"2026-08-23  14:02             4,192 {item}\n"
             else:
-                # Mock Dir
                 res += f"2026-08-23  14:02    <DIR>          {item}\n"
         res += f"\n               {len(items)} File(s)         4,192 bytes"
         return res
@@ -169,9 +184,7 @@ class HoneyShell(QFrame):
             return self.current_dir
             
         target = args[0]
-        # Simple relative/absolute cd parsing
         if target == "..":
-            # Parent directory
             if "\\" in self.current_dir:
                 parts = self.current_dir.split("\\")
                 if len(parts) > 1:
@@ -179,7 +192,6 @@ class HoneyShell(QFrame):
             self.prompt_lbl.setText(f"{self.current_dir}>")
             return ""
             
-        # Build path
         check_path = self.current_dir + "\\" + target
         if check_path in self.virtual_fs or check_path.replace("\\\\", "\\") in self.virtual_fs:
             self.current_dir = check_path.replace("\\\\", "\\")
@@ -193,7 +205,6 @@ class HoneyShell(QFrame):
             return "Command syntax is incorrect."
         target = args[0]
         
-        # Mocking content of confidential passwords
         if "password" in target.lower():
             return ("=== ADMIN CREDENTIALS STORE ===\n"
                     "github_token = ghp_Z58d83Ka92Lq93Kasl38Adk2JqpO11283\n"
@@ -205,7 +216,6 @@ class HoneyShell(QFrame):
         elif "backup" in target.lower() or "database" in target.lower():
             return "DATABASE DUMP -- INSERT INTO users VALUES (1, 'admin', '$2b$12$K.zWlD...');"
         else:
-            # Check sandbox folder for written files
             chk = os.path.join(self.sandbox_dir, target)
             if os.path.exists(chk):
                 try:
@@ -216,35 +226,31 @@ class HoneyShell(QFrame):
             return f"The system cannot find the file specified: '{target}'"
 
     def _handle_echo(self, raw_cmd):
-        # Parses echo text > filename
         if ">" not in raw_cmd:
-            # Just echo back
             parts = raw_cmd.split()
             return " ".join(parts[1:]) if len(parts) > 1 else ""
             
         try:
             cmd_part, file_part = raw_cmd.split(">", 1)
             text = cmd_part.replace("echo", "", 1).strip()
-            # Remove quotes
             if text.startswith("'") or text.startswith('"'):
                 text = text[1:-1]
                 
             filename = file_part.strip()
             
-            # Divert file write to Sandbox folder!
+            # Divert file write to Sandbox folder
             sandbox_path = os.path.join(self.sandbox_dir, filename)
             os.makedirs(self.sandbox_dir, exist_ok=True)
             
             with open(sandbox_path, "w", encoding="utf-8") as f:
                 f.write(text + "\n")
                 
-            # Add to local virtual directory listings so they see it in 'dir'
             items = self.virtual_fs.get(self.current_dir, [])
             if filename not in items:
                 items.append(filename)
                 self.virtual_fs[self.current_dir] = items
                 
-            print(f"[DECEPTION] Intercepted write payload. Redirected to '{sandbox_path}'", flush=True)
+            print(f"[DECEPTION] Redirected write payload to sandbox file '{sandbox_path}'", flush=True)
             return ""
         except Exception as e:
             return f"Error writing file: {e}"
@@ -252,43 +258,40 @@ class HoneyShell(QFrame):
 
 class HoneypotDesktop(QWidget):
     """
-    Full-screen borderless deception desktop environment overlay.
-    Spawns mock shortcut icons and auto-opens the HoneyShell cmd prompt
-    to contain the intruder's interactions.
+    Deception environment. Grabs a screenshot of the user's desktop
+    prior to layout display, and runs a topmost overlay overlaying it.
+    
+    Includes global Ctrl+Alt+Shift+U hotkey hook to verify identity.
     """
     def __init__(self):
         super().__init__()
         self.sandbox_dir = os.path.join(project_dir, "data", "sandbox")
+        self.log_dir = os.path.join(project_dir, "data", "forensics")
         os.makedirs(self.sandbox_dir, exist_ok=True)
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        # 1. Grab Desktop Screenshot before display
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.screenshot = screen.grabWindow(0)
+        else:
+            self.screenshot = QPixmap()
+            
         self.init_ui()
+        self.init_hotkey()
 
     def init_ui(self):
-        # Configure window behavior
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
         
-        # Make full screen
-        screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(screen)
+        screen_geom = QApplication.primaryScreen().geometry()
+        self.setGeometry(screen_geom)
         
-        # Style layout background (deep dark gray mimicking standard lock screen background/desktop)
-        self.setStyleSheet("""
-            QWidget#MainContainer {
-                background-color: #2c3e50;
-            }
-            QLabel#ShortcutIcon {
-                color: #ffffff;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton#IconBtn {
-                background: transparent;
-                border: none;
-            }
-        """)
+        # Set screenshot as layout background
+        palette = self.palette()
+        palette.setBrush(QPalette.ColorRole.Window, QBrush(self.screenshot))
+        self.setPalette(palette)
         
-        self.setObjectName("MainContainer")
-        
-        # Grid layout for desktop icons
+        # Desktop layout
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
         
@@ -297,7 +300,6 @@ class HoneypotDesktop(QWidget):
         desktop_grid.setHorizontalSpacing(40)
         desktop_grid.setVerticalSpacing(30)
         
-        # Define mock desktop shortcuts
         shortcuts = [
             ("📁", "My Documents"),
             ("🗑️", "Recycle Bin"),
@@ -314,13 +316,12 @@ class HoneypotDesktop(QWidget):
             icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             btn = QPushButton(icon)
-            btn.setObjectName("IconBtn")
-            btn.setFont(QFont("Arial", 36))
+            btn.setStyleSheet("background: transparent; border: none; font-size: 36px;")
             btn.clicked.connect(self.icon_clicked)
             icon_layout.addWidget(btn)
             
             lbl = QLabel(name)
-            lbl.setObjectName("ShortcutIcon")
+            lbl.setStyleSheet("color: #ffffff; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px #000000;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_layout.addWidget(lbl)
             
@@ -328,16 +329,15 @@ class HoneypotDesktop(QWidget):
             
         main_layout.addLayout(desktop_grid)
         
-        # Spawns mock CMD Terminal Prompt in center of honeypot
-        self.terminal = HoneyShell(self.sandbox_dir)
+        # Spawns mock CMD Terminal Prompt
+        self.terminal = HoneyShell(self.sandbox_dir, self.log_dir)
         self.terminal.setFixedSize(QSize(750, 480))
         
-        # Center terminal layout
         term_layout = QHBoxLayout()
         term_layout.addWidget(self.terminal)
         main_layout.addLayout(term_layout)
         
-        # Bottom Taskbar
+        # Taskbar
         taskbar = QFrame()
         taskbar.setFixedHeight(40)
         taskbar.setStyleSheet("background-color: #1a1a1a; border-top: 1px solid #2d2d2d;")
@@ -360,22 +360,75 @@ class HoneypotDesktop(QWidget):
         self.setLayout(main_layout)
 
     def icon_clicked(self):
-        # Redirect clicked mockup shortcuts to opening or writing to console
         self.terminal.console.append("\n[SECURITY] Shortcut folder access locked. Launch terminal shell to access details.")
 
+    def init_hotkey(self):
+        """Starts a background pynput listener watching for Ctrl+Alt+Shift+U."""
+        self.signals = HotkeySignals()
+        self.signals.trigger_lock.connect(self.show_verification_prompt)
+        
+        def run_listener(sig):
+            def on_activate():
+                sig.trigger_lock.emit()
+            
+            with keyboard.GlobalHotKeys({'<ctrl>+<alt>+<shift>+u': on_activate}) as h:
+                h.join()
+                
+        t = threading.Thread(target=run_listener, args=(self.signals,), daemon=True)
+        t.start()
+
+    def show_verification_prompt(self):
+        """Signal target. Displays verification input window."""
+        print("[DECEPTION] Verification hotkey triggered! Spawning Verification Dialog.", flush=True)
+        from security.drift_detector import ThreatEvaluator
+        from security.lock_handler import VerificationLockScreen
+        
+        # Instantiate a standard OTP prompt
+        evaluator = ThreatEvaluator()
+        evaluator.is_breached = True
+        
+        self.lock_prompt = VerificationLockScreen(evaluator)
+        # Redefine the lock screen's trigger_deception method to just close the prompt
+        # so it doesn't try to open another honeypot desktop
+        self.lock_prompt.trigger_deception = self.lock_prompt.close
+        
+        # Override the check_otp success logic to unlock self too
+        original_check = self.lock_prompt.check_otp
+        
+        def wrapped_check():
+            entered = self.lock_prompt.otp_input.text().strip()
+            ok = evaluator.verify_otp_and_reset(entered)
+            if ok:
+                self.lock_prompt.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
+                QApplication.processEvents()
+                time.sleep(1.2)
+                self.lock_prompt.close()
+                self.close() # Close deception desktop
+                
+                # Launch Forensics Recovery Dashboard
+                from dashboard.forensic_dashboard import launch_forensic_dashboard
+                launch_forensic_dashboard()
+            else:
+                self.lock_prompt.failed_attempts += 1
+                self.lock_prompt.status_lbl.setText(f"Invalid code. Attempts: {3 - self.lock_prompt.failed_attempts}")
+                self.lock_prompt.otp_input.clear()
+                if self.lock_prompt.failed_attempts >= 3:
+                    self.lock_prompt.close()
+                    
+        self.lock_prompt.check_otp = wrapped_check
+        self.lock_prompt.show()
+
     def keyPressEvent(self, event):
-        # Intercept escape sequences
         if event.key() == Qt.Key.Key_Escape:
             event.ignore()
         else:
             super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        # Keep window trapped, prevent standard Alt+F4 closure
+        # Intercept Alt+F4 closures
         event.ignore()
 
 def launch_honey_desktop():
-    """Entrypoint function to run the PyQt6 Honey-Desktop application loop."""
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
