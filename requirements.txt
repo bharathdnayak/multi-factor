@@ -1,0 +1,11 @@
+pynput==1.7.6
+psutil==5.9.8
+pywin32>=306
+scikit-learn
+pandas
+numpy
+PyQt6
+opencv-python
+face_recognition
+twilio
+pyotp
