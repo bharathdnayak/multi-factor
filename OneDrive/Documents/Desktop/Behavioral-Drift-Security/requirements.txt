@@ -1,2 +1,0 @@
-# Project dependencies
-# Example: scikit-learn, pandas, numpy, pynput, fastapi, uvicorn
