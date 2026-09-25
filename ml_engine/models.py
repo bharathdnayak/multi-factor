@@ -56,8 +56,8 @@ class BehavioralModels:
         ]
 
         # ML Models and Preprocessing Scalers
-        self.oc_svm = OneClassSVM(kernel="rbf", gamma="scale", nu=0.05)
-        self.i_forest = IsolationForest(contamination=0.01, random_state=42)
+        self.oc_svm = OneClassSVM(kernel="rbf", gamma=0.35, nu=0.03)
+        self.i_forest = IsolationForest(contamination=0.02, random_state=42)
         
         self.biometric_scaler = StandardScaler()
         self.context_scaler = StandardScaler()
@@ -84,8 +84,20 @@ class BehavioralModels:
                 val = json_data.get("app_dwell_mean", dwell_fallback)
             elif key == "app_flight_mean":
                 val = json_data.get("app_flight_mean", flight_fallback)
+            elif key == "mouse_velocity_mean":
+                val = min(float(json_data.get(key, 0.0)), 3000.0)
+            elif key == "mouse_acceleration_mean":
+                raw = float(json_data.get(key, 0.0))
+                val = float(np.sign(raw) * np.log1p(abs(raw)))
+            elif key == "mouse_jerk_mean":
+                raw = float(json_data.get(key, 0.0))
+                val = float(np.sign(raw) * np.log1p(abs(raw)))
+            elif key == "mouse_straightness_mean":
+                val = min(max(float(json_data.get(key, 0.8)), 0.0), 1.0)
+            elif key == "app_backspace_ratio":
+                val = min(max(float(json_data.get(key, 0.0)), 0.0), 1.0)
             else:
-                val = json_data.get(key, 0.0)
+                val = float(json_data.get(key, 0.0))
             biometrics.append(float(val))
             
         # Context vector
@@ -93,20 +105,22 @@ class BehavioralModels:
         for key in self.context_feature_keys:
             if key == "app_hash":
                 context.append(float(app_hash))
+            elif key in ("app_special_ratio", "app_pause_ratio"):
+                context.append(float(np.clip(json_data.get(key, 0.0), 0.0, 1.0)))
             else:
                 context.append(float(json_data.get(key, 0.0)))
                 
         return np.array(biometrics), np.array(context)
 
     def train(self, all_rows):
-        """Trains both OneClassSVM (on biometrics) and IsolationForest (on context)."""
-        X_bio = []
-        X_ctx = []
-        
-        for row in all_rows:
-            bio, ctx = self.extract_features(row)
-            X_bio.append(bio)
-            X_ctx.append(ctx)
+        """Trains both OneClassSVM (on active biometrics) and IsolationForest (on context)."""
+        # Train biometrics on active interaction rows to prevent idle zeroes from contaminating support vectors
+        active_rows = [r for r in all_rows if r.get("keystroke_count", 0) > 0 or r.get("mouse_events", 0) > 10]
+        if len(active_rows) < 30:
+            active_rows = all_rows
+            
+        X_bio = [self.extract_features(r)[0] for r in active_rows]
+        X_ctx = [self.extract_features(r)[1] for r in all_rows]
             
         X_bio = np.array(X_bio)
         X_ctx = np.array(X_ctx)
@@ -123,10 +137,10 @@ class BehavioralModels:
         bio_decisions = self.oc_svm.decision_function(X_bio_scaled)
         ctx_decisions = self.i_forest.decision_function(X_ctx_scaled)
         
-        # 5th percentile for biometrics (allows 5% False Alarm rate on normal typing)
-        self.biometric_threshold = float(np.percentile(bio_decisions, 5))
-        # 2nd percentile for context (allows 2% False Alarm rate on normal contexts)
-        self.context_threshold = float(np.percentile(ctx_decisions, 2))
+        # 4th percentile for biometrics
+        self.biometric_threshold = float(np.percentile(bio_decisions, 4))
+        # 3rd percentile for context
+        self.context_threshold = float(np.percentile(ctx_decisions, 3))
         
         self.is_trained = True
         print(f"[INFO] Models trained successfully. Calibrated Biometric Thresh: {self.biometric_threshold:.6f}, Context Thresh: {self.context_threshold:.6f}", flush=True)
@@ -145,7 +159,7 @@ class BehavioralModels:
         
         ctx_scaled = self.context_scaler.transform(ctx.reshape(1, -1))
         if_raw = self.i_forest.decision_function(ctx_scaled)[0]
-        if_score = 1.0 / (1.0 + np.exp(-45.0 * (if_raw - (self.context_threshold + 0.02))))
+        if_score = 1.0 / (1.0 + np.exp(-35.0 * (if_raw - self.context_threshold)))
         
         # If no keys were pressed in this window, biometrics are idle (normal non-intrusion state)
         keys = json_data.get("keystroke_count", 0)
@@ -157,7 +171,7 @@ class BehavioralModels:
         else:
             bio_scaled = self.biometric_scaler.transform(bio.reshape(1, -1))
             svm_raw = self.oc_svm.decision_function(bio_scaled)[0]
-            svm_score = 1.0 / (1.0 + np.exp(-25.0 * (svm_raw - self.biometric_threshold)))
+            svm_score = 1.0 / (1.0 + np.exp(-18.0 * (svm_raw - self.biometric_threshold)))
         
         return float(svm_score), float(if_score)
 

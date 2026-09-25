@@ -2,39 +2,39 @@
   "chrome.exe::coding_problem_solving": {
     "app_name": "chrome.exe",
     "context_mode": "coding_problem_solving",
-    "sample_count": 169,
+    "sample_count": 170,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 5.2787,
-        "std": 2.0969
+        "mean": 5.1151,
+        "std": 2.1475
       },
       "thinking_pause_ratio": {
-        "mean": 0.5145,
-        "std": 0.193
+        "mean": 0.5388,
+        "std": 0.2064
       },
       "avg_burst_length": {
-        "mean": 23.575,
-        "std": 4.2157
+        "mean": 23.4712,
+        "std": 4.1035
       },
       "code_symbol_ratio": {
-        "mean": 0.2464,
-        "std": 0.0509
+        "mean": 0.2492,
+        "std": 0.051
       },
       "backspace_ratio": {
-        "mean": 0.0783,
-        "std": 0.0389
+        "mean": 0.0755,
+        "std": 0.0396
       },
       "dwell_mean": {
         "mean": 0.0888,
-        "std": 0.0101
+        "std": 0.0098
       },
       "flight_mean": {
-        "mean": 0.1628,
+        "mean": 0.1618,
         "std": 0.0195
       }
     },
     "first_seen": "2026-09-25 18:51:22",
-    "last_updated": "2026-09-25 20:35:37"
+    "last_updated": "2026-09-25 20:45:43"
   },
   "code.exe::ide_development": {
     "app_name": "code.exe",
@@ -298,39 +298,39 @@
   "antigravity.exe::ai_chat_prompting": {
     "app_name": "Antigravity.exe",
     "context_mode": "ai_chat_prompting",
-    "sample_count": 11,
+    "sample_count": 12,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.1775,
-        "std": 0.1663
+        "mean": 0.3255,
+        "std": 0.2881
       },
       "thinking_pause_ratio": {
         "mean": 0.0,
         "std": 0.0054
       },
       "avg_burst_length": {
-        "mean": 45.9865,
-        "std": 36.3559
+        "mean": 50.821,
+        "std": 37.7578
       },
       "code_symbol_ratio": {
         "mean": 0.0,
         "std": 0.0054
       },
       "backspace_ratio": {
-        "mean": 0.0201,
-        "std": 0.0301
+        "mean": 0.0214,
+        "std": 0.0288
       },
       "dwell_mean": {
-        "mean": 0.1826,
-        "std": 0.0978
+        "mean": 0.1749,
+        "std": 0.0967
       },
       "flight_mean": {
-        "mean": 0.2345,
-        "std": 0.1798
+        "mean": 0.2266,
+        "std": 0.172
       }
     },
     "first_seen": "2026-09-25 19:06:00",
-    "last_updated": "2026-09-25 20:35:20"
+    "last_updated": "2026-09-25 20:45:49"
   },
   "explorer.exe::general_productivity": {
     "app_name": "explorer.exe",
