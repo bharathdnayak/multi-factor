@@ -212,6 +212,8 @@ def adapt_to_verified_drift(log_file="telemetry_data.jsonl", limit=2000):
     then retrains the models on the updated baseline.
     """
     print("\nAdapting to verified behavior drift (retraining)...", flush=True)
+    if not os.path.isabs(log_file):
+        log_file = os.path.join(PROJECT_ROOT, log_file)
     if os.path.exists(log_file):
         try:
             with open(log_file, "r") as f:
