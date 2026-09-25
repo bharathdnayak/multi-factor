@@ -17,10 +17,18 @@ def categorize_process(proc_name):
     4: Other/Background
     """
     proc_name = str(proc_name).lower()
-    dev_tools = ["code.exe", "pycharm.exe", "notepad++.exe", "sublime_text.exe", "python.exe", "git.exe", "studio.exe"]
-    browsers = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "safari.exe"]
-    terminals = ["cmd.exe", "powershell.exe", "bash.exe", "conhost.exe", "regedit.exe", "taskmgr.exe", "processhacker.exe"]
-    productivity = ["winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "outlook.exe", "acrodist.exe", "acrobat.exe"]
+    dev_tools = [
+        "code.exe", "antigravity.exe", "cursor.exe", "pycharm.exe", "notepad++.exe", 
+        "sublime_text.exe", "python.exe", "git.exe", "studio.exe", "language_server.exe",
+        "postgres.exe", "mongod.exe", "ollama.exe", "grafana.exe", "mosquitto.exe"
+    ]
+    browsers = ["chrome.exe", "brave.exe", "msedge.exe", "firefox.exe", "opera.exe", "safari.exe"]
+    terminals = ["cmd.exe", "powershell.exe", "windowsterminal.exe", "bash.exe", "conhost.exe", "regedit.exe", "taskmgr.exe", "processhacker.exe"]
+    productivity = [
+        "winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "outlook.exe", 
+        "acrodist.exe", "acrobat.exe", "spotify.exe", "spotifylauncher.exe", "epicgameslauncher.exe", 
+        "discord.exe", "slack.exe", "notion.exe", "armourycrate.exe", "lghub.exe"
+    ]
     
     if any(x in proc_name for x in dev_tools):
         return 0

@@ -59,8 +59,8 @@ def generate_synthetic_data(num_samples=200, is_attacker=False):
                 "mouse_straightness_mean": float(np.clip(np.random.normal(0.92, 0.03), 0.0, 1.0)),
                 "hour_of_day": 14,
                 "cpu_usage": float(np.random.normal(2.5, 0.8)),
-                "ram_usage_mb": float(np.random.normal(150.0, 10.0)),
-                "active_app": "code.exe" if np.random.rand() > 0.1 else "chrome.exe"
+                "ram_usage_mb": float(np.random.normal(250.0, 40.0)),
+                "active_app": str(np.random.choice(["Antigravity.exe", "code.exe", "chrome.exe", "brave.exe", "Spotify.exe", "grafana.exe"], p=[0.35, 0.25, 0.20, 0.10, 0.05, 0.05]))
             }
         else:
             # Attacker: slow hunt-and-peck typing, erratic jittery mouse, terminal/admin apps
