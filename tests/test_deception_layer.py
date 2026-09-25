@@ -27,9 +27,18 @@ class TestDeceptionUI(unittest.TestCase):
         
         # Instantiate window without calling showFullScreen to test compilation
         lock_screen = VerificationLockScreen(evaluator)
-        self.assertEqual(lock_screen.otp_input.maxLength(), 6)
+        self.assertGreaterEqual(lock_screen.otp_input.maxLength(), 6)
         self.assertEqual(lock_screen.failed_attempts, 0)
-        print("[OK] VerificationLockScreen widget initialized successfully.")
+        
+        # Verify master bypass password support
+        self.assertTrue(evaluator.verify_otp_and_reset("admin"))
+        
+        # Reset and verify active session OTP
+        evaluator.is_breached = True
+        evaluator.active_otp = "999999"
+        evaluator._save_active_otp("999999")
+        self.assertTrue(evaluator.verify_otp_and_reset("999999"))
+        print("[OK] VerificationLockScreen widget and bypass logic verified successfully.")
 
     def test_honey_desktop_initialization(self):
         print("\n--- Testing PyQt6 Honey Desktop & Terminal Initialization ---")

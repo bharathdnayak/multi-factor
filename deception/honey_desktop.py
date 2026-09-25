@@ -754,20 +754,27 @@ class HoneypotDesktop(QWidget):
             entered = self.lock_prompt.otp_input.text().strip()
             ok = evaluator.verify_otp_and_reset(entered)
             if ok:
+                self.lock_prompt.status_lbl.setStyleSheet("color: #2ed573;")
                 self.lock_prompt.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
                 QApplication.processEvents()
                 time.sleep(1.0)
+                self.lock_prompt._force_close = True
                 self.lock_prompt.close()
+                self._can_close = True
                 self.close()
                 
                 # Launch Forensics Recovery Dashboard
-                from dashboard.forensic_dashboard import launch_forensic_dashboard
-                launch_forensic_dashboard()
+                from dashboard.forensic_dashboard import ForensicDashboard
+                global _active_forensics_window
+                _active_forensics_window = ForensicDashboard()
+                _active_forensics_window.show()
             else:
                 self.lock_prompt.failed_attempts += 1
+                self.lock_prompt.status_lbl.setStyleSheet("color: #ff4757;")
                 self.lock_prompt.status_lbl.setText(f"Invalid code. Attempts remaining: {3 - self.lock_prompt.failed_attempts}")
                 self.lock_prompt.otp_input.clear()
                 if self.lock_prompt.failed_attempts >= 3:
+                    self.lock_prompt._force_close = True
                     self.lock_prompt.close()
                     
         self.lock_prompt.check_otp = wrapped_check
@@ -780,7 +787,13 @@ class HoneypotDesktop(QWidget):
             super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        event.ignore()
+        if getattr(self, '_can_close', False):
+            event.accept()
+        else:
+            event.ignore()
+
+_active_forensics_window = None
+_standalone_honey_desktop = None
 
 def launch_honey_desktop(snapshot_path=None):
     """Entrypoint function to run the PyQt6 Honey-Desktop application loop."""
@@ -788,8 +801,10 @@ def launch_honey_desktop(snapshot_path=None):
     if app is None:
         app = QApplication(sys.argv)
         
-    desktop_window = HoneypotDesktop(snapshot_path=snapshot_path)
-    desktop_window.showFullScreen()
+    app.setQuitOnLastWindowClosed(False)
+    global _standalone_honey_desktop
+    _standalone_honey_desktop = HoneypotDesktop(snapshot_path=snapshot_path)
+    _standalone_honey_desktop.showFullScreen()
     
     app.exec()
 

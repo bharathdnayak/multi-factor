@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal
 title Multi-Factor Behavioral Drift Security System
 
 echo =============================================================
@@ -21,20 +21,20 @@ set "PYTHON_EXE="
 :: Check virtual environment in project directory
 if exist "%PROJECT_DIR%\venv\Scripts\python.exe" (
     set "PYTHON_EXE=%PROJECT_DIR%\venv\Scripts\python.exe"
-    echo [INFO] Using virtual environment (venv)
-) else if exist "%PROJECT_DIR%\.venv\Scripts\python.exe" (
+    echo [INFO] Using virtual environment: venv
+)
+if not defined PYTHON_EXE if exist "%PROJECT_DIR%\.venv\Scripts\python.exe" (
     set "PYTHON_EXE=%PROJECT_DIR%\.venv\Scripts\python.exe"
-    echo [INFO] Using virtual environment (.venv)
-) else (
-    where python >nul 2>nul
-    if !errorlevel! equ 0 (
-        for /f "delims=" %%i in ('where python') do (
-            if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
-        )
+    echo [INFO] Using virtual environment: .venv
+)
+if not defined PYTHON_EXE (
+    for /f "delims=" %%i in ('where python 2^>nul') do (
+        if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
     )
-    if not defined PYTHON_EXE (
-        where py >nul 2>nul
-        if !errorlevel! equ 0 set "PYTHON_EXE=py"
+)
+if not defined PYTHON_EXE (
+    for /f "delims=" %%i in ('where py 2^>nul') do (
+        if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
     )
 )
 
@@ -45,19 +45,19 @@ if not defined PYTHON_EXE (
     exit /b 1
 )
 
-echo [INFO] Using Python: "!PYTHON_EXE!"
+echo [INFO] Using Python: "%PYTHON_EXE%"
 echo.
 
 :: 3. Launch Telemetry Agent in a separate Command Prompt window
 echo [INFO] Launching Background Telemetry Hook Agent...
-start "Behavioral Telemetry Agent" /d "%PROJECT_DIR%" cmd /k "cd /d "%PROJECT_DIR%" && "!PYTHON_EXE!" telemetry\agent.py"
+start "Behavioral Telemetry Agent" /d "%PROJECT_DIR%" cmd /k ^""%PYTHON_EXE%" "%PROJECT_DIR%\telemetry\agent.py"^"
 
 :: Wait 2 seconds for log initialization
 ping 127.0.0.1 -n 3 >nul
 
 :: 4. Launch Threat Evaluator Daemon in a separate Command Prompt window
 echo [INFO] Launching Threat Evaluation Daemon...
-start "Threat Evaluator Daemon" /d "%PROJECT_DIR%" cmd /k "cd /d "%PROJECT_DIR%" && "!PYTHON_EXE!" security\drift_detector.py"
+start "Threat Evaluator Daemon" /d "%PROJECT_DIR%" cmd /k ^""%PYTHON_EXE%" "%PROJECT_DIR%\security\drift_detector.py"^"
 
 echo.
 echo =============================================================

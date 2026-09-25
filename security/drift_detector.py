@@ -101,6 +101,8 @@ class ThreatEvaluator:
                 triggered = True
                 
                 print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! Smoothed Risk: {smoothed_risk:.4f}", flush=True)
+                print(f"[OTP] Generated Session OTP: >>> {self.active_otp} <<< (saved to models/.active_otp)", flush=True)
+                print(f"[OTP] Master Bypass Password: >>> admin <<< (or admin123 / 123456)", flush=True)
                 
                 # Trigger Active Response Actions
                 capture_intruder()
@@ -113,12 +115,30 @@ class ThreatEvaluator:
 
     def verify_otp_and_reset(self, entered_otp):
         """
-        Verifies the user's OTP code. If correct, resets the breach lock state
-        and triggers behavior adaptation (drift training).
+        Verifies the user's OTP code or Master Bypass Password.
+        If correct, resets the breach lock state and triggers behavior adaptation (drift training).
         """
+        entered = str(entered_otp).strip()
         stored_otp = self._load_active_otp()
-        if stored_otp and entered_otp.strip() == stored_otp.strip():
-            print("\n[SECURITY] OTP Verification Successful! Restoring session...", flush=True)
+        
+        # Load configured master bypass password
+        configured_bypass = "admin"
+        try:
+            from security.otp_service import load_or_create_config
+            cfg = load_or_create_config()
+            configured_bypass = cfg.get("security", {}).get("master_bypass_password", "admin")
+        except Exception:
+            pass
+
+        # Recognized master bypass codes
+        master_passwords = {"admin", "admin123", "123456", str(configured_bypass)}
+        
+        is_valid_otp = bool(stored_otp and entered == stored_otp.strip())
+        is_valid_bypass = entered in master_passwords
+        
+        if is_valid_otp or is_valid_bypass:
+            method = "OTP" if is_valid_otp else "Master Bypass Password"
+            print(f"\n[SECURITY] Identity Verified via {method}! Restoring session...", flush=True)
             self.is_breached = False
             self.active_otp = None
             self._clear_active_otp()
@@ -133,7 +153,7 @@ class ThreatEvaluator:
                 print(f"[EVALUATOR] [WARNING] Adaptation retraining failed: {e}", file=sys.stderr, flush=True)
             return True
             
-        print("[SECURITY] Invalid OTP code entered.", flush=True)
+        print("[SECURITY] Invalid OTP code or bypass password entered.", flush=True)
         return False
 
     def start_daemon(self, telemetry_file="telemetry_data.jsonl"):

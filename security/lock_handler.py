@@ -19,6 +19,7 @@ class VerificationLockScreen(QWidget):
         super().__init__()
         self.evaluator = evaluator
         self.failed_attempts = 0
+        self._force_close = False
         
         # 1. Grab clean snapshot of user's active desktop/apps BEFORE the lock screen overlays it
         try:
@@ -65,10 +66,10 @@ class VerificationLockScreen(QWidget):
                 border: 2px solid #57606f;
                 border-radius: 6px;
                 padding: 10px;
-                font-size: 22px;
+                font-size: 20px;
                 color: #ffffff;
                 qproperty-alignment: 'AlignCenter';
-                max-width: 250px;
+                max-width: 380px;
             }
             QLineEdit:focus {
                 border: 2px solid #ff4757;
@@ -120,16 +121,17 @@ class VerificationLockScreen(QWidget):
         layout.addWidget(title)
         
         sub = QLabel("Desktop interactions do not match the registered owner's baseline patterns.\n"
-                     "An OTP code has been dispatched to the owner's phone/email to verify identity.")
+                     "Enter the 6-digit OTP code dispatched to owner (or Master Bypass: admin)")
         sub.setObjectName("sub_title")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(sub)
         
         # OTP input field
         self.otp_input = QLineEdit()
-        self.otp_input.setMaxLength(6)
-        self.otp_input.setPlaceholderText("Enter 6-digit OTP")
+        self.otp_input.setMaxLength(32)
+        self.otp_input.setPlaceholderText("Enter OTP or Bypass Password")
         self.otp_input.setEchoMode(QLineEdit.EchoMode.Normal)
+        self.otp_input.returnPressed.connect(self.check_otp)
         layout.addWidget(self.otp_input)
         
         # Button Row
@@ -167,8 +169,12 @@ class VerificationLockScreen(QWidget):
             self.status_lbl.setStyleSheet("color: #2ed573;")
             self.status_lbl.setText("Identity Verified! Restoring session...")
             QApplication.processEvents()
-            time.sleep(1.5)
+            time.sleep(1.0)
+            self._force_close = True
             self.close()
+            app = QApplication.instance()
+            if app:
+                app.quit()
         else:
             self.failed_attempts += 1
             self.status_lbl.setStyleSheet("color: #ff4757;")
@@ -178,14 +184,17 @@ class VerificationLockScreen(QWidget):
             if self.failed_attempts >= 3:
                 self.status_lbl.setText("Attempts exhausted. Initiating Honeypot Containment...")
                 QApplication.processEvents()
-                time.sleep(1.5)
+                time.sleep(1.0)
                 self.trigger_deception()
 
     def trigger_deception(self):
-        """Closes verification screen and launches PyQt6 Sandboxed Honeypot Desktop."""
+        """Closes verification screen and seamlessly renders PyQt6 Sandboxed Honeypot Desktop."""
+        self._force_close = True
         self.close()
-        from deception.honey_desktop import launch_honey_desktop
-        launch_honey_desktop()
+        from deception.honey_desktop import HoneypotDesktop
+        global _active_honeypot_instance
+        _active_honeypot_instance = HoneypotDesktop()
+        _active_honeypot_instance.showFullScreen()
 
     def keyPressEvent(self, event):
         # Override key press event to intercept Esc key and system shortcuts
@@ -195,23 +204,30 @@ class VerificationLockScreen(QWidget):
             super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        # Prevent manual window closure
-        if self.evaluator.is_breached and self.failed_attempts < 3:
+        # Prevent manual window closure unless verified or transitioning
+        if getattr(self, '_force_close', False):
+            event.accept()
+        elif self.evaluator.is_breached and self.failed_attempts < 3:
             event.ignore()
         else:
             event.accept()
 
+# Global reference to prevent garbage collection of UI instances
+_active_lock_window = None
+_active_honeypot_instance = None
+
 def launch_verification_lock(evaluator):
     """Entrypoint function to run the PyQt6 lock screen application loop."""
-    # Ensure there is a QApplication running
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
         
-    lock_window = VerificationLockScreen(evaluator)
-    lock_window.showFullScreen()
+    app.setQuitOnLastWindowClosed(False)
     
-    # Process events to let the UI display
+    global _active_lock_window
+    _active_lock_window = VerificationLockScreen(evaluator)
+    _active_lock_window.showFullScreen()
+    
     app.exec()
 
 if __name__ == "__main__":
