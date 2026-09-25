@@ -177,8 +177,8 @@ class DeepSVDDDetector:
             with torch.no_grad():
                 embedding = self.model(X)
                 dist = torch.sqrt(torch.sum((embedding - self.center) ** 2, dim=1)).item()
-                
-            risk = 1.0 / (1.0 + np.exp(-40.0 * (dist - self.radius * 1.25)))
+            ratio = dist / max(1e-6, self.radius)
+            risk = 1.0 / (1.0 + np.exp(-6.0 * (ratio - 1.25)))
             return float(np.clip(risk, 0.0, 1.0))
         except Exception:
             return 0.0

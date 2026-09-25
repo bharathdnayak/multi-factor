@@ -2,76 +2,76 @@
   "chrome.exe::coding_problem_solving": {
     "app_name": "chrome.exe",
     "context_mode": "coding_problem_solving",
-    "sample_count": 166,
+    "sample_count": 167,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 5.9286,
-        "std": 1.7676
+        "mean": 5.6322,
+        "std": 1.9608
       },
       "thinking_pause_ratio": {
-        "mean": 0.4863,
-        "std": 0.1441
+        "mean": 0.462,
+        "std": 0.16
       },
       "avg_burst_length": {
         "mean": 23.7992,
         "std": 4.4412
       },
       "code_symbol_ratio": {
-        "mean": 0.2531,
-        "std": 0.0402
+        "mean": 0.2404,
+        "std": 0.0502
       },
       "backspace_ratio": {
-        "mean": 0.0886,
-        "std": 0.0345
+        "mean": 0.0842,
+        "std": 0.037
       },
       "dwell_mean": {
-        "mean": 0.0887,
-        "std": 0.011
+        "mean": 0.0888,
+        "std": 0.0107
       },
       "flight_mean": {
-        "mean": 0.1662,
-        "std": 0.0191
+        "mean": 0.1649,
+        "std": 0.0194
       }
     },
     "first_seen": "2026-09-25 18:51:22",
-    "last_updated": "2026-09-25 19:02:33"
+    "last_updated": "2026-09-25 19:15:05"
   },
   "code.exe::ide_development": {
     "app_name": "code.exe",
     "context_mode": "ide_development",
-    "sample_count": 150,
+    "sample_count": 157,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 3.1234,
-        "std": 1.2186
+        "mean": 2.2619,
+        "std": 1.5618
       },
       "thinking_pause_ratio": {
-        "mean": 0.2362,
-        "std": 0.0721
+        "mean": 0.1689,
+        "std": 0.1055
       },
       "avg_burst_length": {
-        "mean": 30.4399,
-        "std": 7.7494
+        "mean": 24.9569,
+        "std": 11.0306
       },
       "code_symbol_ratio": {
-        "mean": 0.216,
-        "std": 0.058
+        "mean": 0.1508,
+        "std": 0.0933
       },
       "backspace_ratio": {
-        "mean": 0.0993,
-        "std": 0.0349
+        "mean": 0.0693,
+        "std": 0.0486
       },
       "dwell_mean": {
-        "mean": 0.1133,
-        "std": 0.0338
+        "mean": 0.1557,
+        "std": 0.0611
       },
       "flight_mean": {
-        "mean": 0.1614,
-        "std": 0.037
+        "mean": 0.161,
+        "std": 0.0356
       }
     },
     "first_seen": "2026-09-25 18:53:26",
-    "last_updated": "2026-09-25 19:09:10"
+    "last_updated": "2026-09-25 20:02:36"
   },
   "chrome.exe::ai_chat_prompting": {
     "app_name": "chrome.exe",
@@ -187,76 +187,76 @@
   "unknown::general_productivity": {
     "app_name": "unknown",
     "context_mode": "general_productivity",
-    "sample_count": 2,
+    "sample_count": 3,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 1.9605,
-        "std": 0.9852
+        "mean": 1.307,
+        "std": 1.0925
       },
       "thinking_pause_ratio": {
-        "mean": 0.1958,
-        "std": 0.1029
+        "mean": 0.1305,
+        "std": 0.1121
       },
       "code_symbol_ratio": {
-        "mean": 0.15,
-        "std": 0.08
+        "mean": 0.1,
+        "std": 0.0867
       },
       "backspace_ratio": {
-        "mean": 0.25,
-        "std": 0.13
+        "mean": 0.1667,
+        "std": 0.1422
       },
       "dwell_mean": {
-        "mean": 0.0799,
-        "std": 0.0163
+        "mean": 0.1737,
+        "std": 0.0734
       },
       "flight_mean": {
-        "mean": 0.1663,
-        "std": 0.0306
+        "mean": 0.2636,
+        "std": 0.0853
       },
       "avg_burst_length": {
-        "mean": 10.0,
-        "std": 2.5
+        "mean": 9.0,
+        "std": 2.3333
       }
     },
     "first_seen": "2026-09-25 19:02:56",
-    "last_updated": "2026-09-25 19:05:10"
+    "last_updated": "2026-09-25 19:14:55"
   },
   "chrome.exe::web_browsing": {
     "app_name": "chrome.exe",
     "context_mode": "web_browsing",
-    "sample_count": 1,
+    "sample_count": 4,
     "metrics": {
       "avg_thinking_pause": {
         "mean": 0.0,
-        "std": 0.01
+        "std": 0.0063
       },
       "thinking_pause_ratio": {
         "mean": 0.0,
-        "std": 0.01
+        "std": 0.0063
       },
       "avg_burst_length": {
-        "mean": 12.0,
-        "std": 3.0
+        "mean": 10.25,
+        "std": 2.2708
       },
       "code_symbol_ratio": {
         "mean": 0.0,
-        "std": 0.01
+        "std": 0.0063
       },
       "backspace_ratio": {
         "mean": 0.0,
-        "std": 0.01
+        "std": 0.0063
       },
       "dwell_mean": {
-        "mean": 0.1355,
-        "std": 0.0339
+        "mean": 0.2355,
+        "std": 0.0916
       },
       "flight_mean": {
-        "mean": 0.1067,
-        "std": 0.0267
+        "mean": 0.1761,
+        "std": 0.0789
       }
     },
     "first_seen": "2026-09-25 19:05:20",
-    "last_updated": "2026-09-25 19:05:20"
+    "last_updated": "2026-09-25 19:22:45"
   },
   "windowsterminal.exe::terminal_command_line": {
     "app_name": "WindowsTerminal.exe",
@@ -298,75 +298,186 @@
   "antigravity.exe::ai_chat_prompting": {
     "app_name": "Antigravity.exe",
     "context_mode": "ai_chat_prompting",
-    "sample_count": 2,
+    "sample_count": 4,
     "metrics": {
       "avg_thinking_pause": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "thinking_pause_ratio": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "avg_burst_length": {
-        "mean": 29.0,
-        "std": 11.125
+        "mean": 19.6667,
+        "std": 13.6389
       },
       "code_symbol_ratio": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "backspace_ratio": {
-        "mean": 0.0817,
-        "std": 0.0458
+        "mean": 0.0409,
+        "std": 0.0467
       },
       "dwell_mean": {
-        "mean": 0.2466,
-        "std": 0.0971
+        "mean": 0.175,
+        "std": 0.0914
       },
       "flight_mean": {
-        "mean": 0.2969,
-        "std": 0.1596
+        "mean": 0.2322,
+        "std": 0.1199
       }
     },
     "first_seen": "2026-09-25 19:06:00",
-    "last_updated": "2026-09-25 19:07:00"
+    "last_updated": "2026-09-25 19:14:45"
   },
   "explorer.exe::general_productivity": {
     "app_name": "explorer.exe",
     "context_mode": "general_productivity",
-    "sample_count": 2,
+    "sample_count": 4,
     "metrics": {
       "avg_thinking_pause": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "thinking_pause_ratio": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "avg_burst_length": {
-        "mean": 10.0,
-        "std": 1.875
+        "mean": 6.25,
+        "std": 3.0833
       },
       "code_symbol_ratio": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "backspace_ratio": {
         "mean": 0.0,
-        "std": 0.0075
+        "std": 0.0063
       },
       "dwell_mean": {
-        "mean": 0.3988,
-        "std": 0.0768
+        "mean": 0.3522,
+        "std": 0.0863
       },
       "flight_mean": {
-        "mean": 0.2079,
-        "std": 0.0287
+        "mean": 0.2827,
+        "std": 0.0987
       }
     },
     "first_seen": "2026-09-25 19:06:30",
-    "last_updated": "2026-09-25 19:07:40"
+    "last_updated": "2026-09-25 20:14:16"
+  },
+  "brave.exe::coding_problem_solving": {
+    "app_name": "brave.exe",
+    "context_mode": "coding_problem_solving",
+    "sample_count": 23,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 1.1142,
+        "std": 1.3994
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.086,
+        "std": 0.1223
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0415,
+        "std": 0.0503
+      },
+      "backspace_ratio": {
+        "mean": 0.0781,
+        "std": 0.0887
+      },
+      "dwell_mean": {
+        "mean": 0.2028,
+        "std": 0.0561
+      },
+      "flight_mean": {
+        "mean": 0.2025,
+        "std": 0.0656
+      },
+      "avg_burst_length": {
+        "mean": 15.3849,
+        "std": 11.7231
+      }
+    },
+    "first_seen": "2026-09-25 19:24:45",
+    "last_updated": "2026-09-25 20:15:47"
+  },
+  "brave.exe::web_browsing": {
+    "app_name": "brave.exe",
+    "context_mode": "web_browsing",
+    "sample_count": 16,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 1.7101,
+        "std": 1.7412
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.065,
+        "std": 0.0749
+      },
+      "avg_burst_length": {
+        "mean": 42.819,
+        "std": 28.9997
+      },
+      "code_symbol_ratio": {
+        "mean": 0.005,
+        "std": 0.0103
+      },
+      "backspace_ratio": {
+        "mean": 0.0707,
+        "std": 0.0699
+      },
+      "dwell_mean": {
+        "mean": 0.1925,
+        "std": 0.0813
+      },
+      "flight_mean": {
+        "mean": 0.3059,
+        "std": 0.1855
+      }
+    },
+    "first_seen": "2026-09-25 19:30:36",
+    "last_updated": "2026-09-25 20:15:27"
+  },
+  "brave.exe::ai_chat_prompting": {
+    "app_name": "brave.exe",
+    "context_mode": "ai_chat_prompting",
+    "sample_count": 2,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 1.0045,
+        "std": 0.7533
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0502,
+        "std": 0.0377
+      },
+      "avg_burst_length": {
+        "mean": 24.0,
+        "std": 6.0
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0209,
+        "std": 0.0156
+      },
+      "backspace_ratio": {
+        "mean": 0.0209,
+        "std": 0.0156
+      },
+      "dwell_mean": {
+        "mean": 0.1145,
+        "std": 0.0297
+      },
+      "flight_mean": {
+        "mean": 0.1545,
+        "std": 0.0283
+      }
+    },
+    "first_seen": "2026-09-25 19:52:56",
+    "last_updated": "2026-09-25 19:54:56"
   }
 }
