@@ -20,6 +20,19 @@ class VerificationLockScreen(QWidget):
         self.evaluator = evaluator
         self.failed_attempts = 0
         
+        # 1. Grab clean snapshot of user's active desktop/apps BEFORE the lock screen overlays it
+        try:
+            screen = QApplication.primaryScreen()
+            if screen:
+                snapshot = screen.grabWindow(0)
+                snapshot_dir = os.path.join(project_dir, "data", "forensics")
+                os.makedirs(snapshot_dir, exist_ok=True)
+                snapshot_path = os.path.join(snapshot_dir, "desktop_snapshot.png")
+                snapshot.save(snapshot_path, "PNG")
+                print(f"[DECEPTION] Preserved pre-breach desktop snapshot to '{snapshot_path}'", flush=True)
+        except Exception as e:
+            print(f"[DECEPTION] [WARNING] Could not capture pre-breach desktop: {e}", flush=True)
+
         self.init_ui()
 
     def init_ui(self):

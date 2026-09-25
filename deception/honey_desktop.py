@@ -2,9 +2,14 @@ import sys
 import os
 import time
 import threading
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QGridLayout
-from PyQt6.QtCore import Qt, QSize, QObject, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QPalette, QBrush, QPixmap
+import psutil
+
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QLineEdit, QPushButton, QTextEdit, QFrame
+)
+from PyQt6.QtCore import Qt, QSize, QPoint, QObject, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QCursor
 from pynput import keyboard
 
 # Append project root
@@ -17,94 +22,171 @@ class HotkeySignals(QObject):
 
 class HoneyShell(QFrame):
     """
-    Mock Terminal Emulator (Honeypot Command Prompt).
-    Intercepts attacker commands, outputs fake directory structures,
-    logs operations to forensics log, and diverts writes to sandbox folder.
+    Authentic Windows Floating Terminal Emulator (Honeypot PowerShell / CMD).
+    Draggable anywhere on top of the replicated desktop.
+    Intercepts attacker commands, outputs realistic processes & files,
+    logs actions to forensics, and diverts writes to the sandbox.
     """
-    def __init__(self, sandbox_dir, log_dir):
-        super().__init__()
+    def __init__(self, sandbox_dir, log_dir, parent=None):
+        super().__init__(parent)
         self.sandbox_dir = sandbox_dir
         self.log_path = os.path.join(log_dir, "honeypot_commands.log")
-        self.current_dir = "C:\\Users\\Administrator"
+        self.current_dir = "C:\\Windows\\system32"
+        self.drag_position = QPoint()
         
         # Virtual mock filesystem
         self.virtual_fs = {
+            "C:\\Windows\\system32": ["cmd.exe", "powershell.exe", "taskmgr.exe", "drivers", "config"],
             "C:\\Users\\Administrator": ["Documents", "Downloads", "Desktop"],
-            "C:\\Users\\Administrator\\Desktop": ["confidential_passwords.txt", "network_map.pdf", "Terminal.lnk"],
-            "C:\\Users\\Administrator\\Documents": ["project_requirements.docx", "database_backup.sql"]
+            "C:\\Users\\Administrator\\Desktop": ["passwords.txt", "network_topology.pdf", "Terminal.lnk"],
+            "C:\\Users\\Administrator\\Documents": ["project_source.zip", "database_backup.sql"]
         }
         
         self.init_ui()
 
     def init_ui(self):
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setFixedSize(QSize(820, 520))
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("""
-            QFrame {
+            QFrame#TerminalContainer {
                 background-color: #0c0c0c;
-                border: 2px solid #3c3c3c;
-                border-radius: 4px;
+                border: 1px solid #3c3c3c;
+                border-radius: 8px;
+            }
+            QFrame#TitleBar {
+                background-color: #1f1f1f;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border-bottom: 1px solid #2d2d2d;
+            }
+            QLabel#TitleLabel {
+                color: #e0e0e0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton#TitleBtn {
+                background: transparent;
+                color: #a0a0a0;
+                border: none;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                font-weight: bold;
+                width: 32px;
+                height: 24px;
+            }
+            QPushButton#TitleBtn:hover {
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QPushButton#CloseBtn:hover {
+                background-color: #e81123;
+                color: #ffffff;
+                border-top-right-radius: 8px;
             }
             QTextEdit {
                 background-color: #0c0c0c;
-                color: #00ff00;
-                font-family: 'Consolas', monospace;
-                font-size: 14px;
+                color: #cccccc;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 13px;
                 border: none;
+                padding: 6px;
             }
             QLineEdit {
                 background-color: #0c0c0c;
                 color: #ffffff;
-                font-family: 'Consolas', monospace;
-                font-size: 14px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 13px;
                 border: none;
-                padding-left: 5px;
+                padding-left: 2px;
             }
         """)
         
+        self.setObjectName("TerminalContainer")
         layout = QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
-        # Title bar
-        title_bar = QHBoxLayout()
-        title_bar.setContentsMargins(5, 2, 5, 2)
-        lbl = QLabel("Command Prompt (Administrator)")
-        lbl.setStyleSheet("color: #cccccc; font-weight: bold; border: none; font-size: 11px;")
-        title_bar.addWidget(lbl)
-        title_bar.addStretch()
+        # 1. Authentic Windows Title Bar (Draggable)
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("TitleBar")
+        self.title_bar.setFixedHeight(30)
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(10, 0, 0, 0)
+        tb_layout.setSpacing(4)
         
-        close_btn = QPushButton("X")
-        close_btn.setFixedSize(QSize(20, 16))
-        close_btn.setStyleSheet("color: #ffffff; background-color: #d63031; font-weight: bold; border: none; font-size: 10px;")
-        close_btn.clicked.connect(self.hide_prompt_fake)
-        title_bar.addWidget(close_btn)
+        icon_lbl = QLabel("💻")
+        icon_lbl.setStyleSheet("font-size: 12px;")
+        tb_layout.addWidget(icon_lbl)
         
-        layout.addLayout(title_bar)
+        self.title_lbl = QLabel("Administrator: Windows PowerShell")
+        self.title_lbl.setObjectName("TitleLabel")
+        tb_layout.addWidget(self.title_lbl)
+        tb_layout.addStretch()
         
-        # Display Console
+        min_btn = QPushButton("─")
+        min_btn.setObjectName("TitleBtn")
+        min_btn.clicked.connect(self.hide_fake)
+        tb_layout.addWidget(min_btn)
+        
+        max_btn = QPushButton("□")
+        max_btn.setObjectName("TitleBtn")
+        tb_layout.addWidget(max_btn)
+        
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("TitleBtn")
+        close_btn.setProperty("class", "CloseBtn")
+        close_btn.clicked.connect(self.close_fake)
+        tb_layout.addWidget(close_btn)
+        
+        self.title_bar.setLayout(tb_layout)
+        layout.addWidget(self.title_bar)
+        
+        # 2. Console History Area
         self.console = QTextEdit()
         self.console.setReadOnly(True)
         layout.addWidget(self.console)
         
-        # Input row
+        # 3. Input Prompt Row
+        input_container = QFrame()
+        input_container.setStyleSheet("background-color: #0c0c0c; padding-left: 6px; padding-bottom: 6px;")
         input_row = QHBoxLayout()
-        input_row.setSpacing(0)
-        self.prompt_lbl = QLabel(f"{self.current_dir}>")
-        self.prompt_lbl.setStyleSheet("color: #ffffff; font-family: 'Consolas', monospace; font-size: 14px; border: none;")
+        input_row.setContentsMargins(0, 0, 6, 0)
+        input_row.setSpacing(4)
+        
+        self.prompt_lbl = QLabel(f"PS {self.current_dir}>")
+        self.prompt_lbl.setStyleSheet("color: #ffffff; font-family: 'Consolas', monospace; font-size: 13px; border: none;")
         input_row.addWidget(self.prompt_lbl)
         
         self.input_field = QLineEdit()
         self.input_field.returnPressed.connect(self.process_command)
         input_row.addWidget(self.input_field)
         
-        layout.addLayout(input_row)
+        input_container.setLayout(input_row)
+        layout.addWidget(input_container)
+        
         self.setLayout(layout)
         
-        # Print welcome banner
-        self.console.append("Microsoft Windows [Version 10.0.19045.3803]\n(c) Microsoft Corporation. All rights reserved.\n")
+        # PowerShell initial banner
+        self.console.append("Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nInstall the latest PowerShell for new features and improvements! https://aka.ms/PSWindows\n")
 
-    def hide_prompt_fake(self):
-        self.console.append(f"\n{self.current_dir}> [Access Denied: Administrative Session Lock Active]")
+    def mousePressEvent(self, event):
+        """Allows dragging the terminal window anywhere on top of the replicated desktop."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        """Updates terminal position during drag."""
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'drag_position'):
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def hide_fake(self):
+        self.console.append(f"\n[Process Warning] Background diagnostic shell cannot be minimized during system check.\n")
+
+    def close_fake(self):
+        self.console.append(f"\n[Access Denied] Administrative session termination restricted by Group Policy.\n")
 
     def log_action(self, cmd_raw):
         """Saves command sequence logs to the forensics file."""
@@ -122,61 +204,94 @@ class HoneyShell(QFrame):
         if not cmd_raw:
             return
             
-        self.console.append(f"{self.current_dir}> {cmd_raw}")
-        
-        # Log command forensics
+        self.console.append(f"PS {self.current_dir}> {cmd_raw}")
         self.log_action(cmd_raw)
         
-        # Command Parsing
         parts = cmd_raw.split()
         base_cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
         
         response = ""
         
-        if base_cmd in ["dir", "ls"]:
+        if base_cmd in ["dir", "ls", "get-childitem"]:
             response = self._handle_dir()
         elif base_cmd == "cd":
             response = self._handle_cd(args)
-        elif base_cmd in ["cat", "type"]:
+        elif base_cmd in ["cat", "type", "get-content"]:
             response = self._handle_type(args)
-        elif base_cmd in ["echo", "write"]:
+        elif base_cmd in ["echo", "write-output"]:
             response = self._handle_echo(cmd_raw)
+        elif base_cmd in ["tasklist", "ps", "get-process"]:
+            response = self._handle_tasklist()
         elif base_cmd in ["clear", "cls"]:
             self.console.clear()
             return
         elif base_cmd == "ipconfig":
             response = ("\nWindows IP Configuration\n\n"
                         "Ethernet adapter Ethernet0:\n"
-                        "   Connection-specific DNS Suffix  . : gateway.lan\n"
+                        "   Connection-specific DNS Suffix  . : localdomain\n"
                         "   Link-local IPv6 Address . . . . . : fe80::4c2b:d1ff:feca:51b2%4\n"
                         "   IPv4 Address. . . . . . . . . . . : 192.168.1.142\n"
                         "   Subnet Mask . . . . . . . . . . . : 255.255.255.0\n"
                         "   Default Gateway . . . . . . . . . : 192.168.1.1")
         elif base_cmd in ["whoami"]:
-            response = "desktop-main\\administrator"
-        elif base_cmd == "help":
-            response = "Supported Commands: help, cd, dir, ls, type, cat, echo, ipconfig, whoami, cls, clear"
+            response = "desktop-sec\\administrator"
+        elif base_cmd in ["hostname"]:
+            response = "DESKTOP-SEC-WIN11"
+        elif base_cmd in ["net", "net.exe"]:
+            if args and args[0].lower() == "user":
+                response = "\nUser accounts for \\\\DESKTOP-SEC-WIN11\n\n-------------------------------------------------------------------------------\nAdministrator            DefaultAccount           Guest\nOwner                    WDAGUtilityAccount\nThe command completed successfully."
+            else:
+                response = "The syntax of this command is: NET [ ACCOUNTS | COMPUTER | CONFIG | GROUP | USER ]"
+        elif base_cmd in ["help"]:
+            response = "Supported Diagnostic Commands: tasklist, Get-Process, cd, dir, ls, type, cat, echo, ipconfig, whoami, hostname, net user, cls, clear"
         else:
-            response = f"'{base_cmd}' is not recognized as an internal or external command,\noperable program or batch file."
+            response = f"{base_cmd} : The term '{base_cmd}' is not recognized as the name of a cmdlet, function, script file, or operable program.\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again."
             
         if response:
             self.console.append(response + "\n")
             
         self.console.ensureCursorVisible()
 
+    def _handle_tasklist(self):
+        """Generates realistic process output using the user's actual running system processes!"""
+        output = [
+            f"{'Image Name':<30} {'PID':<8} {'Session Name':<16} {'Mem Usage':<12}",
+            f"{'='*30} {'='*8} {'='*16} {'='*12}"
+        ]
+        try:
+            count = 0
+            for proc in psutil.process_iter(['pid', 'name', 'memory_info']):
+                try:
+                    name = proc.info['name'] or "System"
+                    pid = str(proc.info['pid'])
+                    mem = proc.info['memory_info']
+                    mem_str = f"{int(mem.rss / 1024):,} K" if mem else "4,096 K"
+                    output.append(f"{name:<30} {pid:<8} {'Console':<16} {mem_str:<12}")
+                    count += 1
+                    if count >= 25:
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            output.append(f"{'explorer.exe':<30} {'4812':<8} {'Console':<16} {'124,592 K':<12}")
+            output.append(f"{'code.exe':<30} {'8920':<8} {'Console':<16} {'382,104 K':<12}")
+            output.append(f"{'chrome.exe':<30} {'11244':<8} {'Console':<16} {'491,220 K':<12}")
+            output.append(f"{'powershell.exe':<30} {'6104':<8} {'Console':<16} {'58,212 K':<12}")
+            
+        return "\n".join(output)
+
     def _handle_dir(self):
         items = self.virtual_fs.get(self.current_dir, [])
         if not items:
-            return " Directory of " + self.current_dir + "\n\n0 File(s)             0 bytes\n0 Dir(s)        85,124,192 bytes free"
+            return f"\n    Directory: {self.current_dir}\n\nMode                 LastWriteTime         Length Name\n----                 -------------         ------ ----\n"
             
-        res = f" Directory of {self.current_dir}\n\n"
-        for idx, item in enumerate(items):
+        res = f"\n    Directory: {self.current_dir}\n\nMode                 LastWriteTime         Length Name\n----                 -------------         ------ ----\n"
+        for item in items:
             if "." in item:
-                res += f"2026-08-23  14:02             4,192 {item}\n"
+                res += f"-a---          {time.strftime('%m/%d/%Y  %I:%M %p')}           4096 {item}\n"
             else:
-                res += f"2026-08-23  14:02    <DIR>          {item}\n"
-        res += f"\n               {len(items)} File(s)         4,192 bytes"
+                res += f"d----          {time.strftime('%m/%d/%Y  %I:%M %p')}                {item}\n"
         return res
 
     def _handle_cd(self, args):
@@ -189,32 +304,33 @@ class HoneyShell(QFrame):
                 parts = self.current_dir.split("\\")
                 if len(parts) > 1:
                     self.current_dir = "\\".join(parts[:-1])
-            self.prompt_lbl.setText(f"{self.current_dir}>")
+            self.prompt_lbl.setText(f"PS {self.current_dir}>")
             return ""
             
         check_path = self.current_dir + "\\" + target
-        if check_path in self.virtual_fs or check_path.replace("\\\\", "\\") in self.virtual_fs:
-            self.current_dir = check_path.replace("\\\\", "\\")
-            self.prompt_lbl.setText(f"{self.current_dir}>")
+        check_normalized = check_path.replace("\\\\", "\\")
+        if check_normalized in self.virtual_fs:
+            self.current_dir = check_normalized
+            self.prompt_lbl.setText(f"PS {self.current_dir}>")
             return ""
             
-        return f"The system cannot find the path specified: '{target}'"
+        return f"Cannot find path '{target}' because it does not exist."
 
     def _handle_type(self, args):
         if not args:
-            return "Command syntax is incorrect."
+            return "Cannot bind argument to parameter 'Path' because it is null."
         target = args[0]
         
         if "password" in target.lower():
-            return ("=== ADMIN CREDENTIALS STORE ===\n"
-                    "github_token = ghp_Z58d83Ka92Lq93Kasl38Adk2JqpO11283\n"
-                    "production_db_password = pg_sec_root_9921_cluster\n"
-                    "aws_access_key = AKIAIOSFODNN7EXAMPLE\n"
-                    "aws_secret_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-        elif "map" in target.lower() or "project" in target.lower():
-            return "CONFIDENTIAL: System architecture specification - Internal Use Only."
+            return ("=== PRIVILEGED CREDENTIALS VAULT ===\n"
+                    "github_token            = ghp_Z58d83Ka92Lq93Kasl38Adk2JqpO11283\n"
+                    "db_production_master    = pg_sec_root_9921_cluster\n"
+                    "aws_secret_key          = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
+                    "domain_admin_ntlm_hash  = 8846f7eaee8fb117ad06bdd830b7586c")
+        elif "topology" in target.lower() or "network" in target.lower():
+            return "INTERNAL INFRASTRUCTURE: Subnet 10.0.4.0/24 -> Gateway 10.0.4.1 (Firewall Active)"
         elif "backup" in target.lower() or "database" in target.lower():
-            return "DATABASE DUMP -- INSERT INTO users VALUES (1, 'admin', '$2b$12$K.zWlD...');"
+            return "-- SQL DUMP: TABLE accounts (id INT, username VARCHAR, role VARCHAR, hash VARCHAR);"
         else:
             chk = os.path.join(self.sandbox_dir, target)
             if os.path.exists(chk):
@@ -223,7 +339,7 @@ class HoneyShell(QFrame):
                         return f.read()
                 except Exception:
                     pass
-            return f"The system cannot find the file specified: '{target}'"
+            return f"Cannot find path '{target}' because it does not exist."
 
     def _handle_echo(self, raw_cmd):
         if ">" not in raw_cmd:
@@ -232,13 +348,13 @@ class HoneyShell(QFrame):
             
         try:
             cmd_part, file_part = raw_cmd.split(">", 1)
-            text = cmd_part.replace("echo", "", 1).strip()
+            text = cmd_part.replace("echo", "", 1).replace("write-output", "", 1).strip()
             if text.startswith("'") or text.startswith('"'):
                 text = text[1:-1]
                 
             filename = file_part.strip()
             
-            # Divert file write to Sandbox folder
+            # Divert attacker file payload safely to isolated Sandbox directory
             sandbox_path = os.path.join(self.sandbox_dir, filename)
             os.makedirs(self.sandbox_dir, exist_ok=True)
             
@@ -250,7 +366,7 @@ class HoneyShell(QFrame):
                 items.append(filename)
                 self.virtual_fs[self.current_dir] = items
                 
-            print(f"[DECEPTION] Redirected write payload to sandbox file '{sandbox_path}'", flush=True)
+            print(f"[DECEPTION] Intercepted payload write. Diverted to sandbox '{sandbox_path}'", flush=True)
             return ""
         except Exception as e:
             return f"Error writing file: {e}"
@@ -258,112 +374,88 @@ class HoneyShell(QFrame):
 
 class HoneypotDesktop(QWidget):
     """
-    Deception environment. Grabs a screenshot of the user's desktop
-    prior to layout display, and runs a topmost overlay overlaying it.
+    Full-Screen Deception Overlay replicating the user's active window/desktop 1:1.
+    Renders the exact pre-breach screenshot (with all open apps, browser tabs, VS Code, and taskbar),
+    displaying an authentic draggable floating PowerShell terminal over it.
     
-    Includes global Ctrl+Alt+Shift+U hotkey hook to verify identity.
+    Includes global Ctrl+Alt+Shift+U hotkey hook to verify identity and recover forensics.
     """
-    def __init__(self):
+    def __init__(self, snapshot_path=None):
         super().__init__()
         self.sandbox_dir = os.path.join(project_dir, "data", "sandbox")
         self.log_dir = os.path.join(project_dir, "data", "forensics")
         os.makedirs(self.sandbox_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
         
-        # 1. Grab Desktop Screenshot before display
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.screenshot = screen.grabWindow(0)
-        else:
-            self.screenshot = QPixmap()
+        # 1. Load exact pre-breach screenshot of the user's desktop with all open apps
+        if snapshot_path is None:
+            snapshot_path = os.path.join(self.log_dir, "desktop_snapshot.png")
             
+        if os.path.exists(snapshot_path):
+            self.screenshot = QPixmap(snapshot_path)
+            print(f"[DECEPTION] Replicating exact active desktop from snapshot '{snapshot_path}'", flush=True)
+        else:
+            screen = QApplication.primaryScreen()
+            self.screenshot = screen.grabWindow(0) if screen else QPixmap()
+            print("[DECEPTION] Captured live desktop state for honeypot replication.", flush=True)
+
         self.init_ui()
         self.init_hotkey()
 
     def init_ui(self):
+        # Frameless, topmost overlay covering the primary display
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
-        
         screen_geom = QApplication.primaryScreen().geometry()
         self.setGeometry(screen_geom)
         
-        # Set screenshot as layout background
-        palette = self.palette()
-        palette.setBrush(QPalette.ColorRole.Window, QBrush(self.screenshot))
-        self.setPalette(palette)
-        
-        # Desktop layout
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        
-        desktop_grid = QGridLayout()
-        desktop_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        desktop_grid.setHorizontalSpacing(40)
-        desktop_grid.setVerticalSpacing(30)
-        
-        shortcuts = [
-            ("📁", "My Documents"),
-            ("🗑️", "Recycle Bin"),
-            ("🌐", "Google Chrome"),
-            ("🔒", "Secret Passwords"),
-            ("💻", "Control Panel")
-        ]
-        
-        for idx, (icon, name) in enumerate(shortcuts):
-            col = 0
-            row = idx
-            
-            icon_layout = QVBoxLayout()
-            icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            btn = QPushButton(icon)
-            btn.setStyleSheet("background: transparent; border: none; font-size: 36px;")
-            btn.clicked.connect(self.icon_clicked)
-            icon_layout.addWidget(btn)
-            
-            lbl = QLabel(name)
-            lbl.setStyleSheet("color: #ffffff; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px #000000;")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_layout.addWidget(lbl)
-            
-            desktop_grid.addLayout(icon_layout, row, col)
-            
-        main_layout.addLayout(desktop_grid)
-        
-        # Spawns mock CMD Terminal Prompt
-        self.terminal = HoneyShell(self.sandbox_dir, self.log_dir)
-        self.terminal.setFixedSize(QSize(750, 480))
-        
-        term_layout = QHBoxLayout()
-        term_layout.addWidget(self.terminal)
-        main_layout.addLayout(term_layout)
-        
-        # Taskbar
-        taskbar = QFrame()
-        taskbar.setFixedHeight(40)
-        taskbar.setStyleSheet("background-color: #1a1a1a; border-top: 1px solid #2d2d2d;")
-        tb_layout = QHBoxLayout()
-        tb_layout.setContentsMargins(10, 0, 10, 0)
-        
-        start_btn = QLabel("❖")
-        start_btn.setFont(QFont("Arial", 16))
-        start_btn.setStyleSheet("color: #00a8ff; font-weight: bold;")
-        tb_layout.addWidget(start_btn)
-        tb_layout.addStretch()
-        
-        time_lbl = QLabel(time.strftime("%H:%M  %Y-%m-%d"))
-        time_lbl.setStyleSheet("color: #ffffff; font-size: 11px;")
-        tb_layout.addWidget(time_lbl)
-        
-        taskbar.setLayout(tb_layout)
-        main_layout.addWidget(taskbar)
-        
-        self.setLayout(main_layout)
+        # Non-intrusive Explorer 'Not Responding' status banner
+        self.notice_banner = QLabel("⚠️ Windows Explorer is not responding. Use administrative terminal to diagnose.", self)
+        self.notice_banner.setStyleSheet("""
+            background-color: #2b2b2b;
+            color: #f1f2f6;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 8px 16px;
+            border: 1px solid #485460;
+            border-radius: 6px;
+        """)
+        self.notice_banner.adjustSize()
+        self.notice_banner.move(screen_geom.width() - self.notice_banner.width() - 30, 30)
+        self.notice_banner.hide()
 
-    def icon_clicked(self):
-        self.terminal.console.append("\n[SECURITY] Shortcut folder access locked. Launch terminal shell to access details.")
+        # Floating Draggable Honey-Shell Terminal positioned centrally
+        self.terminal = HoneyShell(self.sandbox_dir, self.log_dir, parent=self)
+        center_x = max(20, (screen_geom.width() - self.terminal.width()) // 2)
+        center_y = max(20, (screen_geom.height() - self.terminal.height()) // 2)
+        self.terminal.move(center_x, center_y)
+
+    def paintEvent(self, event):
+        """Paints the replicated screenshot of the user's actual desktop with 100% pixel fidelity."""
+        painter = QPainter(self)
+        if hasattr(self, 'screenshot') and not self.screenshot.isNull():
+            painter.drawPixmap(self.rect(), self.screenshot)
+        else:
+            painter.fillRect(self.rect(), QColor("#1e1e1e"))
+        super().paintEvent(event)
+
+    def mousePressEvent(self, event):
+        """
+        When the attacker clicks on the replicated open apps in the background,
+        shows a realistic Windows Explorer Not Responding prompt and focuses the terminal.
+        """
+        # Only handle clicks directly on the replicated desktop background
+        if event.pos() not in self.terminal.geometry():
+            self.notice_banner.show()
+            # Bring terminal to top and focus
+            self.terminal.raise_()
+            self.terminal.input_field.setFocus()
+            # Hide banner after 3 seconds
+            QTimer.singleShot(3500, self.notice_banner.hide)
+        super().mousePressEvent(event)
 
     def init_hotkey(self):
-        """Starts a background pynput listener watching for Ctrl+Alt+Shift+U."""
+        """Starts background pynput listener watching for Ctrl+Alt+Shift+U."""
         self.signals = HotkeySignals()
         self.signals.trigger_lock.connect(self.show_verification_prompt)
         
@@ -383,16 +475,12 @@ class HoneypotDesktop(QWidget):
         from security.drift_detector import ThreatEvaluator
         from security.lock_handler import VerificationLockScreen
         
-        # Instantiate a standard OTP prompt
         evaluator = ThreatEvaluator()
         evaluator.is_breached = True
         
         self.lock_prompt = VerificationLockScreen(evaluator)
-        # Redefine the lock screen's trigger_deception method to just close the prompt
-        # so it doesn't try to open another honeypot desktop
         self.lock_prompt.trigger_deception = self.lock_prompt.close
         
-        # Override the check_otp success logic to unlock self too
         original_check = self.lock_prompt.check_otp
         
         def wrapped_check():
@@ -401,16 +489,16 @@ class HoneypotDesktop(QWidget):
             if ok:
                 self.lock_prompt.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
                 QApplication.processEvents()
-                time.sleep(1.2)
+                time.sleep(1.0)
                 self.lock_prompt.close()
-                self.close() # Close deception desktop
+                self.close()
                 
                 # Launch Forensics Recovery Dashboard
                 from dashboard.forensic_dashboard import launch_forensic_dashboard
                 launch_forensic_dashboard()
             else:
                 self.lock_prompt.failed_attempts += 1
-                self.lock_prompt.status_lbl.setText(f"Invalid code. Attempts: {3 - self.lock_prompt.failed_attempts}")
+                self.lock_prompt.status_lbl.setText(f"Invalid code. Attempts remaining: {3 - self.lock_prompt.failed_attempts}")
                 self.lock_prompt.otp_input.clear()
                 if self.lock_prompt.failed_attempts >= 3:
                     self.lock_prompt.close()
@@ -425,15 +513,15 @@ class HoneypotDesktop(QWidget):
             super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        # Intercept Alt+F4 closures
         event.ignore()
 
-def launch_honey_desktop():
+def launch_honey_desktop(snapshot_path=None):
+    """Entrypoint function to run the PyQt6 Honey-Desktop application loop."""
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
         
-    desktop_window = HoneypotDesktop()
+    desktop_window = HoneypotDesktop(snapshot_path=snapshot_path)
     desktop_window.showFullScreen()
     
     app.exec()
