@@ -17,8 +17,15 @@ try:
 except ImportError:
     PLOT_AVAILABLE = False
 
-def load_real_data(file_path="telemetry_data.jsonl"):
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def load_real_data(file_path=None):
     """Loads telemetry rows from the JSONL log file."""
+    if file_path is None:
+        file_path = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
+    elif not os.path.isabs(file_path):
+        file_path = os.path.join(PROJECT_ROOT, file_path)
+
     if not os.path.exists(file_path):
         return []
     
@@ -159,7 +166,7 @@ def run_simulation():
         plt.suptitle("Continuous Authentication - Model Performance (Auto-Calibrated)")
         plt.tight_layout()
         
-        chart_name = "model_performance.png"
+        chart_name = os.path.join(PROJECT_ROOT, "model_performance.png")
         plt.savefig(chart_name, dpi=300)
         print(f"\n[SUCCESS] Generated slide-ready performance visualization chart: '{chart_name}'", flush=True)
     else:
@@ -218,7 +225,7 @@ def main():
     models.save("ml_engine/trained_models.pkl")
     
     # Train PyTorch sequence SVDD model if raw keystroke file exists
-    ks_path = os.path.join("data", "raw", "keystrokes.csv")
+    ks_path = os.path.join(PROJECT_ROOT, "data", "raw", "keystrokes.csv")
     if os.path.exists(ks_path):
         print("\n[INFO] Found raw keystroke timing file. Training Deep SVDD 1D-CNN...", flush=True)
         try:

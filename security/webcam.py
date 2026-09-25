@@ -3,7 +3,9 @@ import cv2
 import time
 from datetime import datetime
 
-def capture_intruder(output_dir="data/forensics"):
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def capture_intruder(output_dir=None):
     """
     Silently initializes the webcam, warms up the sensor to allow exposure
     calibration, attempts to capture a clear image, and saves it.
@@ -11,6 +13,11 @@ def capture_intruder(output_dir="data/forensics"):
     Includes a lightweight Haar Cascade face detection mechanism to verify
     if the intruder's face was captured, falling back to saving the raw capture.
     """
+    if output_dir is None:
+        output_dir = os.path.join(PROJECT_ROOT, "data", "forensics")
+    elif not os.path.isabs(output_dir):
+        output_dir = os.path.join(PROJECT_ROOT, output_dir)
+
     print("[WEBCAM] Triggering silent intruder capture...", flush=True)
     os.makedirs(output_dir, exist_ok=True)
     

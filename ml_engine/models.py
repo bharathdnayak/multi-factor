@@ -5,6 +5,8 @@ from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def categorize_process(proc_name):
     """
     Groups window processes into 5 semantic categories for classification stability:
@@ -135,8 +137,13 @@ class BehavioralModels:
         
         return float(svm_score), float(if_score)
 
-    def save(self, filepath="ml_engine/trained_models.pkl"):
+    def save(self, filepath=None):
         """Saves the models, scalers, and thresholds together as a single serialized pickle file."""
+        if filepath is None:
+            filepath = os.path.join(PROJECT_ROOT, "ml_engine", "trained_models.pkl")
+        elif not os.path.isabs(filepath):
+            filepath = os.path.join(PROJECT_ROOT, filepath)
+
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         data_to_save = {
             "oc_svm": self.oc_svm,
@@ -151,8 +158,13 @@ class BehavioralModels:
             pickle.dump(data_to_save, f)
         print(f"[INFO] Saved model checkpoint to '{filepath}'", flush=True)
 
-    def load(self, filepath="ml_engine/trained_models.pkl"):
+    def load(self, filepath=None):
         """Loads models, scalers, and thresholds from a pickle file."""
+        if filepath is None:
+            filepath = os.path.join(PROJECT_ROOT, "ml_engine", "trained_models.pkl")
+        elif not os.path.isabs(filepath):
+            filepath = os.path.join(PROJECT_ROOT, filepath)
+
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Model file not found at '{filepath}'")
             

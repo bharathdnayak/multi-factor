@@ -21,9 +21,16 @@ else:
 
 from pynput import keyboard, mouse
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class TelemetryAgent:
-    def __init__(self, output_file="telemetry_data.jsonl", window_size_seconds=10):
-        self.output_file = output_file
+    def __init__(self, output_file=None, window_size_seconds=10):
+        if output_file is None:
+            self.output_file = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
+        elif not os.path.isabs(output_file):
+            self.output_file = os.path.join(PROJECT_ROOT, output_file)
+        else:
+            self.output_file = output_file
         self.window_size_seconds = window_size_seconds
         
         # Keyboard telemetry storage
