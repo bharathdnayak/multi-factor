@@ -19,7 +19,7 @@ class ThreatEvaluator:
     Combines Biometric (OC-SVM), Context (Isolation Forest), and Cognitive Task (BehavioralAIController)
     models, applies a 30-second moving average, and coordinates alerting.
     """
-    def __init__(self, models_path="ml_engine/trained_models.pkl", threshold=0.75, cooldown_seconds=300):
+    def __init__(self, models_path="ml_engine/trained_models.pkl", threshold=0.55, cooldown_seconds=120):
         self.models_path = os.path.join(project_dir, models_path)
         self.threshold = threshold
         self.cooldown_seconds = cooldown_seconds
@@ -109,7 +109,19 @@ class ThreatEvaluator:
         
         # 5. Check Anomaly Breach Conditions
         now = time.time()
-        if smoothed_risk >= self.threshold:
+        keys_in_window = telemetry_row.get("keystroke_count", 0)
+
+        # Multi-Criteria Anomaly Trigger Logic:
+        # A) Sustained Behavioral Drift: 30s smoothed risk >= threshold (default 0.55)
+        # B) Acute Imposter Spike: instantaneous risk >= 0.78 with active typing (keys >= 2)
+        # C) Successive High-Risk Windows: 2 recent windows with risk >= 0.65
+        is_sustained = (smoothed_risk >= self.threshold)
+        is_acute = (fused_risk >= 0.78 and keys_in_window >= 2)
+        is_two_spike = (len(self.risk_history) >= 2 and fused_risk >= 0.65 and list(self.risk_history)[-2] >= 0.60)
+
+        should_trigger = is_sustained or is_acute or is_two_spike
+
+        if should_trigger:
             if not self.is_breached and (now - self.last_alert_time > self.cooldown_seconds):
                 # Breach declared! Trigger security events
                 self.is_breached = True
@@ -117,7 +129,9 @@ class ThreatEvaluator:
                 self.active_otp = generate_otp()
                 triggered = True
                 
-                print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! Smoothed Risk: {smoothed_risk:.4f}", flush=True)
+                trigger_reason = "ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT")
+                print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! ({trigger_reason})", flush=True)
+                print(f"[ALERT] Instant Risk: {fused_risk:.4f} | Smoothed (30s): {smoothed_risk:.4f} (Threshold: {self.threshold:.2f})", flush=True)
                 print(f"[OTP] Generated Session OTP: >>> {self.active_otp} <<< (saved to models/.active_otp)", flush=True)
                 print(f"[OTP] Master Bypass Password: >>> admin <<< (or admin123 / 123456)", flush=True)
                 
@@ -205,7 +219,15 @@ class ThreatEvaluator:
                     try:
                         row = json.loads(line)
                         f_risk, s_risk, triggered = self.evaluate_row(row)
-                        print(f"[DAEMON] Scored event. Risk: {f_risk:.4f} | Smoothed (30s): {s_risk:.4f}", flush=True)
+                        status_tag = ""
+                        if f_risk >= 0.78:
+                            status_tag = " >>> CRITICAL INTRUDER SPIKE! <<<"
+                        elif f_risk >= 0.55:
+                            status_tag = " [ELEVATED DRIFT]"
+                        elif f_risk <= 0.15:
+                            status_tag = " [NORMAL OWNER]"
+                            
+                        print(f"[DAEMON] Scored event. Risk: {f_risk:.4f} | Smoothed (30s): {s_risk:.4f}{status_tag}", flush=True)
                         
                         if triggered:
                             print("[DAEMON] Intrusion breach triggered! Spawning verification UI...", flush=True)
