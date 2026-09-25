@@ -143,16 +143,21 @@ class BehavioralModels:
             
         bio, ctx = self.extract_features(json_data)
         
-        bio_scaled = self.biometric_scaler.transform(bio.reshape(1, -1))
         ctx_scaled = self.context_scaler.transform(ctx.reshape(1, -1))
-        
-        # Get raw decision function scores
-        svm_raw = self.oc_svm.decision_function(bio_scaled)[0]
         if_raw = self.i_forest.decision_function(ctx_scaled)[0]
-        
-        # Sigmoid normalization centered around auto-calibrated thresholds
-        svm_score = 1.0 / (1.0 + np.exp(-25.0 * (svm_raw - self.biometric_threshold)))
         if_score = 1.0 / (1.0 + np.exp(-45.0 * (if_raw - (self.context_threshold + 0.02))))
+        
+        # If no keys were pressed in this window, biometrics are idle (normal non-intrusion state)
+        keys = json_data.get("keystroke_count", 0)
+        mouse_events = json_data.get("mouse_events", 0)
+        dwell_val = json_data.get("dwell_mean", 0.0)
+        
+        if (keys == 0 and dwell_val == 0.0) and mouse_events < 5:
+            svm_score = 0.98
+        else:
+            bio_scaled = self.biometric_scaler.transform(bio.reshape(1, -1))
+            svm_raw = self.oc_svm.decision_function(bio_scaled)[0]
+            svm_score = 1.0 / (1.0 + np.exp(-25.0 * (svm_raw - self.biometric_threshold)))
         
         return float(svm_score), float(if_score)
 

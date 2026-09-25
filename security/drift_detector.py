@@ -97,11 +97,21 @@ class ThreatEvaluator:
                 fused_conf = w_svm * svm_conf + w_if * if_conf + w_ctrl * ctrl_conf
                 fused_risk = 1.0 - fused_conf
                 
+                # Check for idle window (no keys and minimal mouse)
+                keys_in_window = telemetry_row.get("keystroke_count", 0)
+                mouse_in_window = telemetry_row.get("mouse_events", 0)
+                dwell_val = telemetry_row.get("dwell_mean", 0.0)
+                
+                is_idle_window = (keys_in_window == 0 and dwell_val == 0.0 and mouse_in_window < 5)
+                if is_idle_window:
+                    # In an untouched/idle window, cap risk to baseline normality
+                    fused_risk = min(0.05, fused_risk)
+                
                 # 4. Add to sliding queue for 30s smoothing
                 self.risk_history.append(fused_risk)
             except Exception as e:
                 print(f"[EVALUATOR] [ERROR] Scoring exception: {e}", file=sys.stderr, flush=True)
-                fused_risk = 0.5
+                fused_risk = 0.05
                 self.risk_history.append(fused_risk)
                 
         # 4. Calculate smoothed moving average
@@ -110,16 +120,20 @@ class ThreatEvaluator:
         # 5. Check Anomaly Breach Conditions
         now = time.time()
         keys_in_window = telemetry_row.get("keystroke_count", 0)
+        dwell_val = telemetry_row.get("dwell_mean", 0.0)
+        has_active_keystrokes = (keys_in_window >= 2 or dwell_val > 0.0)
 
-        # Multi-Criteria Anomaly Trigger Logic:
-        # A) Sustained Behavioral Drift: 30s smoothed risk >= threshold (default 0.55)
-        # B) Acute Imposter Spike: instantaneous risk >= 0.78 with active typing (keys >= 2)
-        # C) Successive High-Risk Windows: 2 recent windows with risk >= 0.65
-        is_sustained = (smoothed_risk >= self.threshold)
-        is_acute = (fused_risk >= 0.78 and keys_in_window >= 2)
-        is_two_spike = (len(self.risk_history) >= 2 and fused_risk >= 0.65 and list(self.risk_history)[-2] >= 0.60)
+        # Multi-Criteria Anomaly Trigger Logic (Requires Active Keystrokes):
+        # A) Acute Imposter Spike: instantaneous risk >= 0.78 with active typing
+        is_acute = (fused_risk >= 0.78 and has_active_keystrokes)
+        
+        # B) Successive High-Risk Windows: 2 recent windows with risk >= 0.65 with active typing
+        is_two_spike = (len(self.risk_history) >= 2 and fused_risk >= 0.65 and list(self.risk_history)[-2] >= 0.60 and has_active_keystrokes)
+        
+        # C) Sustained Behavioral Drift: Requires FULL 30s queue (3 windows) and sustained risk >= 0.65 with active typing
+        is_sustained = (len(self.risk_history) >= 3 and smoothed_risk >= 0.65 and has_active_keystrokes)
 
-        should_trigger = is_sustained or is_acute or is_two_spike
+        should_trigger = (is_acute or is_two_spike or is_sustained)
 
         if should_trigger:
             if not self.is_breached and (now - self.last_alert_time > self.cooldown_seconds):
