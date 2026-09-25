@@ -39,39 +39,39 @@
   "code.exe::ide_development": {
     "app_name": "code.exe",
     "context_mode": "ide_development",
-    "sample_count": 147,
+    "sample_count": 150,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 3.6429,
-        "std": 0.8748
+        "mean": 3.1234,
+        "std": 1.2186
       },
       "thinking_pause_ratio": {
-        "mean": 0.2755,
-        "std": 0.0429
+        "mean": 0.2362,
+        "std": 0.0721
       },
       "avg_burst_length": {
-        "mean": 31.4061,
-        "std": 4.6157
+        "mean": 30.4399,
+        "std": 7.7494
       },
       "code_symbol_ratio": {
-        "mean": 0.252,
-        "std": 0.0298
+        "mean": 0.216,
+        "std": 0.058
       },
       "backspace_ratio": {
-        "mean": 0.1158,
-        "std": 0.0234
+        "mean": 0.0993,
+        "std": 0.0349
       },
       "dwell_mean": {
-        "mean": 0.0833,
-        "std": 0.0081
+        "mean": 0.1133,
+        "std": 0.0338
       },
       "flight_mean": {
-        "mean": 0.1367,
-        "std": 0.0154
+        "mean": 0.1614,
+        "std": 0.037
       }
     },
     "first_seen": "2026-09-25 18:53:26",
-    "last_updated": "2026-09-25 18:53:27"
+    "last_updated": "2026-09-25 19:09:10"
   },
   "chrome.exe::ai_chat_prompting": {
     "app_name": "chrome.exe",
@@ -187,6 +187,43 @@
   "unknown::general_productivity": {
     "app_name": "unknown",
     "context_mode": "general_productivity",
+    "sample_count": 2,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 1.9605,
+        "std": 0.9852
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.1958,
+        "std": 0.1029
+      },
+      "code_symbol_ratio": {
+        "mean": 0.15,
+        "std": 0.08
+      },
+      "backspace_ratio": {
+        "mean": 0.25,
+        "std": 0.13
+      },
+      "dwell_mean": {
+        "mean": 0.0799,
+        "std": 0.0163
+      },
+      "flight_mean": {
+        "mean": 0.1663,
+        "std": 0.0306
+      },
+      "avg_burst_length": {
+        "mean": 10.0,
+        "std": 2.5
+      }
+    },
+    "first_seen": "2026-09-25 19:02:56",
+    "last_updated": "2026-09-25 19:05:10"
+  },
+  "chrome.exe::web_browsing": {
+    "app_name": "chrome.exe",
+    "context_mode": "web_browsing",
     "sample_count": 1,
     "metrics": {
       "avg_thinking_pause": {
@@ -197,6 +234,10 @@
         "mean": 0.0,
         "std": 0.01
       },
+      "avg_burst_length": {
+        "mean": 12.0,
+        "std": 3.0
+      },
       "code_symbol_ratio": {
         "mean": 0.0,
         "std": 0.01
@@ -206,15 +247,126 @@
         "std": 0.01
       },
       "dwell_mean": {
-        "mean": 0.09,
-        "std": 0.0225
+        "mean": 0.1355,
+        "std": 0.0339
       },
       "flight_mean": {
-        "mean": 0.14,
-        "std": 0.035
+        "mean": 0.1067,
+        "std": 0.0267
       }
     },
-    "first_seen": "2026-09-25 19:02:56",
-    "last_updated": "2026-09-25 19:02:56"
+    "first_seen": "2026-09-25 19:05:20",
+    "last_updated": "2026-09-25 19:05:20"
+  },
+  "windowsterminal.exe::terminal_command_line": {
+    "app_name": "WindowsTerminal.exe",
+    "context_mode": "terminal_command_line",
+    "sample_count": 3,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.0067
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.0067
+      },
+      "avg_burst_length": {
+        "mean": 9.0,
+        "std": 5.0
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.0067
+      },
+      "backspace_ratio": {
+        "mean": 0.0,
+        "std": 0.0067
+      },
+      "dwell_mean": {
+        "mean": 0.334,
+        "std": 0.0951
+      },
+      "flight_mean": {
+        "mean": 0.5126,
+        "std": 0.1105
+      }
+    },
+    "first_seen": "2026-09-25 19:05:40",
+    "last_updated": "2026-09-25 19:07:30"
+  },
+  "antigravity.exe::ai_chat_prompting": {
+    "app_name": "Antigravity.exe",
+    "context_mode": "ai_chat_prompting",
+    "sample_count": 2,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "avg_burst_length": {
+        "mean": 29.0,
+        "std": 11.125
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "backspace_ratio": {
+        "mean": 0.0817,
+        "std": 0.0458
+      },
+      "dwell_mean": {
+        "mean": 0.2466,
+        "std": 0.0971
+      },
+      "flight_mean": {
+        "mean": 0.2969,
+        "std": 0.1596
+      }
+    },
+    "first_seen": "2026-09-25 19:06:00",
+    "last_updated": "2026-09-25 19:07:00"
+  },
+  "explorer.exe::general_productivity": {
+    "app_name": "explorer.exe",
+    "context_mode": "general_productivity",
+    "sample_count": 2,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "avg_burst_length": {
+        "mean": 10.0,
+        "std": 1.875
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "backspace_ratio": {
+        "mean": 0.0,
+        "std": 0.0075
+      },
+      "dwell_mean": {
+        "mean": 0.3988,
+        "std": 0.0768
+      },
+      "flight_mean": {
+        "mean": 0.2079,
+        "std": 0.0287
+      }
+    },
+    "first_seen": "2026-09-25 19:06:30",
+    "last_updated": "2026-09-25 19:07:40"
   }
 }
