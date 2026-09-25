@@ -51,7 +51,7 @@ class BehavioralModels:
             "app_dwell_mean", "app_flight_mean", "app_backspace_ratio"
         ]
         self.context_feature_keys = [
-            "hour_of_day", "cpu_usage", "ram_usage_mb", "app_hash",
+            "hour_sin", "hour_cos", "cpu_usage", "ram_usage_mb", "app_hash",
             "app_special_ratio", "app_pause_ratio", "app_scroll_count"
         ]
 
@@ -100,10 +100,18 @@ class BehavioralModels:
                 val = float(json_data.get(key, 0.0))
             biometrics.append(float(val))
             
-        # Context vector
+        # Context vector with cyclical hour encoding: sin(2*pi*hour/24) and cos(2*pi*hour/24)
+        hour = float(json_data.get("hour_of_day", 12.0))
+        hour_sin = float(json_data.get("hour_sin", np.sin(2.0 * np.pi * hour / 24.0)))
+        hour_cos = float(json_data.get("hour_cos", np.cos(2.0 * np.pi * hour / 24.0)))
+        
         context = []
         for key in self.context_feature_keys:
-            if key == "app_hash":
+            if key == "hour_sin":
+                context.append(hour_sin)
+            elif key == "hour_cos":
+                context.append(hour_cos)
+            elif key == "app_hash":
                 context.append(float(app_hash))
             elif key in ("app_special_ratio", "app_pause_ratio"):
                 context.append(float(np.clip(json_data.get(key, 0.0), 0.0, 1.0)))
@@ -166,7 +174,7 @@ class BehavioralModels:
         mouse_events = json_data.get("mouse_events", 0)
         dwell_val = json_data.get("dwell_mean", 0.0)
         
-        if (keys == 0 and dwell_val == 0.0) and mouse_events < 5:
+        if (keys == 0 and dwell_val == 0.0):
             svm_score = 0.98
         else:
             bio_scaled = self.biometric_scaler.transform(bio.reshape(1, -1))
