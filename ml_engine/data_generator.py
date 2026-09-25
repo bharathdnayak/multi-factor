@@ -345,16 +345,69 @@ def run_continuous_drip(interval_seconds=15, silent=False):
             print("[INFO] Background Drip Generator stopped.")
 
 
+def generate_unauthorized_dataset(output_file=None, num_samples=120, silent=False):
+    """
+    Generates a realistic, highly anomalous unauthorized imposter dataset spanning 4 attack typologies:
+    1. Frantic / Rapid Typer (erratic bursts, dwell ~0.045s, flight ~0.075s, high mouse jerk)
+    2. Sluggish Hunt-and-Peck Imposter (dwell ~0.240s, flight ~0.390s, sluggish mouse)
+    3. Rogue Process Attacker (mimikatz.exe, cmd.exe, powershell.exe, high CPU, abnormal hours)
+    4. Cross-User Cognitive Imposter (LeetCode copy-pasting, 0 thinking pauses, 0 syntax symbols)
+    """
+    if output_file is None:
+        output_file = os.path.join(PROJECT_ROOT, "data", "unauthorized_dataset.jsonl")
+    elif not os.path.isabs(output_file):
+        output_file = os.path.join(PROJECT_ROOT, output_file)
+        
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    from ml_engine.evaluate_metrics import generate_imposter_telemetry
+    from ml_engine.sequence_model import DeepSVDDDetector
+    
+    rows = generate_imposter_telemetry(num_samples=num_samples, seed=42)
+    seq_det = DeepSVDDDetector()
+    raw_imp = os.path.join(PROJECT_ROOT, "data", "raw", "imposter_keystrokes.csv")
+    imp_seqs = seq_det.extract_raw_sequences(raw_imp) if os.path.exists(raw_imp) else []
+    
+    typology_labels = {
+        0: "Frantic / Rapid Typist",
+        1: "Sluggish Hunt-and-Peck Imposter",
+        2: "Rogue Process Attacker (cmd/powershell)",
+        3: "Cross-User Cognitive Imposter (LeetCode Copy-Paster)"
+    }
+    
+    for i, r in enumerate(rows):
+        typology = i % 4
+        r["typology_id"] = typology
+        r["typology_name"] = typology_labels.get(typology, "Unauthorized Intruder")
+        r["is_authorized"] = False
+        if len(imp_seqs) > 0:
+            seq = imp_seqs[i % len(imp_seqs)]
+            r["dwell_sequence"] = [round(float(v), 5) for v in seq[0]]
+            r["flight_sequence"] = [round(float(v), 5) for v in seq[1]]
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+            
+    if not silent:
+        print(f"[SUCCESS] Generated {len(rows)} unauthorized intrusion records in '{output_file}'", flush=True)
+    return rows
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Genuine Behavioral Dataset Generator & Bootstrapper")
-    parser.add_argument("--bootstrap", action="store_true", help="Generate initial large dataset (default: 1200 sessions) and train models")
+    parser = argparse.ArgumentParser(description="Multi-Factor Behavioral Dataset Generator & Intrusion Simulator")
+    parser.add_argument("--bootstrap", action="store_true", help="Generate initial large genuine dataset (default: 1200 sessions) and train models")
     parser.add_argument("--sessions", type=int, default=1200, help="Number of micro-sessions to generate in bootstrap mode")
     parser.add_argument("--drip", action="store_true", help="Run continuously in background feeding genuine data at intervals")
     parser.add_argument("--interval", type=int, default=15, help="Interval in seconds for drip mode")
+    parser.add_argument("--unauthorized", action="store_true", help="Generate dedicated unauthorized imposter intrusion dataset")
+    parser.add_argument("--output", type=str, default=None, help="Custom output file path for generated dataset")
     parser.add_argument("--silent", action="store_true", help="Suppress console outputs")
     args = parser.parse_args()
 
-    if args.drip:
+    if args.unauthorized:
+        generate_unauthorized_dataset(output_file=args.output, num_samples=args.sessions if args.sessions != 1200 else 120, silent=args.silent)
+    elif args.drip:
         run_continuous_drip(interval_seconds=args.interval, silent=args.silent)
     elif args.bootstrap or len(sys.argv) == 1:
         bootstrap_dataset(num_sessions=args.sessions, silent=args.silent)
