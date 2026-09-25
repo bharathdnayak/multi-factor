@@ -15,13 +15,77 @@ if sys.platform == "win32":
     import win32api
     import win32con
 else:
-    # Fallback or placeholder for non-Windows development
     win32gui = None
     win32process = None
 
 from pynput import keyboard, mouse
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+class AppBehaviorProfiler:
+    """
+    Tracks and maintains fine-grained behavioral interaction patterns inside
+    specific applications (e.g. Antigravity IDE, browsers, terminals).
+    Records typing rhythm, error correction (backspaces), pause cadence (thinking/reading),
+    special shortcut usage, and mouse click/scroll dynamics.
+    """
+    def __init__(self, profiles_path=None):
+        if profiles_path is None:
+            self.profiles_path = os.path.join(PROJECT_ROOT, "data", "app_profiles.json")
+        else:
+            self.profiles_path = profiles_path
+        self.lock = threading.Lock()
+        self.profiles = self._load_profiles()
+
+    def _load_profiles(self):
+        if os.path.exists(self.profiles_path):
+            try:
+                with open(self.profiles_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def save_profiles(self):
+        os.makedirs(os.path.dirname(self.profiles_path), exist_ok=True)
+        try:
+            with open(self.profiles_path, "w", encoding="utf-8") as f:
+                json.dump(self.profiles, f, indent=2)
+        except Exception:
+            pass
+
+    def update_profile(self, app_name, dwell, flight, backspace_ratio, special_ratio, scroll_count, pause_ratio):
+        if not app_name or app_name == "unknown":
+            return
+            
+        with self.lock:
+            if app_name not in self.profiles:
+                self.profiles[app_name] = {
+                    "observations": 0,
+                    "avg_dwell": float(dwell),
+                    "avg_flight": float(flight),
+                    "avg_backspace_ratio": float(backspace_ratio),
+                    "avg_special_ratio": float(special_ratio),
+                    "avg_scroll_count": int(scroll_count),
+                    "avg_pause_ratio": float(pause_ratio),
+                    "last_updated": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+            
+            p = self.profiles[app_name]
+            n = p["observations"]
+            alpha = 1.0 / (n + 1) if n < 50 else 0.05
+            p["avg_dwell"] = round((1 - alpha) * p["avg_dwell"] + alpha * dwell, 4)
+            p["avg_flight"] = round((1 - alpha) * p["avg_flight"] + alpha * flight, 4)
+            p["avg_backspace_ratio"] = round((1 - alpha) * p["avg_backspace_ratio"] + alpha * backspace_ratio, 4)
+            p["avg_special_ratio"] = round((1 - alpha) * p["avg_special_ratio"] + alpha * special_ratio, 4)
+            p["avg_scroll_count"] = round((1 - alpha) * p["avg_scroll_count"] + alpha * scroll_count, 1)
+            p["avg_pause_ratio"] = round((1 - alpha) * p["avg_pause_ratio"] + alpha * pause_ratio, 4)
+            p["observations"] += 1
+            p["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Save to disk every 5 observations
+            if p["observations"] % 5 == 0:
+                self.save_profiles()
 
 class TelemetryAgent:
     def __init__(self, output_file=None, window_size_seconds=10):
@@ -32,6 +96,7 @@ class TelemetryAgent:
         else:
             self.output_file = output_file
         self.window_size_seconds = window_size_seconds
+        self.profiler = AppBehaviorProfiler()
         
         # Keyboard telemetry storage
         self.active_presses = {}  # key_hash -> press_timestamp
@@ -39,6 +104,11 @@ class TelemetryAgent:
         self.dwell_times = []
         self.flight_times = []
         self.key_count = 0
+        
+        # In-App Specific Metrics
+        self.backspace_count = 0
+        self.special_count = 0
+        self.pause_durations = []
 
         # Mouse telemetry storage
         self.current_stroke = []  # List of (x, y, timestamp)
@@ -51,6 +121,8 @@ class TelemetryAgent:
         self.jerks = []
         self.straightness_scores = []
         self.mouse_event_count = 0
+        self.mouse_clicks = 0
+        self.mouse_scrolls = 0
 
         # Control flags
         self.running = False
@@ -84,24 +156,17 @@ class TelemetryAgent:
         try:
             hwnd = win32gui.GetForegroundWindow()
             if hwnd:
-                # Get window title
                 title = win32gui.GetWindowText(hwnd)
                 if title:
                     window_title = title
                 
-                # Get process ID
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 if pid:
                     proc = psutil.Process(pid)
                     app_name = proc.name()
-                    
-                    # Memory info in MB
                     ram_usage = proc.memory_info().rss / (1024 * 1024)
-                    
-                    # CPU usage (interval=None is non-blocking but gives usage since last call/creation)
                     cpu_usage = proc.cpu_percent()
         except Exception:
-            # Silent fallback to protect background thread
             pass
 
         return app_name, window_title, cpu_usage, ram_usage
@@ -115,17 +180,24 @@ class TelemetryAgent:
         key_hash = self._hash_key(key)
         now = time.time()
         
-        # Log press if not already logged (handle key repeat events)
+        # Check for error-correction (Backspace / Delete)
+        if key in (keyboard.Key.backspace, keyboard.Key.delete):
+            self.backspace_count += 1
+        elif key in (keyboard.Key.enter, keyboard.Key.tab, keyboard.Key.shift, keyboard.Key.shift_r, 
+                     keyboard.Key.ctrl, keyboard.Key.ctrl_r, keyboard.Key.alt, keyboard.Key.cmd):
+            self.special_count += 1
+            
+        # Track inter-keystroke thinking/reading pauses (1.5s to 12s)
+        if self.last_release_time is not None:
+            gap = now - self.last_release_time
+            if 1.5 <= gap <= 12.0:
+                self.pause_durations.append(gap)
+            elif gap < 5.0:
+                self.flight_times.append(gap)
+            self.last_release_time = None
+        
         if key_hash not in self.active_presses:
             self.active_presses[key_hash] = now
-            
-        # Calculate flight time from the last release
-        if self.last_release_time is not None:
-            flight = now - self.last_release_time
-            # Discard flight times longer than 5 seconds (indicating a long pause, not typing rhythm)
-            if flight <= 5.0:
-                self.flight_times.append(flight)
-            self.last_release_time = None
 
     def on_release(self, key):
         if not self.running:
@@ -135,11 +207,10 @@ class TelemetryAgent:
         now = time.time()
         self.last_release_time = now
         
-        # Calculate dwell time
         if key_hash in self.active_presses:
             press_time = self.active_presses.pop(key_hash)
             dwell = now - press_time
-            if dwell <= 2.0:  # Exclude keys held for more than 2 seconds (e.g. game keys)
+            if dwell <= 2.0:
                 self.dwell_times.append(dwell)
 
     # --- Mouse Callbacks & Stroke Analysis ---
@@ -151,31 +222,35 @@ class TelemetryAgent:
         self.mouse_event_count += 1
         
         with self.stroke_lock:
-            # End current stroke if idle threshold is crossed
             if self.current_stroke and (now - self.current_stroke[-1][2] > self.stroke_idle_threshold):
                 self._process_stroke()
             
             self.current_stroke.append((x, y, now))
 
+    def on_click(self, x, y, button, pressed):
+        if self.running and pressed:
+            self.mouse_clicks += 1
+
+    def on_scroll(self, x, y, dx, dy):
+        if self.running:
+            self.mouse_scrolls += abs(dy) if dy != 0 else 1
+
     def _process_stroke(self):
         """Analyzes a single mouse movement stroke to extract physics features."""
         stroke = self.current_stroke
-        self.current_stroke = []  # Clear for the next stroke
+        self.current_stroke = []
         
         if len(stroke) < 3:
             return
             
-        # 1. Straightness Curvature
         x_coords = [p[0] for p in stroke]
         y_coords = [p[1] for p in stroke]
         times = [p[2] for p in stroke]
         
-        # Straight-line distance between start and end
         dx = x_coords[-1] - x_coords[0]
         dy = y_coords[-1] - y_coords[0]
         straight_dist = math.sqrt(dx**2 + dy**2)
         
-        # Cumulative path length
         path_len = 0.0
         segment_velocities = []
         
@@ -194,15 +269,12 @@ class TelemetryAgent:
             straightness = straight_dist / path_len
             self.straightness_scores.append(min(straightness, 1.0))
             
-        # 2. Velocity, Acceleration, Jerk
         if len(segment_velocities) >= 1:
             self.velocities.extend(segment_velocities)
             
-            # Accelerations (change in velocity over change in time)
             segment_accelerations = []
             for i in range(len(segment_velocities) - 1):
                 dv = segment_velocities[i+1] - segment_velocities[i]
-                # dt is the average time between segments
                 dt = (times[i+2] - times[i]) / 2.0
                 if dt > 0:
                     segment_accelerations.append(dv / dt)
@@ -210,7 +282,6 @@ class TelemetryAgent:
             if segment_accelerations:
                 self.accelerations.extend(segment_accelerations)
                 
-                # Jerk (change in acceleration over change in time)
                 segment_jerks = []
                 for i in range(len(segment_accelerations) - 1):
                     da = segment_accelerations[i+1] - segment_accelerations[i]
@@ -226,15 +297,13 @@ class TelemetryAgent:
         while self.running:
             time.sleep(self.window_size_seconds)
             
-            # Check if there is an active stroke still open and process it
             with self.stroke_lock:
                 if self.current_stroke:
                     self._process_stroke()
 
-            # Retrieve active process context info
             app_name, win_title, cpu, ram = self._get_active_window_context()
             
-            # Aggregate Key features
+            # Aggregate Keystroke features
             avg_dwell = np.mean(self.dwell_times) if self.dwell_times else 0.0
             std_dwell = np.std(self.dwell_times) if self.dwell_times else 0.0
             avg_flight = np.mean(self.flight_times) if self.flight_times else 0.0
@@ -246,6 +315,36 @@ class TelemetryAgent:
             avg_jerk = np.mean(self.jerks) if self.jerks else 0.0
             avg_straight = np.mean(self.straightness_scores) if self.straightness_scores else 1.0
 
+            # Calculate Intra-Application Behavioral Ratios
+            total_keys = max(1, self.key_count)
+            backspace_ratio = self.backspace_count / total_keys
+            special_ratio = self.special_count / total_keys
+            pause_ratio = min(1.0, (sum(self.pause_durations) / self.window_size_seconds)) if self.pause_durations else 0.0
+
+            # Classify High-Level Intra-App Task Pattern
+            app_lower = app_name.lower()
+            if any(k in app_lower for k in ["antigravity", "code", "cursor", "pycharm"]):
+                if pause_ratio > 0.25 and special_ratio > 0.12:
+                    interaction_mode = "ai_chat_or_prompting"
+                else:
+                    interaction_mode = "rapid_code_editing"
+            elif any(k in app_lower for k in ["chrome", "brave", "edge", "firefox"]):
+                if self.mouse_scrolls > 8:
+                    interaction_mode = "reading_and_browsing"
+                else:
+                    interaction_mode = "web_interaction"
+            elif any(k in app_lower for k in ["powershell", "cmd", "terminal", "bash"]):
+                interaction_mode = "command_execution"
+            else:
+                interaction_mode = "general_productivity"
+
+            # Update Persistent Per-Application Profiler
+            if avg_dwell > 0.0 or self.key_count > 0:
+                self.profiler.update_profile(
+                    app_name, avg_dwell, avg_flight, backspace_ratio, 
+                    special_ratio, self.mouse_scrolls, pause_ratio
+                )
+
             # Construct the feature JSON
             telemetry_row = {
                 "timestamp": time.time(),
@@ -255,6 +354,14 @@ class TelemetryAgent:
                 "dwell_std": float(std_dwell),
                 "flight_mean": float(avg_flight),
                 "flight_std": float(std_flight),
+                "app_dwell_mean": float(avg_dwell),
+                "app_flight_mean": float(avg_flight),
+                "app_backspace_ratio": float(round(backspace_ratio, 4)),
+                "app_special_ratio": float(round(special_ratio, 4)),
+                "app_click_count": int(self.mouse_clicks),
+                "app_scroll_count": int(self.mouse_scrolls),
+                "app_pause_ratio": float(round(pause_ratio, 4)),
+                "interaction_mode": interaction_mode,
                 "mouse_events": self.mouse_event_count,
                 "mouse_velocity_mean": float(avg_vel),
                 "mouse_acceleration_mean": float(avg_acc),
@@ -266,18 +373,22 @@ class TelemetryAgent:
                 "ram_usage_mb": float(ram)
             }
             
-            # Reset logs for next window
+            # Reset window logs
             self.dwell_times = []
             self.flight_times = []
             self.key_count = 0
+            self.backspace_count = 0
+            self.special_count = 0
+            self.pause_durations = []
             
             self.velocities = []
             self.accelerations = []
             self.jerks = []
             self.straightness_scores = []
             self.mouse_event_count = 0
+            self.mouse_clicks = 0
+            self.mouse_scrolls = 0
 
-            # Output to stream (stdout and file append)
             json_str = json.dumps(telemetry_row)
             print(f"[TELEMETRY] {json_str}", flush=True)
             
@@ -289,11 +400,15 @@ class TelemetryAgent:
 
     def start(self):
         """Starts listeners and the aggregation worker thread."""
-        print("[INFO] Starting Telemetry Agent...", flush=True)
+        print("[INFO] Starting Telemetry Agent with Intra-App Behavioral Profiling...", flush=True)
         self.running = True
         
-        # Start mouse hook
-        self.mouse_listener = mouse.Listener(on_move=self.on_move)
+        # Start mouse hook with move, click, and scroll listeners
+        self.mouse_listener = mouse.Listener(
+            on_move=self.on_move,
+            on_click=self.on_click,
+            on_scroll=self.on_scroll
+        )
         self.mouse_listener.start()
         
         # Start keyboard hook
@@ -316,13 +431,13 @@ class TelemetryAgent:
         if self.keyboard_listener:
             self.keyboard_listener.stop()
             
-        print("[INFO] Telemetry Agent stopped successfully.", flush=True)
+        self.profiler.save_profiles()
+        print("[INFO] Telemetry Agent stopped successfully. App profiles saved.", flush=True)
 
 if __name__ == "__main__":
     agent = TelemetryAgent()
     try:
         agent.start()
-        # Keep main thread alive
         while True:
             time.sleep(1)
     except KeyboardInterrupt:

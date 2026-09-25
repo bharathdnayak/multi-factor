@@ -20,7 +20,7 @@ except ImportError:
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_real_data(file_path=None):
-    """Loads telemetry rows from the JSONL log file."""
+    """Loads telemetry rows from the JSONL log file, normalizing older formats."""
     if file_path is None:
         file_path = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
     elif not os.path.isabs(file_path):
@@ -35,7 +35,21 @@ def load_real_data(file_path=None):
             line = line.strip()
             if line:
                 try:
-                    rows.append(json.loads(line))
+                    r = json.loads(line)
+                    # Normalize intra-app metrics for historic rows
+                    if "app_dwell_mean" not in r:
+                        r["app_dwell_mean"] = r.get("dwell_mean", 0.09)
+                    if "app_flight_mean" not in r:
+                        r["app_flight_mean"] = r.get("flight_mean", 0.12)
+                    if "app_backspace_ratio" not in r:
+                        r["app_backspace_ratio"] = 0.12
+                    if "app_special_ratio" not in r:
+                        r["app_special_ratio"] = 0.20
+                    if "app_pause_ratio" not in r:
+                        r["app_pause_ratio"] = 0.38
+                    if "app_scroll_count" not in r:
+                        r["app_scroll_count"] = 4
+                    rows.append(r)
                 except Exception:
                     pass
     return rows
@@ -47,12 +61,21 @@ def generate_synthetic_data(num_samples=200, is_attacker=False):
     
     for _ in range(num_samples):
         if not is_attacker:
-            # Owner: consistent fast typing, smooth mouse curves, developer apps
+            # Owner: consistent fast typing, smooth mouse curves, developer apps & AI chat
+            app_choice = str(np.random.choice(["Antigravity.exe", "code.exe", "chrome.exe", "brave.exe", "Spotify.exe", "grafana.exe"], p=[0.35, 0.25, 0.20, 0.10, 0.05, 0.05]))
             row = {
                 "dwell_mean": float(np.random.normal(0.09, 0.012)),
                 "dwell_std": float(np.random.normal(0.015, 0.003)),
                 "flight_mean": float(np.random.normal(0.12, 0.015)),
                 "flight_std": float(np.random.normal(0.02, 0.004)),
+                "app_dwell_mean": float(np.random.normal(0.088, 0.01)),
+                "app_flight_mean": float(np.random.normal(0.115, 0.012)),
+                "app_backspace_ratio": float(np.clip(np.random.normal(0.12, 0.03), 0.0, 0.5)),
+                "app_special_ratio": float(np.clip(np.random.normal(0.20, 0.04), 0.0, 0.6)),
+                "app_click_count": int(np.random.poisson(4)),
+                "app_scroll_count": int(np.random.poisson(6)),
+                "app_pause_ratio": float(np.clip(np.random.normal(0.40, 0.08), 0.0, 1.0)),
+                "interaction_mode": "ai_chat_or_prompting",
                 "mouse_velocity_mean": float(np.random.normal(250.0, 30.0)),
                 "mouse_acceleration_mean": float(np.random.normal(12.0, 2.0)),
                 "mouse_jerk_mean": float(np.random.normal(1.1, 0.15)),
@@ -60,7 +83,7 @@ def generate_synthetic_data(num_samples=200, is_attacker=False):
                 "hour_of_day": 14,
                 "cpu_usage": float(np.random.normal(2.5, 0.8)),
                 "ram_usage_mb": float(np.random.normal(250.0, 40.0)),
-                "active_app": str(np.random.choice(["Antigravity.exe", "code.exe", "chrome.exe", "brave.exe", "Spotify.exe", "grafana.exe"], p=[0.35, 0.25, 0.20, 0.10, 0.05, 0.05]))
+                "active_app": app_choice
             }
         else:
             # Attacker: slow hunt-and-peck typing, erratic jittery mouse, terminal/admin apps
@@ -69,6 +92,14 @@ def generate_synthetic_data(num_samples=200, is_attacker=False):
                 "dwell_std": float(np.random.normal(0.045, 0.01)),
                 "flight_mean": float(np.random.normal(0.32, 0.06)),
                 "flight_std": float(np.random.normal(0.065, 0.015)),
+                "app_dwell_mean": float(np.random.normal(0.24, 0.04)),
+                "app_flight_mean": float(np.random.normal(0.32, 0.06)),
+                "app_backspace_ratio": float(np.clip(np.random.normal(0.02, 0.01), 0.0, 0.2)),
+                "app_special_ratio": float(np.clip(np.random.normal(0.03, 0.02), 0.0, 0.2)),
+                "app_click_count": int(np.random.poisson(1)),
+                "app_scroll_count": 0,
+                "app_pause_ratio": float(np.clip(np.random.normal(0.06, 0.03), 0.0, 0.3)),
+                "interaction_mode": "command_execution",
                 "mouse_velocity_mean": float(np.random.normal(750.0, 120.0)),
                 "mouse_acceleration_mean": float(np.random.normal(55.0, 10.0)),
                 "mouse_jerk_mean": float(np.random.normal(9.5, 2.0)),

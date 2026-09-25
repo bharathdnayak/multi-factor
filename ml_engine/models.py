@@ -47,10 +47,12 @@ class BehavioralModels:
             "dwell_mean", "dwell_std", 
             "flight_mean", "flight_std", 
             "mouse_velocity_mean", "mouse_acceleration_mean", 
-            "mouse_jerk_mean", "mouse_straightness_mean"
+            "mouse_jerk_mean", "mouse_straightness_mean",
+            "app_dwell_mean", "app_flight_mean", "app_backspace_ratio"
         ]
         self.context_feature_keys = [
-            "hour_of_day", "cpu_usage", "ram_usage_mb", "app_hash"
+            "hour_of_day", "cpu_usage", "ram_usage_mb", "app_hash",
+            "app_special_ratio", "app_pause_ratio", "app_scroll_count"
         ]
 
         # ML Models and Preprocessing Scalers
@@ -72,10 +74,19 @@ class BehavioralModels:
         app_name = json_data.get("active_app", "unknown")
         app_hash = categorize_process(app_name)
         
-        # Biometrics vector
+        # Biometrics vector with fallback to global metrics if app-specific metrics are absent
+        dwell_fallback = json_data.get("dwell_mean", 0.0)
+        flight_fallback = json_data.get("flight_mean", 0.0)
+        
         biometrics = []
         for key in self.biometric_feature_keys:
-            biometrics.append(json_data.get(key, 0.0))
+            if key == "app_dwell_mean":
+                val = json_data.get("app_dwell_mean", dwell_fallback)
+            elif key == "app_flight_mean":
+                val = json_data.get("app_flight_mean", flight_fallback)
+            else:
+                val = json_data.get(key, 0.0)
+            biometrics.append(float(val))
             
         # Context vector
         context = []
@@ -83,7 +94,7 @@ class BehavioralModels:
             if key == "app_hash":
                 context.append(float(app_hash))
             else:
-                context.append(json_data.get(key, 0.0))
+                context.append(float(json_data.get(key, 0.0)))
                 
         return np.array(biometrics), np.array(context)
 
