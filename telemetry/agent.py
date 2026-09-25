@@ -141,11 +141,18 @@ class MicroSessionTracker:
             idle_time = now - self.last_event_time
             app_changed = (app_name != self.current_app and app_name != "unknown")
             context_changed = (new_context != self.current_context)
+            title_changed = (
+                window_title and 
+                window_title != self.current_title and 
+                window_title != "unknown" and 
+                self.current_title != "unknown" and 
+                (self.keystrokes >= 5 or (now - self.start_time) >= 20.0)
+            )
             is_idle_timeout = (idle_time > 60.0 and self.keystrokes > 0)
             
-            if app_changed or context_changed or is_idle_timeout:
+            if app_changed or context_changed or title_changed or is_idle_timeout:
                 # Finalize prior session if it had meaningful activity
-                if self.keystrokes >= 3 or (now - self.start_time) >= 15.0:
+                if self.keystrokes >= 3 or (now - self.start_time) >= 10.0:
                     self._finalize_and_save_session()
                 # Start new micro-session
                 self._init_session(app_name, window_title)
@@ -322,7 +329,7 @@ class AppBehaviorProfiler:
 
 
 class TelemetryAgent:
-    def __init__(self, output_file=None, window_size_seconds=10, silent=False):
+    def __init__(self, output_file=None, window_size_seconds=10, silent=False, friendly=False):
         if output_file is None:
             self.output_file = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
         elif not os.path.isabs(output_file):
@@ -332,6 +339,7 @@ class TelemetryAgent:
             
         self.window_size_seconds = window_size_seconds
         self.silent = silent
+        self.friendly = friendly
         self.profiler = AppBehaviorProfiler()
         self.session_tracker = MicroSessionTracker()
         
@@ -641,7 +649,15 @@ class TelemetryAgent:
             self.mouse_scrolls = 0
 
             json_str = json.dumps(telemetry_row)
-            if not self.silent:
+            if self.friendly:
+                t_str = time.strftime("%H:%M:%S")
+                raw_title = str(win_title)
+                short_title = raw_title[:45] + "..." if len(raw_title) > 45 else raw_title
+                ctx_display = interaction_mode.replace("_", " ").title()
+                pause_info = f"{avg_pause_sec:.1f}s" if avg_pause_sec > 0 else "0s"
+                print(f"[{t_str}] App: {app_name} | Task: {ctx_display} | Win: '{short_title}'", flush=True)
+                print(f"         -> Keys: {telemetry_row['keystroke_count']} | Symbols: {telemetry_row['app_special_ratio']*100:.0f}% | Thinking: {pause_info} | Backspace: {telemetry_row['app_backspace_ratio']*100:.0f}%", flush=True)
+            elif not self.silent:
                 print(f"[TELEMETRY] {json_str}", flush=True)
             
             try:
@@ -695,11 +711,12 @@ class TelemetryAgent:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-Factor Behavioral Telemetry Hook Agent")
     parser.add_argument("--silent", action="store_true", help="Run silently without printing raw telemetry output")
+    parser.add_argument("--friendly", action="store_true", help="Display clean, human-friendly live activity status")
     parser.add_argument("--output", type=str, default=None, help="Path to telemetry output file")
     parser.add_argument("--window", type=int, default=10, help="Window size in seconds (default: 10)")
     args = parser.parse_args()
 
-    agent = TelemetryAgent(output_file=args.output, window_size_seconds=args.window, silent=args.silent)
+    agent = TelemetryAgent(output_file=args.output, window_size_seconds=args.window, silent=args.silent, friendly=args.friendly)
     try:
         agent.start()
         while True:

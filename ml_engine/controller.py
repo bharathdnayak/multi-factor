@@ -13,8 +13,9 @@ CODE_SYMBOLS = set("{}[];:=+-*/<>!~^%&|()?'\"`\\@#$")
 def classify_activity_context(app_name, window_title):
     """
     Classifies the user's active window and application into a granular behavioral context.
-    Detects LeetCode/coding problem solving, IDE development, AI prompting, technical reading,
-    terminals, media browsing, or general productivity.
+    Recognizes all web browsers (Chrome, Edge, Brave, Firefox, Opera, Arc, Vivaldi) and categorizes
+    their specific tab/site activities: coding platforms, AI prompting, messaging/social,
+    online productivity/docs, technical reading, media streaming, and general web browsing.
     """
     app_lower = str(app_name or "").lower()
     title_lower = str(window_title or "").lower()
@@ -22,7 +23,8 @@ def classify_activity_context(app_name, window_title):
     # 1. Coding & Problem Solving Platforms (LeetCode, HackerRank, Codeforces, etc.)
     coding_platforms = [
         "leetcode", "hackerrank", "codeforces", "neetcode", "atcoder", 
-        "codechef", "codewars", "interviewbit", "geeksforgeeks.org/problems"
+        "codechef", "codewars", "interviewbit", "geeksforgeeks.org/problems",
+        "kaggle.com/code", "replit", "codesandbox"
     ]
     if any(p in title_lower for p in coding_platforms):
         return "coding_problem_solving"
@@ -30,12 +32,49 @@ def classify_activity_context(app_name, window_title):
     # 2. AI Chat & Prompting (ChatGPT, Claude, Gemini, Antigravity, Perplexity)
     ai_platforms = [
         "chatgpt", "claude", "gemini", "perplexity", "copilot", 
-        "antigravity", "chat.openai", "claude.ai"
+        "antigravity", "chat.openai", "claude.ai", "mistral.ai",
+        "huggingface", "poe.com", "character.ai"
     ]
     if any(p in title_lower or p in app_lower for p in ai_platforms):
         return "ai_chat_prompting"
+
+    # 3. Online Productivity & Document Writing (Google Docs, Sheets, Slides, Notion, etc.)
+    productivity_platforms = [
+        "google docs", "google sheets", "google slides", "docs.google", "sheets.google",
+        "notion", "trello", "jira", "asana", "confluence", "overleaf", "canva", "figma",
+        "excalidraw", "miro.com", "airtable"
+    ]
+    if any(p in title_lower for p in productivity_platforms):
+        return "online_productivity"
+
+    # 4. Web Mail, Messaging & Social (Gmail, Outlook Web, WhatsApp, Discord, Slack, etc.)
+    communication_platforms = [
+        "gmail", "mail.google", "outlook", "whatsapp", "discord", "slack",
+        "telegram", "teams.microsoft", "reddit", "twitter", "x.com",
+        "linkedin", "instagram", "facebook"
+    ]
+    if any(p in title_lower for p in communication_platforms):
+        return "communication_and_social"
         
-    # 3. Code Development & IDEs (VS Code, Cursor, PyCharm, Sublime, etc.)
+    # 5. Technical Reading, Documentation & Research
+    reading_keywords = [
+        "stack overflow", "github.com", "gitlab", "documentation", 
+        "docs.python", "mdn", "geeksforgeeks", "medium.com", 
+        "arxiv", "w3schools", "devdocs", "api reference", "wikipedia.org",
+        "dev.to", "tutorialspoint"
+    ]
+    if any(k in title_lower for k in reading_keywords):
+        return "technical_reading"
+        
+    # 6. Media & Video Streaming
+    media_keywords = [
+        "youtube", "netflix", "spotify", "twitch", "prime video", 
+        "hotstar", "disney+", "hulu", "soundcloud", "vlc.exe"
+    ]
+    if any(k in title_lower or k in app_lower for k in media_keywords):
+        return "media_consumption"
+
+    # 7. Code Development & IDEs (VS Code, Cursor, PyCharm, Sublime, etc.)
     code_extensions = [
         ".py", ".ts", ".js", ".cpp", ".c", ".h", ".java", ".go", 
         ".rs", ".html", ".css", ".json", ".sql", ".sh", ".bat", ".md"
@@ -47,16 +86,7 @@ def classify_activity_context(app_name, window_title):
     if any(app in app_lower for app in ide_apps) or any(ext in title_lower for ext in code_extensions):
         return "ide_development"
         
-    # 4. Technical Reading, Documentation & Research
-    reading_keywords = [
-        "stack overflow", "github.com", "gitlab", "documentation", 
-        "docs.python", "mdn", "geeksforgeeks", "medium.com", 
-        "arxiv", "w3schools", "devdocs", "api reference"
-    ]
-    if any(k in title_lower for k in reading_keywords):
-        return "technical_reading"
-        
-    # 5. Terminal & Command Line
+    # 8. Terminal & Command Line
     terminal_apps = [
         "cmd.exe", "powershell.exe", "windowsterminal.exe", 
         "bash.exe", "conhost.exe", "wsl.exe", "mintty.exe"
@@ -64,13 +94,12 @@ def classify_activity_context(app_name, window_title):
     if any(app in app_lower for app in terminal_apps):
         return "terminal_command_line"
         
-    # 6. Media & Video Streaming
-    media_keywords = ["youtube", "netflix", "spotify", "twitch", "prime video", "vlc.exe"]
-    if any(k in title_lower or k in app_lower for k in media_keywords):
-        return "media_consumption"
-        
-    # 7. General Web Browsing
-    browser_apps = ["chrome.exe", "brave.exe", "msedge.exe", "firefox.exe", "opera.exe"]
+    # 9. All Web Browsers (Chrome, Edge, Brave, Firefox, Opera, etc.)
+    browser_apps = [
+        "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe", 
+        "opera.exe", "opera_gx.exe", "vivaldi.exe", "arc.exe", 
+        "waterfox.exe", "tor.exe", "chromium.exe"
+    ]
     if any(app in app_lower for app in browser_apps):
         return "web_browsing"
         
@@ -181,6 +210,45 @@ class BehavioralAIController:
                     "backspace_ratio": {"mean": 0.08, "std": 0.03},
                     "dwell_mean": {"mean": 0.085, "std": 0.015},
                     "flight_mean": {"mean": 0.125, "std": 0.030}
+                }
+            }
+        elif context_mode == "online_productivity":
+            return {
+                "sample_count": 5,
+                "metrics": {
+                    "avg_thinking_pause": {"mean": 3.5, "std": 1.4},
+                    "thinking_pause_ratio": {"mean": 0.25, "std": 0.08},
+                    "avg_burst_length": {"mean": 38.0, "std": 12.0},
+                    "code_symbol_ratio": {"mean": 0.08, "std": 0.03},
+                    "backspace_ratio": {"mean": 0.09, "std": 0.03},
+                    "dwell_mean": {"mean": 0.088, "std": 0.018},
+                    "flight_mean": {"mean": 0.135, "std": 0.032}
+                }
+            }
+        elif context_mode == "communication_and_social":
+            return {
+                "sample_count": 5,
+                "metrics": {
+                    "avg_thinking_pause": {"mean": 2.2, "std": 0.8},
+                    "thinking_pause_ratio": {"mean": 0.18, "std": 0.06},
+                    "avg_burst_length": {"mean": 35.0, "std": 10.0},
+                    "code_symbol_ratio": {"mean": 0.04, "std": 0.02},
+                    "backspace_ratio": {"mean": 0.06, "std": 0.02},
+                    "dwell_mean": {"mean": 0.084, "std": 0.015},
+                    "flight_mean": {"mean": 0.120, "std": 0.028}
+                }
+            }
+        elif context_mode == "media_consumption":
+            return {
+                "sample_count": 5,
+                "metrics": {
+                    "avg_thinking_pause": {"mean": 4.5, "std": 2.0},
+                    "thinking_pause_ratio": {"mean": 0.35, "std": 0.12},
+                    "avg_burst_length": {"mean": 20.0, "std": 8.0},
+                    "code_symbol_ratio": {"mean": 0.04, "std": 0.02},
+                    "backspace_ratio": {"mean": 0.05, "std": 0.02},
+                    "dwell_mean": {"mean": 0.092, "std": 0.020},
+                    "flight_mean": {"mean": 0.150, "std": 0.035}
                 }
             }
         elif context_mode == "terminal_command_line":

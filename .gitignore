@@ -7,6 +7,7 @@ __pycache__/
 data/*
 !data/sessions/
 !data/sessions/**
+data/sessions/active_session.json
 !data/sessions/.gitkeep
 !data/sessions/app_baselines.json
 telemetry_data.jsonl
