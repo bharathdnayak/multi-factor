@@ -1,0 +1,187 @@
+{
+  "chrome.exe::coding_problem_solving": {
+    "app_name": "chrome.exe",
+    "context_mode": "coding_problem_solving",
+    "sample_count": 165,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 6.1351,
+        "std": 1.6542
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.4593,
+        "std": 0.1247
+      },
+      "avg_burst_length": {
+        "mean": 23.9202,
+        "std": 4.5539
+      },
+      "code_symbol_ratio": {
+        "mean": 0.2505,
+        "std": 0.0397
+      },
+      "backspace_ratio": {
+        "mean": 0.092,
+        "std": 0.0329
+      },
+      "dwell_mean": {
+        "mean": 0.0887,
+        "std": 0.0113
+      },
+      "flight_mean": {
+        "mean": 0.1674,
+        "std": 0.0189
+      }
+    },
+    "first_seen": "2026-09-25 18:51:22",
+    "last_updated": "2026-09-25 18:54:24"
+  },
+  "code.exe::ide_development": {
+    "app_name": "code.exe",
+    "context_mode": "ide_development",
+    "sample_count": 147,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 3.6429,
+        "std": 0.8748
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.2755,
+        "std": 0.0429
+      },
+      "avg_burst_length": {
+        "mean": 31.4061,
+        "std": 4.6157
+      },
+      "code_symbol_ratio": {
+        "mean": 0.252,
+        "std": 0.0298
+      },
+      "backspace_ratio": {
+        "mean": 0.1158,
+        "std": 0.0234
+      },
+      "dwell_mean": {
+        "mean": 0.0833,
+        "std": 0.0081
+      },
+      "flight_mean": {
+        "mean": 0.1367,
+        "std": 0.0154
+      }
+    },
+    "first_seen": "2026-09-25 18:53:26",
+    "last_updated": "2026-09-25 18:53:27"
+  },
+  "chrome.exe::ai_chat_prompting": {
+    "app_name": "chrome.exe",
+    "context_mode": "ai_chat_prompting",
+    "sample_count": 62,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 3.004,
+        "std": 0.729
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.2216,
+        "std": 0.0409
+      },
+      "avg_burst_length": {
+        "mean": 55.9635,
+        "std": 9.6671
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0471,
+        "std": 0.0121
+      },
+      "backspace_ratio": {
+        "mean": 0.0668,
+        "std": 0.0192
+      },
+      "dwell_mean": {
+        "mean": 0.0815,
+        "std": 0.0085
+      },
+      "flight_mean": {
+        "mean": 0.1239,
+        "std": 0.016
+      }
+    },
+    "first_seen": "2026-09-25 18:53:26",
+    "last_updated": "2026-09-25 18:53:27"
+  },
+  "powershell.exe::terminal_command_line": {
+    "app_name": "powershell.exe",
+    "context_mode": "terminal_command_line",
+    "sample_count": 86,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 2.4727,
+        "std": 0.598
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.1843,
+        "std": 0.0363
+      },
+      "avg_burst_length": {
+        "mean": 15.9587,
+        "std": 4.356
+      },
+      "code_symbol_ratio": {
+        "mean": 0.1795,
+        "std": 0.031
+      },
+      "backspace_ratio": {
+        "mean": 0.0715,
+        "std": 0.0267
+      },
+      "dwell_mean": {
+        "mean": 0.0856,
+        "std": 0.0097
+      },
+      "flight_mean": {
+        "mean": 0.1333,
+        "std": 0.0181
+      }
+    },
+    "first_seen": "2026-09-25 18:53:26",
+    "last_updated": "2026-09-25 18:53:27"
+  },
+  "chrome.exe::technical_reading": {
+    "app_name": "chrome.exe",
+    "context_mode": "technical_reading",
+    "sample_count": 43,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 6.6171,
+        "std": 1.5415
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.4818,
+        "std": 0.069
+      },
+      "avg_burst_length": {
+        "mean": 10.1628,
+        "std": 2.7556
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0734,
+        "std": 0.0219
+      },
+      "backspace_ratio": {
+        "mean": 0.0565,
+        "std": 0.0143
+      },
+      "dwell_mean": {
+        "mean": 0.0941,
+        "std": 0.0142
+      },
+      "flight_mean": {
+        "mean": 0.1746,
+        "std": 0.0213
+      }
+    },
+    "first_seen": "2026-09-25 18:53:26",
+    "last_updated": "2026-09-25 18:53:27"
+  }
+}

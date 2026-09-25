@@ -9,14 +9,15 @@ project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_dir)
 
 from ml_engine.models import BehavioralModels
+from ml_engine.controller import BehavioralAIController
 from security.webcam import capture_intruder
 from security.otp_service import generate_otp, dispatch_otp
 
 class ThreatEvaluator:
     """
     Threat Evaluation and Alert Dispatcher.
-    Combines Biometric (OC-SVM) and Context (Isolation Forest) models,
-    applies a 30-second moving average, and coordinates alerting.
+    Combines Biometric (OC-SVM), Context (Isolation Forest), and Cognitive Task (BehavioralAIController)
+    models, applies a 30-second moving average, and coordinates alerting.
     """
     def __init__(self, models_path="ml_engine/trained_models.pkl", threshold=0.75, cooldown_seconds=300):
         self.models_path = os.path.join(project_dir, models_path)
@@ -24,6 +25,7 @@ class ThreatEvaluator:
         self.cooldown_seconds = cooldown_seconds
         
         self.models = BehavioralModels()
+        self.controller = BehavioralAIController()
         self.models_loaded = False
         
         # Sliding queue to hold the last 3 score windows (3 * 10s = 30s)
@@ -76,11 +78,26 @@ class ThreatEvaluator:
                 # 1. Fetch normalized confidence scores [0.0 - 1.0] from classifiers
                 svm_conf, if_conf = self.models.score(telemetry_row)
                 
-                # 2. Score Fusion (Weighted Average of Normality)
-                fused_conf = w1 * svm_conf + w2 * if_conf
+                # 2. Fetch Cognitive Task confidence from Behavioral AI Controller
+                try:
+                    ctrl_anomaly, _ = self.controller.evaluate_telemetry_row(telemetry_row)
+                    ctrl_conf = 1.0 - ctrl_anomaly
+                except Exception:
+                    ctrl_conf = svm_conf
+
+                # 3. Tri-Factor Fusion across Biometrics, Context, and Cognitive Profile
+                if len(weights) == 3:
+                    w_svm, w_if, w_ctrl = weights
+                else:
+                    w1, w2 = weights
+                    w_svm = w1 * 0.70
+                    w_ctrl = w1 * 0.30
+                    w_if = w2
+                
+                fused_conf = w_svm * svm_conf + w_if * if_conf + w_ctrl * ctrl_conf
                 fused_risk = 1.0 - fused_conf
                 
-                # 3. Add to sliding queue for 30s smoothing
+                # 4. Add to sliding queue for 30s smoothing
                 self.risk_history.append(fused_risk)
             except Exception as e:
                 print(f"[EVALUATOR] [ERROR] Scoring exception: {e}", file=sys.stderr, flush=True)
@@ -149,6 +166,11 @@ class ThreatEvaluator:
                 adapt_to_verified_drift()
                 # Reload models with the newly adapted boundaries
                 self.load_models()
+                # Also learn verified session in AI Controller
+                if os.path.exists(self.controller.active_session_path):
+                    with open(self.controller.active_session_path, "r", encoding="utf-8") as f:
+                        act_data = json.load(f)
+                    self.controller.learn_from_session(act_data, verified=True)
             except Exception as e:
                 print(f"[EVALUATOR] [WARNING] Adaptation retraining failed: {e}", file=sys.stderr, flush=True)
             return True

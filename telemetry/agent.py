@@ -5,6 +5,7 @@ import json
 import hashlib
 import threading
 import math
+import argparse
 import numpy as np
 import psutil
 
@@ -21,13 +22,246 @@ else:
 from pynput import keyboard, mouse
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from ml_engine.controller import classify_activity_context, CODE_SYMBOLS, BehavioralAIController
+
+class MicroSessionTracker:
+    """
+    Tracks and maintains fine-grained micro-sessions per application and cognitive sub-task.
+    Specifically captures:
+    - Inter-keystroke thinking/reading pauses (1.5s - 30s)
+    - Typing burst lengths and rhythm (characters typed between pauses)
+    - Code syntax symbol density ({}[]();:=+-*/<>)
+    - Error revision rate (Backspaces/Deletes)
+    - Mouse reading scroll intervals
+    - Flushes completed sessions to data/sessions/session_history.jsonl
+    - Updates running Gaussian baselines in data/sessions/app_baselines.json
+    - Continuously writes live active session to data/sessions/active_session.json
+    """
+    def __init__(self, sessions_dir=None):
+        if sessions_dir is None:
+            self.sessions_dir = os.path.join(PROJECT_ROOT, "data", "sessions")
+        else:
+            self.sessions_dir = sessions_dir
+            
+        os.makedirs(self.sessions_dir, exist_ok=True)
+        self.history_file = os.path.join(self.sessions_dir, "session_history.jsonl")
+        self.active_file = os.path.join(self.sessions_dir, "active_session.json")
+        self.controller = BehavioralAIController()
+        self.lock = threading.Lock()
+        
+        self.current_app = "unknown"
+        self.current_title = "unknown"
+        self.current_context = "general_productivity"
+        self.session_id = None
+        self.start_time = time.time()
+        self.last_event_time = time.time()
+        
+        # Micro-session metrics
+        self.keystrokes = 0
+        self.code_symbol_count = 0
+        self.backspace_count = 0
+        self.thinking_pauses = []
+        self.typing_bursts = []
+        self.current_burst_chars = 0
+        self.dwell_times = []
+        self.flight_times = []
+        
+        self.mouse_moves = 0
+        self.mouse_clicks = 0
+        self.mouse_scrolls = 0
+        
+        self._init_session("unknown", "unknown")
+
+    def _init_session(self, app_name, window_title):
+        self.session_id = f"sess_{time.strftime('%Y%m%d_%H%M%S')}_{os.path.splitext(app_name)[0]}"
+        self.current_app = app_name
+        self.current_title = window_title
+        self.current_context = classify_activity_context(app_name, window_title)
+        self.start_time = time.time()
+        self.last_event_time = self.start_time
+        
+        self.keystrokes = 0
+        self.code_symbol_count = 0
+        self.backspace_count = 0
+        self.thinking_pauses = []
+        self.typing_bursts = []
+        self.current_burst_chars = 0
+        self.dwell_times = []
+        self.flight_times = []
+        
+        self.mouse_moves = 0
+        self.mouse_clicks = 0
+        self.mouse_scrolls = 0
+
+    def record_key_press(self, key_char, is_backspace=False, is_symbol=False):
+        now = time.time()
+        with self.lock:
+            self.keystrokes += 1
+            if is_backspace:
+                self.backspace_count += 1
+            if is_symbol:
+                self.code_symbol_count += 1
+                
+            gap = now - self.last_event_time
+            if 1.5 <= gap <= 30.0:
+                # Thinking pause registered!
+                self.thinking_pauses.append(gap)
+                if self.current_burst_chars > 0:
+                    self.typing_bursts.append(self.current_burst_chars)
+                    self.current_burst_chars = 0
+                    
+            self.current_burst_chars += 1
+            self.last_event_time = now
+
+    def record_key_release(self, dwell, flight):
+        with self.lock:
+            if dwell is not None and dwell <= 2.0:
+                self.dwell_times.append(dwell)
+            if flight is not None and flight <= 5.0:
+                self.flight_times.append(flight)
+
+    def record_mouse_event(self, event_type, delta=1):
+        with self.lock:
+            if event_type == "move":
+                self.mouse_moves += 1
+            elif event_type == "click":
+                self.mouse_clicks += delta
+            elif event_type == "scroll":
+                self.mouse_scrolls += delta
+            self.last_event_time = time.time()
+
+    def heartbeat(self, app_name, window_title):
+        """Called periodically by telemetry agent to detect context switches or finalize idle sessions."""
+        now = time.time()
+        with self.lock:
+            new_context = classify_activity_context(app_name, window_title)
+            idle_time = now - self.last_event_time
+            app_changed = (app_name != self.current_app and app_name != "unknown")
+            context_changed = (new_context != self.current_context)
+            is_idle_timeout = (idle_time > 60.0 and self.keystrokes > 0)
+            
+            if app_changed or context_changed or is_idle_timeout:
+                # Finalize prior session if it had meaningful activity
+                if self.keystrokes >= 3 or (now - self.start_time) >= 15.0:
+                    self._finalize_and_save_session()
+                # Start new micro-session
+                self._init_session(app_name, window_title)
+            else:
+                if window_title and window_title != "unknown":
+                    self.current_title = window_title
+                    self.current_context = new_context
+                    
+            self._write_active_session_snapshot()
+
+    def _finalize_and_save_session(self):
+        """Calculates final metrics for the micro-session and persists it."""
+        now = time.time()
+        elapsed = max(0.1, now - self.start_time)
+        
+        if self.current_burst_chars > 0:
+            self.typing_bursts.append(self.current_burst_chars)
+            self.current_burst_chars = 0
+            
+        total_keys = max(1, self.keystrokes)
+        avg_pause = float(np.mean(self.thinking_pauses)) if self.thinking_pauses else 0.0
+        max_pause = float(np.max(self.thinking_pauses)) if self.thinking_pauses else 0.0
+        pause_ratio = float(min(1.0, sum(self.thinking_pauses) / elapsed)) if elapsed > 0 else 0.0
+        avg_burst = float(np.mean(self.typing_bursts)) if self.typing_bursts else float(self.keystrokes)
+        symbol_ratio = float(round(self.code_symbol_count / total_keys, 4))
+        backspace_ratio = float(round(self.backspace_count / total_keys, 4))
+        dwell_m = float(np.mean(self.dwell_times)) if self.dwell_times else 0.09
+        flight_m = float(np.mean(self.flight_times)) if self.flight_times else 0.14
+        scroll_ratio = float(round(self.mouse_scrolls / max(1, self.mouse_moves + self.mouse_scrolls), 4))
+        
+        session_summary = {
+            "session_id": self.session_id,
+            "app_name": self.current_app,
+            "window_title": self.current_title,
+            "context_mode": self.current_context,
+            "start_time": self.start_time,
+            "end_time": now,
+            "elapsed_seconds": round(elapsed, 2),
+            "keystrokes": self.keystrokes,
+            "thinking_pause_count": len(self.thinking_pauses),
+            "avg_thinking_pause_sec": round(avg_pause, 3),
+            "max_thinking_pause_sec": round(max_pause, 3),
+            "thinking_pause_ratio": round(pause_ratio, 4),
+            "typing_burst_count": len(self.typing_bursts),
+            "avg_burst_length": round(avg_burst, 2),
+            "code_symbol_count": self.code_symbol_count,
+            "code_symbol_ratio": symbol_ratio,
+            "backspace_count": self.backspace_count,
+            "backspace_ratio": backspace_ratio,
+            "dwell_mean": round(dwell_m, 4),
+            "flight_mean": round(flight_m, 4),
+            "mouse_moves": self.mouse_moves,
+            "mouse_clicks": self.mouse_clicks,
+            "mouse_scrolls": self.mouse_scrolls,
+            "reading_scroll_ratio": scroll_ratio,
+            "status": "completed",
+            "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # Append to historical sessions
+        try:
+            with open(self.history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(session_summary) + "\n")
+        except Exception as e:
+            print(f"[SESSION_TRACKER] [ERROR] Failed to save session history: {e}", file=sys.stderr)
+            
+        # Update baseline model automatically
+        try:
+            self.controller.learn_from_session(session_summary, verified=True)
+        except Exception:
+            pass
+
+    def _write_active_session_snapshot(self):
+        """Writes real-time active session to disk for instant external querying."""
+        now = time.time()
+        elapsed = max(0.1, now - self.start_time)
+        total_keys = max(1, self.keystrokes)
+        
+        snapshot = {
+            "session_id": self.session_id,
+            "app_name": self.current_app,
+            "window_title": self.current_title,
+            "context_mode": self.current_context,
+            "start_time": self.start_time,
+            "elapsed_seconds": round(elapsed, 1),
+            "keystrokes": self.keystrokes,
+            "thinking_pause_count": len(self.thinking_pauses),
+            "avg_thinking_pause_sec": round(float(np.mean(self.thinking_pauses)), 3) if self.thinking_pauses else 0.0,
+            "typing_burst_count": len(self.typing_bursts),
+            "avg_burst_length": round(float(np.mean(self.typing_bursts)), 1) if self.typing_bursts else float(self.current_burst_chars),
+            "code_symbol_count": self.code_symbol_count,
+            "code_symbol_ratio": round(self.code_symbol_count / total_keys, 4),
+            "backspace_count": self.backspace_count,
+            "backspace_ratio": round(self.backspace_count / total_keys, 4),
+            "mouse_clicks": self.mouse_clicks,
+            "mouse_scrolls": self.mouse_scrolls,
+            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "active"
+        }
+        
+        try:
+            with open(self.active_file, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, indent=2)
+        except Exception:
+            pass
+
+    def close(self):
+        with self.lock:
+            if self.keystrokes >= 2 or (time.time() - self.start_time) >= 5.0:
+                self._finalize_and_save_session()
+
 
 class AppBehaviorProfiler:
     """
-    Tracks and maintains fine-grained behavioral interaction patterns inside
-    specific applications (e.g. Antigravity IDE, browsers, terminals).
-    Records typing rhythm, error correction (backspaces), pause cadence (thinking/reading),
-    special shortcut usage, and mouse click/scroll dynamics.
+    Maintains backward compatibility with earlier telemetry tests while
+    syncing into the modern behavioral baseline structure.
     """
     def __init__(self, profiles_path=None):
         if profiles_path is None:
@@ -83,20 +317,23 @@ class AppBehaviorProfiler:
             p["observations"] += 1
             p["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
             
-            # Save to disk every 5 observations
             if p["observations"] % 5 == 0:
                 self.save_profiles()
 
+
 class TelemetryAgent:
-    def __init__(self, output_file=None, window_size_seconds=10):
+    def __init__(self, output_file=None, window_size_seconds=10, silent=False):
         if output_file is None:
             self.output_file = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
         elif not os.path.isabs(output_file):
             self.output_file = os.path.join(PROJECT_ROOT, output_file)
         else:
             self.output_file = output_file
+            
         self.window_size_seconds = window_size_seconds
+        self.silent = silent
         self.profiler = AppBehaviorProfiler()
+        self.session_tracker = MicroSessionTracker()
         
         # Keyboard telemetry storage
         self.active_presses = {}  # key_hash -> press_timestamp
@@ -180,17 +417,31 @@ class TelemetryAgent:
         key_hash = self._hash_key(key)
         now = time.time()
         
-        # Check for error-correction (Backspace / Delete)
+        # Character inspection for code symbols and error correction
+        is_backspace = False
+        is_symbol = False
+        char_val = None
+        
         if key in (keyboard.Key.backspace, keyboard.Key.delete):
             self.backspace_count += 1
+            is_backspace = True
         elif key in (keyboard.Key.enter, keyboard.Key.tab, keyboard.Key.shift, keyboard.Key.shift_r, 
                      keyboard.Key.ctrl, keyboard.Key.ctrl_r, keyboard.Key.alt, keyboard.Key.cmd):
             self.special_count += 1
+        else:
+            if hasattr(key, 'char') and key.char:
+                char_val = key.char
+                if char_val in CODE_SYMBOLS:
+                    self.special_count += 1
+                    is_symbol = True
+
+        # Inform MicroSessionTracker
+        self.session_tracker.record_key_press(char_val, is_backspace=is_backspace, is_symbol=is_symbol)
             
-        # Track inter-keystroke thinking/reading pauses (1.5s to 12s)
+        # Track inter-keystroke thinking/reading pauses (1.5s to 30.0s)
         if self.last_release_time is not None:
             gap = now - self.last_release_time
-            if 1.5 <= gap <= 12.0:
+            if 1.5 <= gap <= 30.0:
                 self.pause_durations.append(gap)
             elif gap < 5.0:
                 self.flight_times.append(gap)
@@ -207,11 +458,15 @@ class TelemetryAgent:
         now = time.time()
         self.last_release_time = now
         
+        dwell = None
         if key_hash in self.active_presses:
             press_time = self.active_presses.pop(key_hash)
             dwell = now - press_time
             if dwell <= 2.0:
                 self.dwell_times.append(dwell)
+
+        flight = self.flight_times[-1] if self.flight_times else None
+        self.session_tracker.record_key_release(dwell, flight)
 
     # --- Mouse Callbacks & Stroke Analysis ---
     def on_move(self, x, y):
@@ -220,6 +475,7 @@ class TelemetryAgent:
             
         now = time.time()
         self.mouse_event_count += 1
+        self.session_tracker.record_mouse_event("move")
         
         with self.stroke_lock:
             if self.current_stroke and (now - self.current_stroke[-1][2] > self.stroke_idle_threshold):
@@ -230,10 +486,13 @@ class TelemetryAgent:
     def on_click(self, x, y, button, pressed):
         if self.running and pressed:
             self.mouse_clicks += 1
+            self.session_tracker.record_mouse_event("click")
 
     def on_scroll(self, x, y, dx, dy):
         if self.running:
-            self.mouse_scrolls += abs(dy) if dy != 0 else 1
+            delta = abs(dy) if dy != 0 else 1
+            self.mouse_scrolls += delta
+            self.session_tracker.record_mouse_event("scroll", delta=delta)
 
     def _process_stroke(self):
         """Analyzes a single mouse movement stroke to extract physics features."""
@@ -303,6 +562,9 @@ class TelemetryAgent:
 
             app_name, win_title, cpu, ram = self._get_active_window_context()
             
+            # Send heartbeat to MicroSessionTracker
+            self.session_tracker.heartbeat(app_name, win_title)
+            
             # Aggregate Keystroke features
             avg_dwell = np.mean(self.dwell_times) if self.dwell_times else 0.0
             std_dwell = np.std(self.dwell_times) if self.dwell_times else 0.0
@@ -320,23 +582,10 @@ class TelemetryAgent:
             backspace_ratio = self.backspace_count / total_keys
             special_ratio = self.special_count / total_keys
             pause_ratio = min(1.0, (sum(self.pause_durations) / self.window_size_seconds)) if self.pause_durations else 0.0
+            avg_pause_sec = float(np.mean(self.pause_durations)) if self.pause_durations else 0.0
 
-            # Classify High-Level Intra-App Task Pattern
-            app_lower = app_name.lower()
-            if any(k in app_lower for k in ["antigravity", "code", "cursor", "pycharm"]):
-                if pause_ratio > 0.25 and special_ratio > 0.12:
-                    interaction_mode = "ai_chat_or_prompting"
-                else:
-                    interaction_mode = "rapid_code_editing"
-            elif any(k in app_lower for k in ["chrome", "brave", "edge", "firefox"]):
-                if self.mouse_scrolls > 8:
-                    interaction_mode = "reading_and_browsing"
-                else:
-                    interaction_mode = "web_interaction"
-            elif any(k in app_lower for k in ["powershell", "cmd", "terminal", "bash"]):
-                interaction_mode = "command_execution"
-            else:
-                interaction_mode = "general_productivity"
+            # Granular Task Classification
+            interaction_mode = classify_activity_context(app_name, win_title)
 
             # Update Persistent Per-Application Profiler
             if avg_dwell > 0.0 or self.key_count > 0:
@@ -361,7 +610,9 @@ class TelemetryAgent:
                 "app_click_count": int(self.mouse_clicks),
                 "app_scroll_count": int(self.mouse_scrolls),
                 "app_pause_ratio": float(round(pause_ratio, 4)),
+                "avg_thinking_pause_sec": float(round(avg_pause_sec, 3)),
                 "interaction_mode": interaction_mode,
+                "micro_session_id": self.session_tracker.session_id,
                 "mouse_events": self.mouse_event_count,
                 "mouse_velocity_mean": float(avg_vel),
                 "mouse_acceleration_mean": float(avg_acc),
@@ -390,7 +641,8 @@ class TelemetryAgent:
             self.mouse_scrolls = 0
 
             json_str = json.dumps(telemetry_row)
-            print(f"[TELEMETRY] {json_str}", flush=True)
+            if not self.silent:
+                print(f"[TELEMETRY] {json_str}", flush=True)
             
             try:
                 with open(self.output_file, "a") as f:
@@ -400,10 +652,11 @@ class TelemetryAgent:
 
     def start(self):
         """Starts listeners and the aggregation worker thread."""
-        print("[INFO] Starting Telemetry Agent with Intra-App Behavioral Profiling...", flush=True)
+        if not self.silent:
+            print("[INFO] Starting Telemetry Agent with Micro-Session Tracking...", flush=True)
         self.running = True
         
-        # Start mouse hook with move, click, and scroll listeners
+        # Start mouse hook
         self.mouse_listener = mouse.Listener(
             on_move=self.on_move,
             on_click=self.on_click,
@@ -419,11 +672,13 @@ class TelemetryAgent:
         self.aggregation_thread = threading.Thread(target=self._aggregate_and_output, daemon=True)
         self.aggregation_thread.start()
         
-        print(f"[INFO] Telemetry active. Logging every {self.window_size_seconds}s to '{self.output_file}'", flush=True)
+        if not self.silent:
+            print(f"[INFO] Telemetry active. Logging every {self.window_size_seconds}s to '{self.output_file}'", flush=True)
 
     def stop(self):
         """Stops hooks and aggregation."""
-        print("[INFO] Stopping Telemetry Agent...", flush=True)
+        if not self.silent:
+            print("[INFO] Stopping Telemetry Agent...", flush=True)
         self.running = False
         
         if self.mouse_listener:
@@ -432,10 +687,19 @@ class TelemetryAgent:
             self.keyboard_listener.stop()
             
         self.profiler.save_profiles()
-        print("[INFO] Telemetry Agent stopped successfully. App profiles saved.", flush=True)
+        self.session_tracker.close()
+        if not self.silent:
+            print("[INFO] Telemetry Agent stopped successfully. Micro-sessions saved.", flush=True)
+
 
 if __name__ == "__main__":
-    agent = TelemetryAgent()
+    parser = argparse.ArgumentParser(description="Multi-Factor Behavioral Telemetry Hook Agent")
+    parser.add_argument("--silent", action="store_true", help="Run silently without printing raw telemetry output")
+    parser.add_argument("--output", type=str, default=None, help="Path to telemetry output file")
+    parser.add_argument("--window", type=int, default=10, help="Window size in seconds (default: 10)")
+    args = parser.parse_args()
+
+    agent = TelemetryAgent(output_file=args.output, window_size_seconds=args.window, silent=args.silent)
     try:
         agent.start()
         while True:

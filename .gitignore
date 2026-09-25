@@ -4,7 +4,11 @@ __pycache__/
 *$py.class
 
 # Local raw data and logs
-data/
+data/*
+!data/sessions/
+!data/sessions/**
+!data/sessions/.gitkeep
+!data/sessions/app_baselines.json
 telemetry_data.jsonl
 *.jsonl
 *.csv

@@ -232,6 +232,19 @@ def adapt_to_verified_drift(log_file="telemetry_data.jsonl", limit=2000):
         models.train(real_rows)
         models.save("ml_engine/trained_models.pkl")
 
+def train_models(file_path="telemetry_data.jsonl", output_model_path=None):
+    """Programmatically trains and saves models from a telemetry JSONL file."""
+    real_rows = load_real_data(file_path)
+    if not real_rows:
+        print(f"[WARNING] No data found in '{file_path}'.", file=sys.stderr)
+        return False
+        
+    print(f"[INFO] Loaded {len(real_rows)} records for training.", flush=True)
+    models = BehavioralModels()
+    models.train(real_rows)
+    models.save(output_model_path or "ml_engine/trained_models.pkl")
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description="Continuous Authentication - ML Model Training Pipeline")
     parser.add_argument("--simulate", action="store_true", help="Run model simulation with synthetic data and plot metrics")
@@ -251,11 +264,7 @@ def main():
         print(f"    python telemetry/agent.py\n", file=sys.stderr)
         sys.exit(1)
         
-    print(f"[INFO] Loaded {len(real_rows)} baseline records from 'telemetry_data.jsonl'.", flush=True)
-    
-    models = BehavioralModels()
-    models.train(real_rows)
-    models.save("ml_engine/trained_models.pkl")
+    train_models("telemetry_data.jsonl")
     
     # Train PyTorch sequence SVDD model if raw keystroke file exists
     ks_path = os.path.join(PROJECT_ROOT, "data", "raw", "keystrokes.csv")
