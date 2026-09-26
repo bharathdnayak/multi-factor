@@ -189,6 +189,7 @@ class BehavioralModels:
             filepath = os.path.join(PROJECT_ROOT, "ml_engine", "trained_models.pkl")
         elif not os.path.isabs(filepath):
             filepath = os.path.join(PROJECT_ROOT, filepath)
+        filepath = os.path.normpath(filepath)
 
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         data_to_save = {
@@ -210,6 +211,7 @@ class BehavioralModels:
             filepath = os.path.join(PROJECT_ROOT, "ml_engine", "trained_models.pkl")
         elif not os.path.isabs(filepath):
             filepath = os.path.join(PROJECT_ROOT, filepath)
+        filepath = os.path.normpath(filepath)
 
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Model file not found at '{filepath}'")

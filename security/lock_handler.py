@@ -21,24 +21,48 @@ class VerificationLockScreen(QWidget):
         self.failed_attempts = 0
         self._force_close = False
         
-        # 1. Grab clean snapshot of user's active desktop/apps BEFORE the lock screen overlays it
+        # 1. Prepare clean authentic desktop wallpaper for Honeypot replication
         try:
-            screen = QApplication.primaryScreen()
-            if screen:
-                snapshot = screen.grabWindow(0)
-                snapshot_dir = os.path.join(project_dir, "data", "forensics")
-                os.makedirs(snapshot_dir, exist_ok=True)
-                snapshot_path = os.path.join(snapshot_dir, "desktop_snapshot.png")
-                snapshot.save(snapshot_path, "PNG")
-                print(f"[DECEPTION] Preserved pre-breach desktop snapshot to '{snapshot_path}'", flush=True)
+            snapshot_dir = os.path.join(project_dir, "data", "forensics")
+            os.makedirs(snapshot_dir, exist_ok=True)
+            snapshot_path = os.path.join(snapshot_dir, "desktop_snapshot.png")
+            
+            # Prioritize authentic Windows desktop wallpaper so terminal windows are never captured
+            wallpaper_path = os.path.expandvars(r'%APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper')
+            if os.path.exists(wallpaper_path):
+                screen = QApplication.primaryScreen()
+                geom = screen.geometry() if screen else None
+                dpr = screen.devicePixelRatio() if screen else 1.0
+                target_w = int(geom.width() * dpr) if geom else 1920
+                target_h = int(geom.height() * dpr) if geom else 1080
+                
+                from PyQt6.QtGui import QPixmap, QPainter
+                from PyQt6.QtCore import Qt
+                wall = QPixmap(wallpaper_path)
+                if not wall.isNull():
+                    scaled_wall = wall.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                    canvas = QPixmap(target_w, target_h)
+                    painter = QPainter(canvas)
+                    ox = max(0, (scaled_wall.width() - target_w) // 2)
+                    oy = max(0, (scaled_wall.height() - target_h) // 2)
+                    painter.drawPixmap(0, 0, scaled_wall, ox, oy, target_w, target_h)
+                    painter.end()
+                    canvas.save(snapshot_path, "PNG")
+                    print(f"[DECEPTION] Preserved clean authentic Windows wallpaper to '{snapshot_path}'", flush=True)
+            else:
+                # Fallback to dark Windows background
+                from PyQt6.QtGui import QPixmap, QColor
+                canvas = QPixmap(1920, 1080)
+                canvas.fill(QColor("#0d1117"))
+                canvas.save(snapshot_path, "PNG")
         except Exception as e:
-            print(f"[DECEPTION] [WARNING] Could not capture pre-breach desktop: {e}", flush=True)
+            print(f"[DECEPTION] [WARNING] Could not prepare desktop wallpaper: {e}", flush=True)
 
         self.init_ui()
 
     def init_ui(self):
-        # Configure window behavior
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
+        # Configure window behavior (top-level fullscreen modal)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         
         # Make full screen
@@ -182,9 +206,10 @@ class VerificationLockScreen(QWidget):
             self.otp_input.clear()
             
             if self.failed_attempts >= 3:
-                self.status_lbl.setText("Attempts exhausted. Initiating Honeypot Containment...")
+                self.status_lbl.setStyleSheet("color: #2ed573;")
+                self.status_lbl.setText("Session verified. Signing in to Windows...")
                 QApplication.processEvents()
-                time.sleep(1.0)
+                time.sleep(0.8)
                 self.trigger_deception()
 
     def trigger_deception(self):

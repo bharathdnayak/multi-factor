@@ -6,15 +6,17 @@ import psutil
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QTextEdit, QFrame, QDialog
+    QLineEdit, QPushButton, QTextEdit, QFrame, QDialog, QGridLayout,
+    QScrollArea
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QObject, pyqtSignal, QTimer, QRect
-from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QCursor, QIcon
+from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QCursor, QIcon, QPen, QBrush
 from pynput import keyboard
 
 # Append project root
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_dir)
+if project_dir not in sys.path:
+    sys.path.append(project_dir)
 
 class HotkeySignals(QObject):
     """Signals to communicate safely from background keyboard threads to the UI thread."""
@@ -36,6 +38,36 @@ class HistoryLineEdit(QLineEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
+class TaskbarClockOverlay(QLabel):
+    """
+    Dynamically renders a live, ticking system clock matching Windows 11 system taskbar.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("""
+            QLabel {
+                color: #ffffff;
+                font-family: 'Segoe UI Variable Text', 'Segoe UI', Tahoma, sans-serif;
+                font-size: 11px;
+                font-weight: 400;
+                background-color: transparent;
+                padding: 0 4px;
+            }
+        """)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)
+        self.update_time()
+
+    def update_time(self):
+        try:
+            time_part = time.strftime("%I:%M %p").lstrip('0')
+            date_part = time.strftime("%d-%m-%Y")
+            self.setText(f"{time_part}\n{date_part}")
+        except Exception:
+            self.setText(time.strftime("%H:%M\n%Y-%m-%d"))
 
 class WindowsGhostingDialog(QDialog):
     """
@@ -104,43 +136,767 @@ class WindowsGhostingDialog(QDialog):
         
         self.setLayout(layout)
 
-class TaskbarClockOverlay(QLabel):
+class DecoyNotepad(QFrame):
     """
-    Dynamically renders a live, ticking system clock in the exact bottom-right
-    Windows taskbar location, eliminating the frozen-clock forensic giveaway.
+    Authentic Windows Notepad decoy window displaying sensitive honey-token credentials.
+    Fully minimizable, draggable, maximizable, and closable.
     """
-    def __init__(self, parent=None):
+    def __init__(self, sandbox_dir, log_dir, parent=None):
         super().__init__(parent)
-        self.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.sandbox_dir = sandbox_dir
+        self.log_path = os.path.join(log_dir, "honeypot_commands.log")
+        self.is_maximized = False
+        self.normal_geom = None
+        self.drag_position = QPoint()
+        self.init_ui()
+
+    def init_ui(self):
+        self.setFixedSize(QSize(680, 420))
         self.setStyleSheet("""
-            QLabel {
-                color: #ffffff;
-                font-family: 'Segoe UI Variable Text', 'Segoe UI', Tahoma, sans-serif;
+            QFrame#NotepadContainer {
+                background-color: #202020;
+                border: 1px solid #3c3c3c;
+                border-radius: 8px;
+            }
+            QFrame#NotepadTitleBar {
+                background-color: #1f1f1f;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border-bottom: 1px solid #2d2d2d;
+            }
+            QLabel#NotepadTitle {
+                color: #e0e0e0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton#NBtn {
+                background: transparent;
+                color: #a0a0a0;
+                border: none;
+                font-family: 'Segoe UI', sans-serif;
                 font-size: 11px;
-                font-weight: 400;
-                background-color: transparent;
-                padding-right: 10px;
+                font-weight: bold;
+                width: 34px;
+                height: 26px;
+            }
+            QPushButton#NBtn:hover {
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QPushButton#NCloseBtn:hover {
+                background-color: #e81123;
+                color: #ffffff;
+                border-top-right-radius: 8px;
+            }
+            QFrame#MenuBar {
+                background-color: #202020;
+                border-bottom: 1px solid #2d2d2d;
+            }
+            QLabel#MenuLabel {
+                color: #cccccc;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                padding: 4px 8px;
+            }
+            QLabel#MenuLabel:hover {
+                background-color: #2d2d2d;
+                border-radius: 3px;
+            }
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #e0e0e0;
+                font-family: 'Consolas', monospace;
+                font-size: 13px;
+                border: none;
+                padding: 10px;
             }
         """)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_time)
-        self.timer.start(1000)
-        self.update_time()
+        self.setObjectName("NotepadContainer")
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Title bar
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("NotepadTitleBar")
+        self.title_bar.setFixedHeight(30)
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(10, 0, 0, 0)
+        tb_layout.setSpacing(2)
+        
+        icon_lbl = QLabel("📄")
+        icon_lbl.setStyleSheet("font-size: 12px; margin-right: 4px;")
+        tb_layout.addWidget(icon_lbl)
+        
+        title_lbl = QLabel("passwords.txt - Notepad")
+        title_lbl.setObjectName("NotepadTitle")
+        tb_layout.addWidget(title_lbl)
+        tb_layout.addStretch()
+        
+        min_btn = QPushButton("─")
+        min_btn.setObjectName("NBtn")
+        min_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(min_btn)
+        
+        self.max_btn = QPushButton("□")
+        self.max_btn.setObjectName("NBtn")
+        self.max_btn.clicked.connect(self.toggle_maximize)
+        tb_layout.addWidget(self.max_btn)
+        
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("NCloseBtn")
+        close_btn.setProperty("class", "NCloseBtn")
+        close_btn.setStyleSheet("background: transparent; color: #a0a0a0; border: none; font-size: 11px; width: 34px; height: 26px;")
+        close_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(close_btn)
+        
+        self.title_bar.setLayout(tb_layout)
+        layout.addWidget(self.title_bar)
+        
+        # Menu bar
+        menu_bar = QFrame()
+        menu_bar.setObjectName("MenuBar")
+        menu_bar.setFixedHeight(26)
+        mb_layout = QHBoxLayout()
+        mb_layout.setContentsMargins(6, 0, 0, 0)
+        mb_layout.setSpacing(6)
+        for m in ["File", "Edit", "View"]:
+            lbl = QLabel(m)
+            lbl.setObjectName("MenuLabel")
+            mb_layout.addWidget(lbl)
+        mb_layout.addStretch()
+        menu_bar.setLayout(mb_layout)
+        layout.addWidget(menu_bar)
+        
+        # Content
+        self.editor = QTextEdit()
+        decoy_content = (
+            "=== CONFIDENTIAL SYSTEM VAULT & INFRASTRUCTURE KEYS ===\n\n"
+            "[Production Database]\n"
+            "Host:     prod-cluster-db.internal.corp (PostgreSQL 15)\n"
+            "User:     sec_admin\n"
+            "Password: P@ssw0rd_Production_2026!#\n\n"
+            "[AWS Cloud Infrastructure]\n"
+            "AWS_ACCESS_KEY_ID     = AKIAIOSFODNN7EXAMPLE\n"
+            "AWS_SECRET_ACCESS_KEY = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
+            "S3_BACKUP_BUCKET      = s3://corp-behavioral-snapshots-secure/\n\n"
+            "[Domain Controller]\n"
+            "Domain:   CORP-LOCAL\n"
+            "Admin:    administrator\n"
+            "NTLM:     8846f7eaee8fb117ad06bdd830b7586c\n"
+        )
+        self.editor.setText(decoy_content)
+        self.editor.textChanged.connect(self.on_content_changed)
+        layout.addWidget(self.editor)
+        
+        self.setLayout(layout)
 
-    def update_time(self):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not self.is_maximized:
+            self.drag_position = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'drag_position') and not self.is_maximized:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def toggle_maximize(self):
+        if not self.is_maximized:
+            self.normal_geom = self.geometry()
+            parent_rect = self.parent().rect() if self.parent() else QApplication.primaryScreen().geometry()
+            self.setGeometry(0, 0, parent_rect.width(), parent_rect.height() - 48)
+            self.max_btn.setText("❐")
+            self.is_maximized = True
+        else:
+            if self.normal_geom:
+                self.setGeometry(self.normal_geom)
+            else:
+                self.setFixedSize(QSize(680, 420))
+            self.max_btn.setText("□")
+            self.is_maximized = False
+
+    def on_content_changed(self):
         try:
-            time_part = time.strftime("%I:%M %p").lstrip('0')
-            date_part = time.strftime("%d-%m-%Y")
-            self.setText(f"{time_part}\n{date_part}")
+            content = self.editor.toPlainText()
+            sandbox_file = os.path.join(self.sandbox_dir, "passwords.txt")
+            with open(sandbox_file, "w", encoding="utf-8") as f:
+                f.write(content)
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [NOTEPAD_EDIT] passwords.txt modified in sandbox\n")
         except Exception:
-            self.setText(time.strftime("%H:%M\n%Y-%m-%d"))
+            pass
+
+class DecoyExplorer(QFrame):
+    """
+    Authentic Windows File Explorer decoy window displaying user's folder contents.
+    Fully minimizable, draggable, maximizable, and closable.
+    """
+    def __init__(self, sandbox_dir, log_dir, parent=None):
+        super().__init__(parent)
+        self.sandbox_dir = sandbox_dir
+        self.is_maximized = False
+        self.normal_geom = None
+        self.drag_position = QPoint()
+        self.init_ui()
+
+    def init_ui(self):
+        self.setFixedSize(QSize(760, 460))
+        self.setStyleSheet("""
+            QFrame#ExplorerContainer {
+                background-color: #202020;
+                border: 1px solid #3c3c3c;
+                border-radius: 8px;
+            }
+            QFrame#ExplorerTitleBar {
+                background-color: #1f1f1f;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border-bottom: 1px solid #2d2d2d;
+            }
+            QLabel#ExplorerTitle {
+                color: #e0e0e0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton#EBtn {
+                background: transparent;
+                color: #a0a0a0;
+                border: none;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                font-weight: bold;
+                width: 34px;
+                height: 26px;
+            }
+            QPushButton#EBtn:hover {
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QPushButton#ECloseBtn:hover {
+                background-color: #e81123;
+                color: #ffffff;
+                border-top-right-radius: 8px;
+            }
+            QFrame#AddressBar {
+                background-color: #262626;
+                border: 1px solid #383838;
+                border-radius: 4px;
+                padding: 2px 8px;
+            }
+            QLabel#AddressText {
+                color: #cccccc;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+            }
+            QFrame#FolderArea {
+                background-color: #191919;
+                border: none;
+            }
+            QLabel#ItemLabel {
+                color: #e2e8f0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                padding: 4px;
+            }
+            QLabel#ItemLabel:hover {
+                background-color: #2c3e50;
+                border-radius: 4px;
+            }
+        """)
+        self.setObjectName("ExplorerContainer")
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Title bar
+        title_bar = QFrame()
+        title_bar.setObjectName("ExplorerTitleBar")
+        title_bar.setFixedHeight(30)
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(10, 0, 0, 0)
+        tb_layout.setSpacing(2)
+        
+        icon_lbl = QLabel("📁")
+        icon_lbl.setStyleSheet("font-size: 12px; margin-right: 4px;")
+        tb_layout.addWidget(icon_lbl)
+        
+        title_lbl = QLabel("clg - File Explorer")
+        title_lbl.setObjectName("ExplorerTitle")
+        tb_layout.addWidget(title_lbl)
+        tb_layout.addStretch()
+        
+        min_btn = QPushButton("─")
+        min_btn.setObjectName("EBtn")
+        min_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(min_btn)
+        
+        self.max_btn = QPushButton("□")
+        self.max_btn.setObjectName("EBtn")
+        self.max_btn.clicked.connect(self.toggle_maximize)
+        tb_layout.addWidget(self.max_btn)
+        
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("ECloseBtn")
+        close_btn.setStyleSheet("background: transparent; color: #a0a0a0; border: none; font-size: 11px; width: 34px; height: 26px;")
+        close_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(close_btn)
+        
+        title_bar.setLayout(tb_layout)
+        layout.addWidget(title_bar)
+        
+        # Address Bar row
+        nav_row = QFrame()
+        nav_row.setFixedHeight(36)
+        nav_row.setStyleSheet("background-color: #1f1f1f; border-bottom: 1px solid #2d2d2d; padding: 2px 8px;")
+        nav_layout = QHBoxLayout()
+        nav_layout.setContentsMargins(6, 2, 6, 2)
+        nav_layout.setSpacing(8)
+        
+        arrow_lbl = QLabel("←  →  ↑")
+        arrow_lbl.setStyleSheet("color: #888888; font-size: 13px;")
+        nav_layout.addWidget(arrow_lbl)
+        
+        addr_box = QFrame()
+        addr_box.setObjectName("AddressBar")
+        addr_box_layout = QHBoxLayout()
+        addr_box_layout.setContentsMargins(6, 0, 6, 0)
+        addr_lbl = QLabel("📁 This PC > Local Disk (C:) > Users > Dell > Desktop > clg")
+        addr_lbl.setObjectName("AddressText")
+        addr_box_layout.addWidget(addr_lbl)
+        addr_box.setLayout(addr_box_layout)
+        nav_layout.addWidget(addr_box, 1)
+        
+        search_box = QFrame()
+        search_box.setObjectName("AddressBar")
+        search_box.setFixedWidth(160)
+        sb_layout = QHBoxLayout()
+        sb_layout.setContentsMargins(6, 0, 6, 0)
+        sb_lbl = QLabel("🔍 Search clg")
+        sb_lbl.setStyleSheet("color: #777777; font-size: 11px;")
+        sb_layout.addWidget(sb_lbl)
+        search_box.setLayout(sb_layout)
+        nav_layout.addWidget(search_box)
+        
+        nav_row.setLayout(nav_layout)
+        layout.addWidget(nav_row)
+        
+        # Folder grid content
+        folder_area = QFrame()
+        folder_area.setObjectName("FolderArea")
+        f_layout = QGridLayout()
+        f_layout.setContentsMargins(20, 20, 20, 20)
+        f_layout.setHorizontalSpacing(30)
+        f_layout.setVerticalSpacing(20)
+        f_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
+        items = [
+            ("📁", "Behavioral-Drift-Security"),
+            ("📁", "models"),
+            ("📁", "data"),
+            ("📄", "thesis_final_draft.docx"),
+            ("📊", "system_evaluation_metrics.xlsx"),
+            ("🎥", "major_project_demo.mp4"),
+            ("📝", "tester.txt"),
+            ("📁", "scripts")
+        ]
+        
+        for idx, (icon, name) in enumerate(items):
+            row = idx // 4
+            col = idx % 4
+            
+            box = QFrame()
+            box.setFixedSize(130, 80)
+            box.setStyleSheet("QFrame:hover { background-color: #2d3748; border-radius: 6px; }")
+            b_layout = QVBoxLayout()
+            b_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            b_layout.setSpacing(4)
+            
+            i_lbl = QLabel(icon)
+            i_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            i_lbl.setStyleSheet("font-size: 28px; background: transparent;")
+            b_layout.addWidget(i_lbl)
+            
+            t_lbl = QLabel(name)
+            t_lbl.setObjectName("ItemLabel")
+            t_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            t_lbl.setWordWrap(True)
+            t_lbl.setStyleSheet("color: #e2e8f0; font-size: 11px; background: transparent;")
+            b_layout.addWidget(t_lbl)
+            
+            box.setLayout(b_layout)
+            f_layout.addWidget(box, row, col)
+            
+        folder_area.setLayout(f_layout)
+        layout.addWidget(folder_area, 1)
+        
+        self.setLayout(layout)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not self.is_maximized:
+            self.drag_position = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'drag_position') and not self.is_maximized:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def toggle_maximize(self):
+        if not self.is_maximized:
+            self.normal_geom = self.geometry()
+            parent_rect = self.parent().rect() if self.parent() else QApplication.primaryScreen().geometry()
+            self.setGeometry(0, 0, parent_rect.width(), parent_rect.height() - 48)
+            self.max_btn.setText("❐")
+            self.is_maximized = True
+        else:
+            if self.normal_geom:
+                self.setGeometry(self.normal_geom)
+            else:
+                self.setFixedSize(QSize(760, 460))
+            self.max_btn.setText("□")
+            self.is_maximized = False
+
+class Windows11StartMenu(QFrame):
+    """
+    Authentic Windows 11 Centered Start Menu popup.
+    Features pinned applications and power/lock options allowing clean exit.
+    """
+    def __init__(self, parent_desktop, parent=None):
+        super().__init__(parent)
+        self.desktop = parent_desktop
+        self.init_ui()
+
+    def init_ui(self):
+        self.setFixedSize(480, 450)
+        self.setStyleSheet("""
+            QFrame#StartMenuContainer {
+                background-color: #202020;
+                border: 1px solid #383838;
+                border-radius: 10px;
+            }
+            QLineEdit#SearchField {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 13px;
+                border: 1px solid #444444;
+                border-radius: 16px;
+                padding: 6px 16px;
+            }
+            QLabel#SectionHeader {
+                color: #e0e0e0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton#AppBtn {
+                background-color: transparent;
+                color: #e2e8f0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 4px;
+            }
+            QPushButton#AppBtn:hover {
+                background-color: #2d3748;
+            }
+            QFrame#UserFooter {
+                background-color: #1a1a1a;
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+                border-top: 1px solid #2d2d2d;
+            }
+            QPushButton#ActionBtn {
+                background-color: #2a2a2a;
+                color: #00d2d3;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: bold;
+                border: 1px solid #3d3d3d;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton#ActionBtn:hover {
+                background-color: #383838;
+                color: #ffffff;
+            }
+        """)
+        self.setObjectName("StartMenuContainer")
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(18, 18, 18, 0)
+        layout.setSpacing(14)
+        
+        # Search bar
+        search = QLineEdit()
+        search.setObjectName("SearchField")
+        search.setPlaceholderText("🔍 Type here to search")
+        layout.addWidget(search)
+        
+        # Header
+        hdr = QLabel("Pinned")
+        hdr.setObjectName("SectionHeader")
+        layout.addWidget(hdr)
+        
+        # Grid of apps
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        
+        apps = [
+            ("💻", "PowerShell", self.launch_powershell),
+            ("📁", "File Explorer", self.launch_explorer),
+            ("📄", "Passwords", self.launch_notepad),
+            ("🌐", "Microsoft Edge", self.launch_edge),
+            ("⚙️", "Settings", self.launch_settings),
+            ("📝", "Notepad", self.launch_notepad)
+        ]
+        
+        for idx, (icon, name, handler) in enumerate(apps):
+            r = idx // 3
+            c = idx % 3
+            btn = QPushButton(f"{icon}\n{name}")
+            btn.setObjectName("AppBtn")
+            btn.setFixedSize(130, 60)
+            btn.clicked.connect(handler)
+            grid.addWidget(btn, r, c)
+            
+        layout.addLayout(grid)
+        layout.addStretch()
+        
+        # Footer
+        footer = QFrame()
+        footer.setObjectName("UserFooter")
+        footer.setFixedHeight(50)
+        f_layout = QHBoxLayout()
+        f_layout.setContentsMargins(16, 0, 16, 0)
+        
+        user_lbl = QLabel("👤  Dell (Administrator)")
+        user_lbl.setStyleSheet("color: #e0e0e0; font-family: 'Segoe UI', sans-serif; font-size: 12px; font-weight: 500;")
+        f_layout.addWidget(user_lbl)
+        f_layout.addStretch()
+        
+        exit_btn = QPushButton("🔓 Exit Honeypot")
+        exit_btn.setObjectName("ActionBtn")
+        exit_btn.clicked.connect(self.trigger_exit)
+        f_layout.addWidget(exit_btn)
+        
+        footer.setLayout(f_layout)
+        layout.addWidget(footer)
+        
+        self.setLayout(layout)
+
+    def launch_powershell(self):
+        self.hide()
+        self.desktop.open_terminal()
+
+    def launch_explorer(self):
+        self.hide()
+        self.desktop.open_explorer()
+
+    def launch_notepad(self):
+        self.hide()
+        self.desktop.open_notepad()
+
+    def launch_edge(self):
+        self.hide()
+        self.desktop.terminal.console.append("\n[Network Simulation] Sandbox proxy routing web requests safely.")
+        self.desktop.open_terminal()
+
+    def launch_settings(self):
+        self.hide()
+        self.desktop.show_verification_prompt()
+
+    def trigger_exit(self):
+        self.hide()
+        self.desktop.show_verification_prompt()
+
+class HoneypotVerificationDialog(QDialog):
+    """
+    Windows Security Identity Verification & Forensic Recovery Dialog.
+    Allows authentic session unlock via Master Bypass Password ('admin') or OTP PIN,
+    and provides an Emergency Exit option so users never get trapped.
+    """
+    def __init__(self, parent_desktop):
+        super().__init__(parent_desktop)
+        self.desktop = parent_desktop
+        self.failed_attempts = 0
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
+        self.setWindowTitle("Windows Security - Identity Verification")
+        self.setFixedSize(460, 260)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e2d;
+                color: #e2e8f0;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+            QLabel#Title {
+                color: #00d2d3;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QLabel#Sub {
+                color: #a4b0be;
+                font-size: 12px;
+            }
+            QLineEdit {
+                background-color: #151522;
+                border: 2px solid #3c3c54;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 16px;
+                color: #ffffff;
+            }
+            QLineEdit:focus {
+                border-color: #00d2d3;
+            }
+            QPushButton#VerifyBtn {
+                background-color: #2ed573;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 8px 16px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton#VerifyBtn:hover {
+                background-color: #26af5f;
+            }
+            QPushButton#EmergencyBtn {
+                background-color: #ff4757;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 8px 16px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton#EmergencyBtn:hover {
+                background-color: #e84118;
+            }
+            QPushButton#CancelBtn {
+                background-color: #3d3d5c;
+                color: #e2e8f0;
+                font-size: 13px;
+                padding: 8px 16px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton#CancelBtn:hover {
+                background-color: #4b4b6f;
+            }
+            QLabel#Status {
+                font-size: 12px;
+                font-weight: bold;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        
+        # Header
+        top_h = QHBoxLayout()
+        icon_lbl = QLabel("🛡️")
+        icon_lbl.setStyleSheet("font-size: 28px; margin-right: 8px;")
+        top_h.addWidget(icon_lbl)
+        
+        hdr_layout = QVBoxLayout()
+        t_lbl = QLabel("Session Identity Verification")
+        t_lbl.setObjectName("Title")
+        s_lbl = QLabel("Enter Master Bypass ('admin') or 6-digit OTP code to exit Honeypot and restore normal Windows session:")
+        s_lbl.setObjectName("Sub")
+        s_lbl.setWordWrap(True)
+        hdr_layout.addWidget(t_lbl)
+        hdr_layout.addWidget(s_lbl)
+        top_h.addLayout(hdr_layout)
+        layout.addLayout(top_h)
+        
+        # Password Input
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Enter admin or 6-digit OTP code")
+        self.input_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_field.returnPressed.connect(self.verify_code)
+        layout.addWidget(self.input_field)
+        
+        # Status Label
+        self.status_lbl = QLabel("")
+        self.status_lbl.setObjectName("Status")
+        self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status_lbl)
+        
+        # Buttons Row
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        verify_btn = QPushButton("Verify & Unlock")
+        verify_btn.setObjectName("VerifyBtn")
+        verify_btn.clicked.connect(self.verify_code)
+        btn_layout.addWidget(verify_btn)
+        
+        emergency_btn = QPushButton("Emergency Exit")
+        emergency_btn.setObjectName("EmergencyBtn")
+        emergency_btn.clicked.connect(self.emergency_exit)
+        btn_layout.addWidget(emergency_btn)
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("CancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
+
+    def verify_code(self):
+        entered = self.input_field.text().strip()
+        from security.drift_detector import ThreatEvaluator
+        evaluator = ThreatEvaluator()
+        evaluator.is_breached = True
+        
+        ok = evaluator.verify_otp_and_reset(entered)
+        if ok:
+            self.status_lbl.setStyleSheet("color: #2ed573;")
+            self.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
+            QApplication.processEvents()
+            time.sleep(0.8)
+            self.accept()
+            self.desktop._can_close = True
+            self.desktop.close()
+            
+            # Open Forensics Recovery Dashboard
+            from dashboard.forensic_dashboard import ForensicDashboard
+            global _active_forensics_window
+            _active_forensics_window = ForensicDashboard()
+            _active_forensics_window.show()
+        else:
+            self.failed_attempts += 1
+            self.status_lbl.setStyleSheet("color: #ff4757;")
+            self.status_lbl.setText(f"Invalid code. Attempts remaining: {max(0, 3 - self.failed_attempts)}")
+            self.input_field.clear()
+
+    def emergency_exit(self):
+        self.status_lbl.setStyleSheet("color: #00d2d3;")
+        self.status_lbl.setText("Emergency exit confirmed. Restoring desktop...")
+        QApplication.processEvents()
+        time.sleep(0.4)
+        self.accept()
+        self.desktop._can_close = True
+        self.desktop.close()
 
 class HoneyShell(QFrame):
     """
     Authentic Windows Floating Terminal Emulator (Honeypot PowerShell / CMD).
     Draggable anywhere on top of the replicated desktop.
-    Features Up/Down command history, maximize/restore, authentic systeminfo,
-    whoami, tasklist (real processes), and diverted file sandbox writes.
+    Features Up/Down command history, minimize, maximize/restore, closable,
+    authentic systeminfo, whoami, tasklist (real processes), and diverted file sandbox writes.
     """
     def __init__(self, sandbox_dir, log_dir, parent=None):
         super().__init__(parent)
@@ -166,7 +922,7 @@ class HoneyShell(QFrame):
         self.init_ui()
 
     def init_ui(self):
-        self.setFixedSize(QSize(840, 530))
+        self.setFixedSize(QSize(840, 520))
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("""
             QFrame#TerminalContainer {
@@ -247,7 +1003,7 @@ class HoneyShell(QFrame):
         
         min_btn = QPushButton("─")
         min_btn.setObjectName("TitleBtn")
-        min_btn.clicked.connect(self.hide_fake)
+        min_btn.clicked.connect(self.minimize_shell)
         tb_layout.addWidget(min_btn)
         
         self.max_btn = QPushButton("□")
@@ -258,7 +1014,7 @@ class HoneyShell(QFrame):
         close_btn = QPushButton("✕")
         close_btn.setObjectName("TitleBtn")
         close_btn.setProperty("class", "CloseBtn")
-        close_btn.clicked.connect(self.close_fake)
+        close_btn.clicked.connect(self.close_shell)
         tb_layout.addWidget(close_btn)
         
         self.title_bar.setLayout(tb_layout)
@@ -317,7 +1073,7 @@ class HoneyShell(QFrame):
             if self.normal_geom:
                 self.setGeometry(self.normal_geom)
             else:
-                self.setFixedSize(QSize(840, 530))
+                self.setFixedSize(QSize(840, 520))
             self.max_btn.setText("□")
             self.is_maximized = False
 
@@ -334,11 +1090,19 @@ class HoneyShell(QFrame):
             self.history_index = len(self.history)
             self.input_field.clear()
 
+    def minimize_shell(self):
+        """Minimizes terminal cleanly to the taskbar."""
+        self.hide()
+
+    def close_shell(self):
+        """Closes terminal cleanly."""
+        self.hide()
+
     def hide_fake(self):
-        self.console.append(f"\n[Process Warning] Background diagnostic shell cannot be minimized during system check.\n")
+        self.minimize_shell()
 
     def close_fake(self):
-        self.console.append(f"\n[Access Denied] Administrative session termination restricted by Group Policy.\n")
+        self.close_shell()
 
     def log_action(self, cmd_raw):
         """Saves command sequence logs to the forensics file."""
@@ -369,7 +1133,13 @@ class HoneyShell(QFrame):
         
         response = ""
         
-        if base_cmd in ["dir", "ls", "get-childitem"]:
+        if base_cmd in ["exit", "quit"]:
+            self.close_shell()
+            return
+        elif base_cmd in ["clear", "cls"]:
+            self.console.clear()
+            return
+        elif base_cmd in ["dir", "ls", "get-childitem"]:
             response = self._handle_dir(args)
         elif base_cmd == "cd":
             response = self._handle_cd(args)
@@ -387,9 +1157,6 @@ class HoneyShell(QFrame):
             response = self._handle_whoami(args)
         elif base_cmd in ["hostname"]:
             response = "DESKTOP-SEC-WIN11"
-        elif base_cmd in ["clear", "cls"]:
-            self.console.clear()
-            return
         elif base_cmd in ["ipconfig"]:
             response = self._handle_ipconfig(args)
         elif base_cmd in ["net", "net.exe"]:
@@ -400,7 +1167,7 @@ class HoneyShell(QFrame):
             else:
                 response = "The syntax of this command is: NET [ ACCOUNTS | COMPUTER | CONFIG | GROUP | USER ]"
         elif base_cmd in ["help", "Get-Help"]:
-            response = "Supported Diagnostic Commands: tasklist, Get-Process, systeminfo, netstat, cd, dir, ls, type, cat, echo, ipconfig, whoami, hostname, net user, cls, clear"
+            response = "Supported Diagnostic Commands: tasklist, Get-Process, systeminfo, netstat, cd, dir, ls, type, cat, echo, ipconfig, whoami, hostname, net user, cls, clear, exit"
         else:
             response = f"{base_cmd} : The term '{base_cmd}' is not recognized as the name of a cmdlet, function, script file, or operable program.\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again."
             
@@ -498,7 +1265,7 @@ class HoneyShell(QFrame):
         )
 
     def _handle_tasklist(self):
-        """Generates realistic process output using the user's actual running system processes!"""
+        """Generates realistic process output using system processes."""
         output = [
             f"{'Image Name':<30} {'PID':<8} {'Session Name':<16} {'Mem Usage':<12}",
             f"{'='*30} {'='*8} {'='*16} {'='*12}"
@@ -579,7 +1346,7 @@ class HoneyShell(QFrame):
             chk = os.path.join(self.sandbox_dir, target)
             if os.path.exists(chk):
                 try:
-                    with open(chk, "r") as f:
+                    with open(chk, "r", encoding="utf-8") as f:
                         return f.read()
                 except Exception:
                     pass
@@ -616,14 +1383,200 @@ class HoneyShell(QFrame):
             return f"Error writing file: {e}"
 
 
+class DesktopIconWidget(QWidget):
+    """Interactive clickable desktop icon matching Windows 11 style."""
+    def __init__(self, icon_text, label_text, click_handler, parent=None):
+        super().__init__(parent)
+        self.handler = click_handler
+        self.setFixedSize(84, 88)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.icon_lbl = QLabel(icon_text)
+        self.icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_lbl.setStyleSheet("font-size: 34px; background: transparent;")
+        layout.addWidget(self.icon_lbl)
+        
+        self.text_lbl = QLabel(label_text)
+        self.text_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.text_lbl.setWordWrap(True)
+        self.text_lbl.setStyleSheet("""
+            color: #ffffff;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 11px;
+            font-weight: 500;
+            background: transparent;
+        """)
+        layout.addWidget(self.text_lbl)
+        self.setLayout(layout)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setStyleSheet("background-color: rgba(255, 255, 255, 0.15); border-radius: 6px;")
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.setStyleSheet("background-color: transparent;")
+        if event.button() == Qt.MouseButton.LeftButton:
+            if callable(self.handler):
+                self.handler()
+        super().mouseReleaseEvent(event)
+
+    def enterEvent(self, event):
+        self.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); border-radius: 6px;")
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet("background-color: transparent;")
+        super().leaveEvent(event)
+
+
+class TaskbarWidget(QFrame):
+    """
+    Authentic Windows 11 Taskbar.
+    Pinned at the bottom of the screen with centered icons, Start menu trigger,
+    and system tray with live ticking clock and emergency recovery button.
+    """
+    def __init__(self, parent_desktop):
+        super().__init__(parent_desktop)
+        self.desktop = parent_desktop
+        self.setFixedHeight(48)
+        self.setObjectName("WindowsTaskbar")
+        self.setStyleSheet("""
+            QFrame#WindowsTaskbar {
+                background-color: rgba(24, 24, 24, 0.94);
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            QPushButton#TaskbarBtn {
+                background: transparent;
+                border: none;
+                border-radius: 5px;
+                padding: 6px;
+                font-size: 18px;
+            }
+            QPushButton#TaskbarBtn:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QPushButton#TaskbarBtn:pressed {
+                background-color: rgba(255, 255, 255, 0.12);
+            }
+            QLabel#TrayText {
+                color: #e2e8f0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                padding: 0 4px;
+            }
+        """)
+        
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(10, 0, 10, 0)
+        main_layout.setSpacing(0)
+        
+        # Left dummy for centering
+        self.left_box = QFrame()
+        self.left_box.setFixedWidth(160)
+        main_layout.addWidget(self.left_box)
+        main_layout.addStretch()
+        
+        # Center pinned icons
+        center_box = QHBoxLayout()
+        center_box.setSpacing(6)
+        
+        # Start button
+        self.start_btn = QPushButton("❖")
+        self.start_btn.setObjectName("TaskbarBtn")
+        self.start_btn.setStyleSheet("color: #00d2d3; font-size: 20px; font-weight: bold;")
+        self.start_btn.setToolTip("Start")
+        self.start_btn.clicked.connect(self.desktop.toggle_start_menu)
+        center_box.addWidget(self.start_btn)
+        
+        # Search pill
+        search_pill = QFrame()
+        search_pill.setFixedSize(120, 32)
+        search_pill.setStyleSheet("background-color: rgba(255, 255, 255, 0.06); border-radius: 16px; border: 1px solid rgba(255,255,255,0.06);")
+        sp_layout = QHBoxLayout()
+        sp_layout.setContentsMargins(10, 0, 10, 0)
+        sp_lbl = QLabel("🔍  Search")
+        sp_lbl.setStyleSheet("color: #aaaaaa; font-family: 'Segoe UI', sans-serif; font-size: 11px; background: transparent;")
+        sp_layout.addWidget(sp_lbl)
+        search_pill.setLayout(sp_layout)
+        center_box.addWidget(search_pill)
+        
+        # File Explorer
+        exp_btn = QPushButton("📁")
+        exp_btn.setObjectName("TaskbarBtn")
+        exp_btn.setToolTip("File Explorer")
+        exp_btn.clicked.connect(self.desktop.toggle_explorer)
+        center_box.addWidget(exp_btn)
+        
+        # Chrome / Browser
+        chrome_btn = QPushButton("🌐")
+        chrome_btn.setObjectName("TaskbarBtn")
+        chrome_btn.setToolTip("Browser")
+        chrome_btn.clicked.connect(self.desktop.open_terminal)
+        center_box.addWidget(chrome_btn)
+        
+        # PowerShell Terminal
+        term_btn = QPushButton("💻")
+        term_btn.setObjectName("TaskbarBtn")
+        term_btn.setToolTip("Windows PowerShell")
+        term_btn.clicked.connect(self.desktop.toggle_terminal)
+        center_box.addWidget(term_btn)
+        
+        # Notepad
+        notes_btn = QPushButton("📝")
+        notes_btn.setObjectName("TaskbarBtn")
+        notes_btn.setToolTip("Notepad")
+        notes_btn.clicked.connect(self.desktop.toggle_notepad)
+        center_box.addWidget(notes_btn)
+        
+        main_layout.addLayout(center_box)
+        main_layout.addStretch()
+        
+        # Right Tray
+        right_tray = QHBoxLayout()
+        right_tray.setSpacing(6)
+        
+        # Tray icons
+        for icon in ["📶", "🔊", "🔋"]:
+            lbl = QLabel(icon)
+            lbl.setStyleSheet("font-size: 13px; color: #ffffff; padding: 0 2px;")
+            right_tray.addWidget(lbl)
+            
+        lang_lbl = QLabel("ENG\nIN")
+        lang_lbl.setObjectName("TrayText")
+        lang_lbl.setStyleSheet("font-size: 10px; font-weight: 500; line-height: 10px;")
+        right_tray.addWidget(lang_lbl)
+        
+        # Live clock overlay
+        self.clock = TaskbarClockOverlay(self)
+        right_tray.addWidget(self.clock)
+        
+        # Discreet session recovery shield
+        shield_btn = QPushButton("🛡️")
+        shield_btn.setObjectName("TaskbarBtn")
+        shield_btn.setToolTip("Session Security Recovery")
+        shield_btn.setStyleSheet("font-size: 14px; padding: 4px;")
+        shield_btn.clicked.connect(self.desktop.show_verification_prompt)
+        right_tray.addWidget(shield_btn)
+        
+        main_layout.addLayout(right_tray)
+        self.setLayout(main_layout)
+
+
 class HoneypotDesktop(QWidget):
     """
-    Full-Screen Deception Overlay replicating the user's active window/desktop 1:1.
-    Renders the exact pre-breach screenshot (with all open apps, browser tabs, VS Code, and taskbar),
-    incorporating sub-pixel DPR sharpness, a live ticking taskbar clock overlay,
-    authentic Windows Not Responding ghosting dialogs, and a floating PowerShell terminal.
+    Full-Screen Deception Overlay replicating the user's authentic active Windows 11 desktop.
+    Renders the exact pre-breach screenshot or authentic user wallpaper,
+    incorporating sub-pixel DPR sharpness, Windows 11 taskbar with live ticking clock,
+    desktop icons, an authentic PowerShell terminal (closable and minimizable),
+    decoy Notepad credentials, decoy File Explorer, and a Windows Start Menu.
     
-    Includes global Ctrl+Alt+Shift+U hotkey hook to verify identity and recover forensics.
+    Escape key or Ctrl+Alt+Shift+U triggers Session Identity Verification to return to normal.
     """
     def __init__(self, snapshot_path=None):
         super().__init__()
@@ -631,48 +1584,171 @@ class HoneypotDesktop(QWidget):
         self.log_dir = os.path.join(project_dir, "data", "forensics")
         os.makedirs(self.sandbox_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
+        self._can_close = False
+        self._last_esc_time = 0.0
         
-        # 1. Load exact pre-breach screenshot of the user's desktop with all open apps
+        screen = QApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen else 1.0
+        
+        # Load or synthesize authentic clean desktop screenshot
+        self.screenshot = self.load_authentic_desktop(snapshot_path, dpr)
+        
+        self.init_ui()
+        self.init_hotkey()
+
+    def load_authentic_desktop(self, snapshot_path, dpr):
+        """Loads valid desktop snapshot, or synthesizes authentic desktop from Windows wallpaper."""
         if snapshot_path is None:
             snapshot_path = os.path.join(self.log_dir, "desktop_snapshot.png")
             
         screen = QApplication.primaryScreen()
-        dpr = screen.devicePixelRatio() if screen else 1.0
+        geom = screen.geometry() if screen else QRect(0, 0, 1920, 1080)
+        target_w = int(geom.width() * dpr)
+        target_h = int(geom.height() * dpr)
         
-        if os.path.exists(snapshot_path):
-            self.screenshot = QPixmap(snapshot_path)
-            self.screenshot.setDevicePixelRatio(dpr)
-            print(f"[DECEPTION] Replicating exact active desktop from snapshot '{snapshot_path}' (DPR: {dpr})", flush=True)
-        else:
-            self.screenshot = screen.grabWindow(0) if screen else QPixmap()
-            if not self.screenshot.isNull():
-                self.screenshot.setDevicePixelRatio(dpr)
-            print(f"[DECEPTION] Captured live desktop state for honeypot replication (DPR: {dpr}).", flush=True)
-
-        self.click_count = 0
-        self.init_ui()
-        self.init_hotkey()
+        # 1. Prioritize authentic user wallpaper from Windows Themes so console/attack windows are never captured in background
+        wallpaper_path = os.path.expandvars(r'%APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper')
+        if os.path.exists(wallpaper_path):
+            wall = QPixmap(wallpaper_path)
+            if not wall.isNull():
+                scaled_wall = wall.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                canvas = QPixmap(target_w, target_h)
+                painter = QPainter(canvas)
+                ox = max(0, (scaled_wall.width() - target_w) // 2)
+                oy = max(0, (scaled_wall.height() - target_h) // 2)
+                painter.drawPixmap(0, 0, scaled_wall, ox, oy, target_w, target_h)
+                painter.end()
+                canvas.setDevicePixelRatio(dpr)
+                try:
+                    canvas.save(snapshot_path, "PNG")
+                except Exception:
+                    pass
+                print(f"[DECEPTION] Replicating active user desktop from authentic Windows wallpaper (DPR: {dpr})", flush=True)
+                return canvas
+        
+        # 2. Check if clean pre-existing snapshot on disk is valid and NOT black/corrupted
+        if os.path.exists(snapshot_path) and os.path.getsize(snapshot_path) > 10000:
+            pix = QPixmap(snapshot_path)
+            if not pix.isNull():
+                img = pix.toImage()
+                is_black = True
+                for sx in [pix.width() // 4, pix.width() // 2, 3 * pix.width() // 4]:
+                    for sy in [pix.height() // 4, pix.height() // 2, 3 * pix.height() // 4]:
+                        if img.pixelColor(sx, sy).value() > 15:
+                            is_black = False
+                            break
+                    if not is_black:
+                        break
+                if not is_black:
+                    pix.setDevicePixelRatio(dpr)
+                    print(f"[DECEPTION] Replicating active desktop from snapshot '{snapshot_path}' (DPR: {dpr})", flush=True)
+                    return pix
+                
+        # 3. Fallback: clean modern Windows dark background
+        canvas = QPixmap(target_w, target_h)
+        canvas.fill(QColor("#0d1117"))
+        canvas.setDevicePixelRatio(dpr)
+        return canvas
 
     def init_ui(self):
-        # Frameless, topmost overlay covering the primary display
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
+        # Frameless, topmost overlay covering the primary display (no SubWindow flag to ensure full OS integration)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         screen_geom = QApplication.primaryScreen().geometry()
         self.setGeometry(screen_geom)
         
-        # 2. Live Taskbar Clock Overlay (eliminates the frozen clock forensic giveaway!)
-        self.clock_overlay = TaskbarClockOverlay(self)
-        self.clock_overlay.setFixedSize(110, 42)
-        # Position in exact bottom right corner of taskbar
-        self.clock_overlay.move(screen_geom.width() - 115, screen_geom.height() - 44)
-
-        # 3. Floating Draggable Honey-Shell Terminal positioned centrally
+        # 1. Desktop Icons on the left side
+        self.setup_desktop_icons()
+        
+        # 2. Windows 11 Taskbar across bottom
+        self.taskbar = TaskbarWidget(self)
+        self.taskbar.setGeometry(0, screen_geom.height() - 48, screen_geom.width(), 48)
+        
+        # 3. Live Taskbar Clock Overlay reference (for backward compatibility)
+        self.clock_overlay = self.taskbar.clock
+        
+        # 4. Floating Draggable Honey-Shell Terminal
         self.terminal = HoneyShell(self.sandbox_dir, self.log_dir, parent=self)
-        center_x = max(20, (screen_geom.width() - self.terminal.width()) // 2)
-        center_y = max(20, (screen_geom.height() - self.terminal.height()) // 2)
+        center_x = max(40, (screen_geom.width() - self.terminal.width()) // 2)
+        center_y = max(30, (screen_geom.height() - self.terminal.height() - 60) // 2)
         self.terminal.move(center_x, center_y)
+        
+        # 5. Decoy Windows (Notepad and File Explorer)
+        self.decoy_notepad = DecoyNotepad(self.sandbox_dir, self.log_dir, parent=self)
+        self.decoy_notepad.move(center_x + 60, center_y + 40)
+        self.decoy_notepad.hide()
+        
+        # Open decoy File Explorer behind terminal or accessible via icons
+        self.decoy_explorer = DecoyExplorer(self.sandbox_dir, self.log_dir, parent=self)
+        self.decoy_explorer.move(max(20, center_x - 60), max(20, center_y - 30))
+        self.decoy_explorer.hide()
+        
+        # 6. Windows 11 Start Menu
+        self.start_menu = Windows11StartMenu(self, parent=self)
+        sm_x = max(10, (screen_geom.width() - self.start_menu.width()) // 2)
+        sm_y = screen_geom.height() - 48 - self.start_menu.height() - 10
+        self.start_menu.move(sm_x, sm_y)
+        self.start_menu.hide()
+
+    def setup_desktop_icons(self):
+        """Creates authentic desktop icons matching user's real desktop."""
+        icons = [
+            ("💻", "This PC", self.open_explorer),
+            ("🗑️", "Recycle Bin", self.open_explorer),
+            ("📁", "clg", self.open_explorer),
+            ("📄", "tester.txt", self.open_notepad),
+            ("📂", "My Documents", self.open_explorer),
+            ("🔒", "passwords.txt", self.open_notepad),
+            ("⚡", "PowerShell", self.open_terminal)
+        ]
+        
+        start_y = 20
+        start_x = 20
+        spacing_y = 96
+        
+        for idx, (icon_char, label_text, handler) in enumerate(icons):
+            icon_widget = DesktopIconWidget(icon_char, label_text, handler, parent=self)
+            icon_widget.move(start_x, start_y + (idx * spacing_y))
+
+    def toggle_start_menu(self):
+        if self.start_menu.isVisible():
+            self.start_menu.hide()
+        else:
+            self.start_menu.show()
+            self.start_menu.raise_()
+
+    def open_terminal(self):
+        self.terminal.show()
+        self.terminal.raise_()
+        self.terminal.input_field.setFocus()
+
+    def toggle_terminal(self):
+        if self.terminal.isVisible():
+            self.terminal.hide()
+        else:
+            self.open_terminal()
+
+    def open_notepad(self):
+        self.decoy_notepad.show()
+        self.decoy_notepad.raise_()
+
+    def toggle_notepad(self):
+        if self.decoy_notepad.isVisible():
+            self.decoy_notepad.hide()
+        else:
+            self.open_notepad()
+
+    def open_explorer(self):
+        self.decoy_explorer.show()
+        self.decoy_explorer.raise_()
+
+    def toggle_explorer(self):
+        if self.decoy_explorer.isVisible():
+            self.decoy_explorer.hide()
+        else:
+            self.open_explorer()
 
     def paintEvent(self, event):
-        """Paints the replicated screenshot of the user's actual desktop with 100% pixel fidelity."""
+        """Paints the replicated screenshot/wallpaper of the user's actual desktop with 100% pixel fidelity."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if hasattr(self, 'screenshot') and not self.screenshot.isNull():
@@ -682,43 +1758,10 @@ class HoneypotDesktop(QWidget):
         super().paintEvent(event)
 
     def mousePressEvent(self, event):
-        """
-        When the attacker clicks on the replicated open apps in the background,
-        shows authentic Windows WaitCursor and spawns the Windows Not Responding dialog.
-        """
-        if event.pos() not in self.terminal.geometry():
-            self.click_count += 1
-            
-            # 1. Briefly change cursor to Windows spinning circle / hourglass
-            QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
-            
-            def restore_cursor():
-                QApplication.restoreOverrideCursor()
-                if self.click_count >= 2:
-                    # Determine active app name from running processes for authenticity
-                    detected_app = "Visual Studio Code"
-                    try:
-                        for p in psutil.process_iter(['name']):
-                            pname = p.info['name'].lower()
-                            if "chrome" in pname:
-                                detected_app = "Google Chrome"
-                                break
-                            elif "code" in pname:
-                                detected_app = "Visual Studio Code"
-                                break
-                    except Exception:
-                        pass
-                        
-                    dlg = WindowsGhostingDialog(app_name=detected_app, parent=self)
-                    dlg.exec()
-                    self.click_count = 0
-                
-                # Refocus the administrative terminal
-                self.terminal.raise_()
-                self.terminal.input_field.setFocus()
-                
-            QTimer.singleShot(1100, restore_cursor)
-            
+        """Close start menu if clicking outside."""
+        if hasattr(self, 'start_menu') and self.start_menu.isVisible():
+            if event.pos() not in self.start_menu.geometry() and event.pos() not in self.taskbar.start_btn.geometry():
+                self.start_menu.hide()
         super().mousePressEvent(event)
 
     def init_hotkey(self):
@@ -730,59 +1773,41 @@ class HoneypotDesktop(QWidget):
             def on_activate():
                 sig.trigger_lock.emit()
             
-            with keyboard.GlobalHotKeys({'<ctrl>+<alt>+<shift>+u': on_activate}) as h:
-                h.join()
+            try:
+                with keyboard.GlobalHotKeys({'<ctrl>+<alt>+<shift>+u': on_activate}) as h:
+                    h.join()
+            except Exception:
+                pass
                 
         t = threading.Thread(target=run_listener, args=(self.signals,), daemon=True)
         t.start()
 
     def show_verification_prompt(self):
-        """Signal target. Displays verification input window."""
-        print("[DECEPTION] Verification hotkey triggered! Spawning Verification Dialog.", flush=True)
-        from security.drift_detector import ThreatEvaluator
-        from security.lock_handler import VerificationLockScreen
-        
-        evaluator = ThreatEvaluator()
-        evaluator.is_breached = True
-        
-        self.lock_prompt = VerificationLockScreen(evaluator)
-        self.lock_prompt.trigger_deception = self.lock_prompt.close
-        
-        original_check = self.lock_prompt.check_otp
-        
-        def wrapped_check():
-            entered = self.lock_prompt.otp_input.text().strip()
-            ok = evaluator.verify_otp_and_reset(entered)
-            if ok:
-                self.lock_prompt.status_lbl.setStyleSheet("color: #2ed573;")
-                self.lock_prompt.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
-                QApplication.processEvents()
-                time.sleep(1.0)
-                self.lock_prompt._force_close = True
-                self.lock_prompt.close()
-                self._can_close = True
-                self.close()
-                
-                # Launch Forensics Recovery Dashboard
-                from dashboard.forensic_dashboard import ForensicDashboard
-                global _active_forensics_window
-                _active_forensics_window = ForensicDashboard()
-                _active_forensics_window.show()
-            else:
-                self.lock_prompt.failed_attempts += 1
-                self.lock_prompt.status_lbl.setStyleSheet("color: #ff4757;")
-                self.lock_prompt.status_lbl.setText(f"Invalid code. Attempts remaining: {3 - self.lock_prompt.failed_attempts}")
-                self.lock_prompt.otp_input.clear()
-                if self.lock_prompt.failed_attempts >= 3:
-                    self.lock_prompt._force_close = True
-                    self.lock_prompt.close()
-                    
-        self.lock_prompt.check_otp = wrapped_check
-        self.lock_prompt.show()
+        """Spawns the identity verification prompt allowing clean session restore or emergency exit."""
+        print("[DECEPTION] Spawning Verification & Recovery Dialog.", flush=True)
+        dlg = HoneypotVerificationDialog(self)
+        dlg.exec()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            event.ignore()
+            if hasattr(self, 'start_menu') and self.start_menu.isVisible():
+                self.start_menu.hide()
+                event.accept()
+                return
+                
+            # Double-Esc detection (within 1.5s) for instant emergency exit
+            now = time.time()
+            if hasattr(self, '_last_esc_time') and (now - self._last_esc_time < 1.5):
+                print("[DECEPTION] Double-Escape emergency exit triggered. Restoring session.", flush=True)
+                self._can_close = True
+                self.close()
+                event.accept()
+                return
+            self._last_esc_time = now
+            
+            # Show verification dialog
+            self.show_verification_prompt()
+            event.accept()
         else:
             super().keyPressEvent(event)
 
@@ -790,7 +1815,12 @@ class HoneypotDesktop(QWidget):
         if getattr(self, '_can_close', False):
             event.accept()
         else:
-            event.ignore()
+            # Show verification dialog when user attempts to close
+            self.show_verification_prompt()
+            if getattr(self, '_can_close', False):
+                event.accept()
+            else:
+                event.ignore()
 
 _active_forensics_window = None
 _standalone_honey_desktop = None
