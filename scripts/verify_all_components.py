@@ -386,6 +386,33 @@ def main():
         print(f"   [FAIL] CMU Benchmark error: {e}")
         results.append(("CMU Academic Benchmark (TASK-10)", f"FAILED: {e}"))
 
+    # ---------------- 12. UNIFIED PROCESS SUPERVISOR (TASK-11) ----------------
+    print_banner("12. Testing Unified One-Click Launcher & Supervisor (TASK-11)")
+    try:
+        from run_system import SystemSupervisor, create_shield_icon, PYQT_AVAILABLE
+        # 1. Test tray shield icon generation
+        if PYQT_AVAILABLE:
+            icon = create_shield_icon("#27ae60")
+            assert icon is not None
+            print("   [Tray Icon Verified] Vector security shield icon generated.")
+
+        # 2. Test supervisor registration and status summary
+        supervisor = SystemSupervisor(port=8097, enable_browser=False, enable_tray=False)
+        assert len(supervisor.workers) == 3
+        assert "telemetry_agent" in supervisor.workers
+        assert "threat_evaluator" in supervisor.workers
+        assert "web_dashboard" in supervisor.workers
+
+        status = supervisor.get_status_summary()
+        assert status["port"] == 8097
+        assert len(status["workers"]) == 3
+        print(f"   [Process Supervisor Verified] 3 workers configured (telemetry_agent, threat_evaluator, web_dashboard).")
+        print("   [PASS] Unified One-Click Launcher & Process Supervisor verified successfully.")
+        results.append(("Unified Process Supervisor (TASK-11)", "PASSED"))
+    except Exception as e:
+        print(f"   [FAIL] Process Supervisor error: {e}")
+        results.append(("Unified Process Supervisor (TASK-11)", f"FAILED: {e}"))
+
     # ---------------- FINAL SUMMARY ----------------
     print_banner("SYSTEM VERIFICATION SUMMARY")
     all_passed = True
@@ -397,7 +424,7 @@ def main():
 
     print("=" * 70)
     if all_passed:
-        print(" ALL 11 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
+        print(" ALL 12 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
     else:
         print(" SOME COMPONENTS FAILED VERIFICATION.")
     print("=" * 70)

@@ -34,7 +34,8 @@ MODULE PROGRESS OVERVIEW
 [x] Milestone 15: Environmental BLE & Network Sensors (TASK-8)      [COMPLETED]
 [x] Milestone 16: Multi-User Harvester & Field Benchmark (TASK-9)   [COMPLETED]
 [x] Milestone 17: CMU Academic Benchmark Evaluation (TASK-10)       [COMPLETED]
-[x] Milestone 18: Full Regression Suite (53/53 Unit Tests & 11/11 Subsystems Passing) [COMPLETED]
+[x] Milestone 18: Unified One-Click Launcher & Supervisor (TASK-11)  [COMPLETED]
+[x] Milestone 19: Full Regression Suite (57/57 Unit Tests & 12/12 Subsystems Passing) [COMPLETED]
 
 --------------------------------------------------------------------------------
 PENDING MASTER TASK CATALOG (FOR ONE-BY-ONE ASSIGNMENT)
@@ -263,17 +264,33 @@ TASK-5: End-to-End Live OTP & Multi-Channel Alert Dispatcher (security/otp_servi
 
 === CATEGORY E: UNIFIED ORCHESTRATION & PRESENTATION DEMO SUITE ===
 
-TASK-11: Unified One-Click Launcher & Process Supervisor (run_system.py)
+[x] TASK-11: Unified One-Click Launcher & Process Supervisor (run_system.py) [COMPLETED]
 - Priority: HIGH
-- Objective: Replace disparate batch files with a single robust process supervisor.
+- Status: COMPLETED & VERIFIED
+- Objective: Replace disparate batch files with a single robust process supervisor and Windows tray manager.
 - Deliverables:
-  * run_system.py: Spawns and monitors all background micro-services:
-    - Worker 1: Telemetry Sensor Agent (telemetry/agent.py)
-    - Worker 2: Continuous Threat Evaluator (telemetry/evaluator.py)
-    - Worker 3: Web Dashboard Server (dashboard/app.py)
-  * System Tray Icon: Discreet tray icon in Windows taskbar showing green shield status.
-  * Clean single-command startup and graceful Ctrl+C shutdown of all workers.
-- Verification: Running `python run_system.py` starts full system without terminal clutter.
+  * Created `run_system.py`:
+    - Process Supervisor Architecture: Spawns and monitors all 3 background micro-services asynchronously:
+      * Worker 1: Telemetry Sensor Agent (`telemetry/agent.py`)
+      * Worker 2: Continuous Threat Evaluator & ADWIN Drift Daemon (`telemetry/evaluator.py`)
+      * Worker 3: FastAPI Web Dashboard ASGI Server (`dashboard/app.py` on http://localhost:8000)
+    - Automated Logging & Rotating Log Sinks:
+      * Captures stdout/stderr of each sub-worker into dedicated log sinks (`data/logs/agent.log`, `evaluator.log`, `dashboard.log`).
+    - Windows System Tray Integration (`QSystemTrayIcon`):
+      * Programmatically renders 64x64 vector security shield icon with status indicator (Green Nominal, Amber Challenged, Red Locked).
+      * Context menu with one-click actions: Open Dashboard in browser, View System Health, Restart Subsystems, and Clean Exit.
+    - Health Checks & Auto-Recovery:
+      * Heartbeat monitor periodically polls worker process status; restarts unexpected crashed workers automatically.
+    - Graceful Shutdown Handler:
+      * Clean SIGINT/Ctrl+C, SIGTERM, and Tray Exit termination sending polite SIGTERM followed by force kill to prevent zombie processes or locked ports.
+    - Delayed Browser Auto-Launch:
+      * Automatically launches default browser to `http://localhost:8000` after verifying dashboard HTTP readiness.
+  * Upgraded `run_security_system.bat` to execute `run_system.py` directly with automatic venv detection.
+  * Dedicated Unit Test Suite:
+    - `tests/test_system_supervisor.py`: 4/4 tests passing (CLI arguments, worker lifecycle, tray icon rendering, graceful shutdown).
+  * System-Wide Verification:
+    - Added Section 12 to `scripts/verify_all_components.py`: 12/12 subsystems operational.
+    - Full regression suite: 57/57 tests passing across the entire repository.
 
 TASK-12: Interactive Live Viva Demo Script (demo_viva_runner.py)
 - Priority: HIGH
