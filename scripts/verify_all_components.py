@@ -413,6 +413,34 @@ def main():
         print(f"   [FAIL] Process Supervisor error: {e}")
         results.append(("Unified Process Supervisor (TASK-11)", f"FAILED: {e}"))
 
+    # ---------------- 13. LIVE VIVA DEMONSTRATION RUNNER (TASK-12) ----------------
+    print_banner("13. Testing Interactive Live Viva Demo Runner (TASK-12)")
+    try:
+        from demo_viva_runner import VivaDemoRunner
+        viva_runner = VivaDemoRunner(interactive=False, auto=True, delay=0.05, show_ui=False)
+        assert viva_runner.evaluator is not None
+        assert viva_runner.tracker is not None
+        assert viva_runner.ai_analyzer is not None
+        assert viva_runner.pdf_generator is not None
+
+        # Verify Stage 1 and Stage 2 execution
+        st1_res = viva_runner.run_stage_1()
+        assert st1_res.get("success") is True
+        assert st1_res.get("tier") == "TIER_1_LOW"
+        assert st1_res.get("avg_risk") < 0.40
+
+        st2_res = viva_runner.run_stage_2()
+        assert st2_res.get("success") is True
+        assert st2_res.get("tier") == "TIER_2_MEDIUM"
+        assert st2_res.get("elevated_risk") >= 0.40
+
+        print(f"   [Viva Runner Verified] Stage 1 baseline risk: {st1_res.get('avg_risk'):.4f} (Tier 1) | Stage 2 drift risk: {st2_res.get('elevated_risk'):.4f} (Tier 2).")
+        print("   [PASS] Interactive Live Viva Demonstration Runner verified successfully.")
+        results.append(("Live Viva Demo Runner (TASK-12)", "PASSED"))
+    except Exception as e:
+        print(f"   [FAIL] Viva Demo Runner error: {e}")
+        results.append(("Live Viva Demo Runner (TASK-12)", f"FAILED: {e}"))
+
     # ---------------- FINAL SUMMARY ----------------
     print_banner("SYSTEM VERIFICATION SUMMARY")
     all_passed = True
@@ -424,10 +452,11 @@ def main():
 
     print("=" * 70)
     if all_passed:
-        print(" ALL 12 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
+        print(" ALL 13 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
     else:
         print(" SOME COMPONENTS FAILED VERIFICATION.")
     print("=" * 70)
 
 if __name__ == "__main__":
     main()
+

@@ -335,15 +335,15 @@
   "explorer.exe::general_productivity": {
     "app_name": "explorer.exe",
     "context_mode": "general_productivity",
-    "sample_count": 15,
+    "sample_count": 18,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.2486,
-        "std": 0.4249
+        "mean": 0.2072,
+        "std": 0.3907
       },
       "thinking_pause_ratio": {
-        "mean": 0.0248,
-        "std": 0.0443
+        "mean": 0.0206,
+        "std": 0.0406
       },
       "avg_burst_length": {
         "mean": 10.25,
@@ -358,16 +358,16 @@
         "std": 0.0054
       },
       "dwell_mean": {
-        "mean": 0.2059,
-        "std": 0.1278
+        "mean": 0.1866,
+        "std": 0.1236
       },
       "flight_mean": {
-        "mean": 0.18,
-        "std": 0.0743
+        "mean": 0.1733,
+        "std": 0.0678
       }
     },
     "first_seen": "2026-09-25 19:06:30",
-    "last_updated": "2026-10-06 22:24:50"
+    "last_updated": "2026-10-06 22:42:37"
   },
   "brave.exe::coding_problem_solving": {
     "app_name": "brave.exe",
