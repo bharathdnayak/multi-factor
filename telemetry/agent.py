@@ -26,6 +26,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from ml_engine.controller import classify_activity_context, CODE_SYMBOLS, BehavioralAIController
+from telemetry.environmental_sensor import get_environmental_sensor
 
 class MicroSessionTracker:
     """
@@ -342,6 +343,7 @@ class TelemetryAgent:
         self.friendly = friendly
         self.profiler = AppBehaviorProfiler()
         self.session_tracker = MicroSessionTracker()
+        self.env_sensor = get_environmental_sensor()
         
         # Keyboard telemetry storage
         self.active_presses = {}  # key_hash -> press_timestamp
@@ -631,6 +633,13 @@ class TelemetryAgent:
                 "cpu_usage": float(cpu),
                 "ram_usage_mb": float(ram)
             }
+            
+            # Merge Passive Environmental Ambient Sensors (TASK-8)
+            try:
+                env_snapshot = self.env_sensor.get_environmental_snapshot()
+                telemetry_row.update(env_snapshot)
+            except Exception:
+                pass
             
             # Reset window logs
             self.dwell_times = []

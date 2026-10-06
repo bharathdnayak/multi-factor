@@ -53,6 +53,22 @@ class ThreatEvaluator:
         self.is_breached = False
         self.last_alert_time = 0.0
         self.active_otp = None
+
+        # Formal Online ADWIN Concept Drift Monitor
+        self.drift_monitor = None
+        try:
+            from security.drift_detector import MultivariateDriftMonitor
+            self.drift_monitor = MultivariateDriftMonitor()
+        except Exception as e:
+            print(f"[EVALUATOR] [WARNING] ADWIN drift monitor not loaded: {e}", file=sys.stderr)
+        
+        # 3-Tier Dynamic Risk Orchestrator
+        self.orchestrator = None
+        try:
+            from security.risk_orchestrator import DynamicRiskOrchestrator
+            self.orchestrator = DynamicRiskOrchestrator()
+        except Exception as e:
+            print(f"[EVALUATOR] [WARNING] DynamicRiskOrchestrator not loaded: {e}", file=sys.stderr)
         
         self.load_models()
 
@@ -197,6 +213,21 @@ class ThreatEvaluator:
                 # Strict Idle Window Neutrality (Risk <= 0.05 when no typing occurs)
                 if is_idle_window and mouse_in_window < 5:
                     fused_risk = min(0.05, fused_risk)
+                else:
+                    # 5. Environmental Ambient Context Modulation (TASK-8)
+                    env_penalty = 0.0
+                    is_phone_absent = (not telemetry_row.get("owner_phone_present", True)) or (telemetry_row.get("ble_proximity_state") == "OUT_OF_RANGE")
+                    if is_phone_absent:
+                        # Physical Walk-Away Imposter Takeover: active input while owner's phone is absent
+                        env_penalty += 0.25
+                    elif telemetry_row.get("ble_proximity_state") == "FAR":
+                        env_penalty += 0.10
+
+                    if telemetry_row.get("is_untrusted_network", False):
+                        env_penalty += 0.15
+
+                    if env_penalty > 0.0:
+                        fused_risk = min(1.0, fused_risk + env_penalty)
                     
                 # Multi-scale window pooling: append to sliding temporal window queue
                 self.risk_history.append(fused_risk)
@@ -207,6 +238,22 @@ class ThreatEvaluator:
 
         # Multi-scale pooled risk across sliding temporal window (30s)
         smoothed_risk = sum(self.risk_history) / len(self.risk_history)
+
+        # ADWIN Concept Drift Evaluation
+        drift_verdict = None
+        if self.drift_monitor is not None:
+            try:
+                drift_verdict = self.drift_monitor.process_telemetry_row(telemetry_row, fused_risk)
+            except Exception:
+                pass
+
+        # 3-Tier Dynamic Risk Policy Evaluation
+        policy_action = None
+        if self.orchestrator is not None:
+            try:
+                policy_action = self.orchestrator.evaluate_policy(fused_risk, smoothed_risk, telemetry_row)
+            except Exception:
+                pass
         
         # Dual-Tier Smoothing & Anomaly Breach Evaluation:
         now = time.time()
@@ -220,8 +267,11 @@ class ThreatEvaluator:
         
         # Tier 2: Sustained Multi-Window Drift: Requires 30s queue (3 windows) and sustained risk >= 0.55 with active typing
         is_sustained = (len(self.risk_history) >= 3 and smoothed_risk >= self.threshold and has_active_keystrokes)
+
+        # ADWIN Abrupt Shift: Statistically verified distribution shift in risk or biometrics
+        is_adwin_abrupt = bool(drift_verdict and drift_verdict.get("primary_drift_type") == "ABRUPT" and has_active_keystrokes)
         
-        should_trigger = (is_acute or is_two_spike or is_sustained)
+        should_trigger = (is_acute or is_two_spike or is_sustained or is_adwin_abrupt)
         
         if should_trigger:
             if not self.is_breached and (now - self.last_alert_time > self.cooldown_seconds):
@@ -230,7 +280,7 @@ class ThreatEvaluator:
                 self.active_otp = generate_otp()
                 triggered = True
                 
-                trigger_reason = "ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT")
+                trigger_reason = "ADWIN ABRUPT SHIFT" if is_adwin_abrupt else ("ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT"))
                 print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! ({trigger_reason})", flush=True)
                 print(f"[ALERT] Instant Risk: {fused_risk:.4f} | Smoothed (30s): {smoothed_risk:.4f} (Threshold: {self.threshold:.2f})", flush=True)
                 print(f"[OTP] Generated Session OTP: >>> {self.active_otp} <<< (saved to models/.active_otp)", flush=True)
@@ -270,6 +320,8 @@ class ThreatEvaluator:
             self.is_breached = False
             self.active_otp = None
             self._clear_active_otp()
+            if self.orchestrator is not None:
+                self.orchestrator.reset()
             
             # Retrain models to adapt to behavior drift
             try:

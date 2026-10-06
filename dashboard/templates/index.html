@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continuous Authentication SOC & Behavioral Drift Monitor</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <!-- Local Offline Chart.js -->
+    <script src="/static/js/chart.min.js"></script>
+</head>
+<body class="theme-cyber">
+    <!-- Top Cyber Defense Navigation -->
+    <header class="top-header">
+        <div class="header-brand">
+            <div class="brand-icon">
+                <span class="shield-glyph">🛡️</span>
+            </div>
+            <div class="brand-text">
+                <h1>BEHAVIORAL DRIFT SOC <span class="version-tag">v2.0</span></h1>
+                <p class="brand-sub">Continuous Desktop Security & Honeypot Deception | Team 30 | ISE Dept</p>
+            </div>
+        </div>
+
+        <div class="header-status-group">
+            <div id="liveStreamBadge" class="status-pill status-nominal">
+                <span class="pulsing-dot"></span>
+                <span id="streamStatusText">LIVE STREAM: CONNECTED</span>
+            </div>
+            <div id="systemStateBadge" class="status-pill status-secure">
+                <span id="systemStateText">AUTHENTICATED: OWNER</span>
+            </div>
+            <div class="clock-display" id="clockDisplay">--:--:--</div>
+        </div>
+    </header>
+
+    <!-- Urgent Breach / Deception Alert Bar (Dynamic) -->
+    <div id="breachBanner" class="breach-banner hidden">
+        <div class="banner-content">
+            <span class="alarm-icon">🚨</span>
+            <div class="banner-text">
+                <strong id="breachBannerTitle">CRITICAL SECURITY BREACH DETECTED!</strong>
+                <span id="breachBannerDetail">Multi-factor behavioral drift threshold exceeded. Honeypot Deception sandbox active.</span>
+            </div>
+            <div class="banner-actions">
+                <span class="otp-pill">ACTIVE OTP: <strong id="bannerOtpCode">------</strong></span>
+                <button class="btn btn-sm btn-outline-light" onclick="triggerReset()">Verify & Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <main class="dashboard-grid">
+
+        <!-- ROW 1: Quad-Factor KPI Gauge Cards -->
+        <section class="kpi-row">
+            <!-- KPI 1: Instantaneous Anomaly Risk -->
+            <div class="kpi-card" id="kpiInstantCard">
+                <div class="kpi-header">
+                    <span class="kpi-label">INSTANT ANOMALY RISK</span>
+                    <span class="kpi-tag" id="instantRiskTag">NOMINAL</span>
+                </div>
+                <div class="kpi-body">
+                    <div class="metric-gauge-wrapper">
+                        <div class="metric-value-huge" id="instantRiskVal">0.08</div>
+                        <div class="metric-scale">/ 1.00</div>
+                    </div>
+                    <div class="risk-bar-container">
+                        <div class="risk-bar-fill" id="instantRiskBar" style="width: 8%;"></div>
+                        <div class="risk-threshold-marker" style="left: 55%;" title="Threshold: 0.55"></div>
+                    </div>
+                </div>
+                <div class="kpi-footer">
+                    <span>Fast Reactive Window</span>
+                    <span class="sub-metric">Trigger: &ge; 0.78</span>
+                </div>
+            </div>
+
+            <!-- KPI 2: 30-Second Smoothed Risk -->
+            <div class="kpi-card" id="kpiSmoothedCard">
+                <div class="kpi-header">
+                    <span class="kpi-label">30s SMOOTHED DRIFT RISK</span>
+                    <span class="kpi-tag" id="smoothedRiskTag">NORMAL</span>
+                </div>
+                <div class="kpi-body">
+                    <div class="metric-gauge-wrapper">
+                        <div class="metric-value-huge" id="smoothedRiskVal">0.07</div>
+                        <div class="metric-scale">/ 1.00</div>
+                    </div>
+                    <div class="risk-bar-container">
+                        <div class="risk-bar-fill fill-violet" id="smoothedRiskBar" style="width: 7%;"></div>
+                        <div class="risk-threshold-marker" style="left: 55%;" title="Drift Threshold: 0.55"></div>
+                    </div>
+                </div>
+                <div class="kpi-footer">
+                    <span>Multi-Scale Temporal Pool</span>
+                    <span class="sub-metric">Drift Limit: 0.55</span>
+                </div>
+            </div>
+
+            <!-- KPI 3: Cognitive Task Context -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-label">COGNITIVE INTERACTION CONTEXT</span>
+                    <span class="kpi-tag tag-cyan" id="contextAppTag">Code.exe</span>
+                </div>
+                <div class="kpi-body context-body">
+                    <div class="context-mode-pill" id="contextModeVal">IDE DEVELOPMENT</div>
+                    <div class="window-title-truncate" id="windowTitleVal" title="Visual Studio Code">
+                        Continuous Authentication SOC Workspace
+                    </div>
+                </div>
+                <div class="kpi-footer">
+                    <span>Behavioral AI Controller</span>
+                    <span class="sub-metric" id="contextBaselineTag">Baseline: Calibrated</span>
+                </div>
+            </div>
+
+            <!-- KPI 4: Deep SVDD 1D-CNN Biometrics -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-label">DEEP SVDD 1D-CNN EMBEDDING</span>
+                    <span class="kpi-tag tag-emerald" id="svddTag">MATCH</span>
+                </div>
+                <div class="kpi-body biometrics-body">
+                    <div class="metric-gauge-wrapper">
+                        <div class="metric-value-huge text-emerald" id="svddConfVal">98.2%</div>
+                        <div class="metric-scale">Biometric Confidence</div>
+                    </div>
+                    <div class="micro-stats">
+                        <div>Dwell: <strong id="dwellVal">98ms</strong></div>
+                        <div>Flight: <strong id="flightVal">114ms</strong></div>
+                    </div>
+                </div>
+                <div class="kpi-footer">
+                    <span>Neural Keystroke Signature</span>
+                    <span class="sub-metric">Sequence Length: 30</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ROW 2: Live Dual Real-Time Telemetry Streaming Charts -->
+        <section class="charts-row">
+            <!-- Chart 1: Risk Trajectory -->
+            <div class="glass-panel chart-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">📈</span>
+                        <h3>TEMPORAL RISK TRAJECTORY (LIVE DUAL STREAM)</h3>
+                    </div>
+                    <div class="chart-legend-custom">
+                        <span class="legend-item"><span class="dot dot-cyan"></span> Instant Risk</span>
+                        <span class="legend-item"><span class="dot dot-violet"></span> 30s Smoothed</span>
+                        <span class="legend-item"><span class="dot dot-red-dash"></span> Threshold (0.55)</span>
+                    </div>
+                </div>
+                <div class="panel-body chart-body">
+                    <canvas id="riskTrajectoryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Biometric Dynamics Stream -->
+            <div class="glass-panel chart-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">⚡</span>
+                        <h3>BIOMETRIC DYNAMICS & VELOCITY STREAM</h3>
+                    </div>
+                    <div class="chart-legend-custom">
+                        <span class="legend-item"><span class="dot dot-emerald"></span> Dwell Time (s)</span>
+                        <span class="legend-item"><span class="dot dot-amber"></span> Flight Time (s)</span>
+                        <span class="legend-item"><span class="dot dot-blue"></span> Mouse Velocity (px/s)</span>
+                    </div>
+                </div>
+                <div class="panel-body chart-body">
+                    <canvas id="biometricsChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- ROW 3: Telemetry Detail, Forensics Card, and Live Terminal Feed -->
+        <section class="operational-row">
+            <!-- Sub-Panel 1: Telemetry & Hardware State -->
+            <div class="glass-panel ops-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">🖥️</span>
+                        <h3>STATION TELEMETRY</h3>
+                    </div>
+                    <span class="sub-badge" id="eventCounterBadge">Events: 0</span>
+                </div>
+                <div class="panel-body telemetry-list">
+                    <div class="telemetry-item">
+                        <span class="item-label">Active Process</span>
+                        <span class="item-value text-cyan" id="hwActiveApp">Code.exe</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Window Title</span>
+                        <span class="item-value text-truncate" id="hwWindowTitle">Behavioral-Drift-Security</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Keystrokes / Min</span>
+                        <span class="item-value" id="hwKeystrokeCount">34</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Mouse Events</span>
+                        <span class="item-value" id="hwMouseEvents">18</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Mouse Velocity</span>
+                        <span class="item-value" id="hwMouseVel">420 px/s</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Host CPU Load</span>
+                        <span class="item-value" id="hwCpuLoad">14.2%</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="item-label">Host Memory</span>
+                        <span class="item-value" id="hwRamUsage">245 MB</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-Panel 2: Honeypot Deception & Intruder Forensics -->
+            <div class="glass-panel ops-panel forensics-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">🕵️</span>
+                        <h3>HONEYPOT DECEPTION & FORENSICS</h3>
+                    </div>
+                    <span class="sub-badge badge-warning" id="honeypotStatusBadge">ARMED</span>
+                </div>
+                <div class="panel-body forensics-body">
+                    <!-- Photo & AI Intent Grid -->
+                    <div class="forensics-media-row">
+                        <div class="photo-container" onclick="openPhotoModal()">
+                            <img id="intruderPhotoImg" src="/api/forensics/intruder_photo" alt="Intruder Surveillance Snapshot" onerror="this.src='/static/img/webcam_placeholder.svg';">
+                            <div class="photo-overlay">
+                                <span>🔍 CLICK TO EXPAND</span>
+                            </div>
+                            <span class="cam-badge">🔴 SILENT WEBCAM</span>
+                        </div>
+                        <div class="ai-intel-container">
+                            <div class="intel-header">
+                                <span class="ai-chip">OLLAMA QWEN2.5 AI INTEL</span>
+                            </div>
+                            <div class="intel-persona" id="aiPersonaVal">Awaiting Intruder Event</div>
+                            <p class="intel-intent" id="aiIntentVal">System monitoring baseline owner behavior. Honeypot decoy Chrome & Explorer armed.</p>
+                            <div class="intel-threat-pill" id="aiThreatPill">THREAT LEVEL: LOW</div>
+                        </div>
+                    </div>
+
+                    <!-- Honeypot Interaction Counters -->
+                    <div class="honeypot-counters">
+                        <div class="counter-box">
+                            <span class="count-val text-amber" id="hpBrowserSearches">0</span>
+                            <span class="count-label">Decoy Searches</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="count-val text-cyan" id="hpFilesAccessed">0</span>
+                            <span class="count-label">Decoy Files Opened</span>
+                        </div>
+                        <div class="counter-box">
+                            <span class="count-val text-crimson" id="hpSandboxIntercepts">0</span>
+                            <span class="count-label">Sandbox Writes Trapped</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="forensics-btn-group">
+                        <a id="downloadPdfBtn" href="/api/forensics/download_pdf" class="btn btn-primary" download>
+                            📄 Download Executive Forensic PDF
+                        </a>
+                        <button class="btn btn-secondary" onclick="generateFreshPdf()">
+                            ⚡ Generate Fresh Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-Panel 3: Real-Time Cyber Incident Feed -->
+            <div class="glass-panel ops-panel terminal-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">📟</span>
+                        <h3>SECURITY INCIDENT LOG</h3>
+                    </div>
+                    <button class="btn btn-xs btn-outline" onclick="clearIncidentLog()">Clear</button>
+                </div>
+                <div class="panel-body terminal-body" id="incidentLogFeed">
+                    <!-- Dynamic Log Items Inserted Here -->
+                    <div class="log-entry log-info">
+                        <span class="log-time">[INIT]</span>
+                        <span class="log-msg">Continuous Authentication SOC Daemon Online.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ROW 4: Viva Demonstration & Evaluator Anomaly Injection Controls -->
+        <section class="demo-controls-row">
+            <div class="glass-panel demo-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <span class="panel-icon">🧪</span>
+                        <h3>PROJECT EVALUATION & ANOMALY SIMULATION CONTROL CENTER</h3>
+                    </div>
+                    <span class="viva-badge">VIVA / EVALUATION DEMONSTRATION TOOLKIT</span>
+                </div>
+                <div class="panel-body demo-body">
+                    <p class="demo-desc">
+                        Demonstrate live behavioral drift detection and multi-factor defense in real-time.
+                        Click any test scenario to inject behavioral anomalies into the streaming quad-factor ML engine:
+                    </p>
+                    <div class="demo-btn-grid">
+                        <button class="btn btn-demo btn-amber" onclick="simulateAnomaly('sluggish_typing')">
+                            <span class="btn-icon">🐌</span>
+                            <div class="btn-text">
+                                <strong>Sluggish Imposter Typing</strong>
+                                <small>High dwell/flight delays & typing hesitation</small>
+                            </div>
+                        </button>
+
+                        <button class="btn btn-demo btn-crimson" onclick="simulateAnomaly('acute_spike')">
+                            <span class="btn-icon">⚡</span>
+                            <div class="btn-text">
+                                <strong>Acute Intrusion Spike</strong>
+                                <small>Sluggish typing + PowerShell recon (Risk &ge; 0.78)</small>
+                            </div>
+                        </button>
+
+                        <button class="btn btn-demo btn-purple" onclick="simulateAnomaly('frantic_erratic')">
+                            <span class="btn-icon">🤖</span>
+                            <div class="btn-text">
+                                <strong>Frantic Erratic Script</strong>
+                                <small>Rapid automation & Mimikatz anomaly</small>
+                            </div>
+                        </button>
+
+                        <button class="btn btn-demo btn-cyan" onclick="simulateAnomaly('sustained_drift')">
+                            <span class="btn-icon">📊</span>
+                            <div class="btn-text">
+                                <strong>Sustained Behavioral Drift</strong>
+                                <small>Gradual multi-window drift exceeding 0.55</small>
+                            </div>
+                        </button>
+
+                        <button class="btn btn-demo btn-reset" onclick="triggerReset()">
+                            <span class="btn-icon">🔄</span>
+                            <div class="btn-text">
+                                <strong>Emergency System Reset</strong>
+                                <small>Verify credentials & adapt baseline model</small>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal: Intruder Photo Full View -->
+    <div id="photoModal" class="modal hidden" onclick="closePhotoModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Surveillance Frame: Unauthorized User Capture</h3>
+                <button class="modal-close" onclick="closePhotoModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img id="modalImg" src="/api/forensics/intruder_photo" alt="Full Intruder Snapshot">
+            </div>
+            <div class="modal-footer">
+                <a href="/api/forensics/intruder_photo" download="intruder_snapshot.jpg" class="btn btn-primary">Download Image</a>
+                <button class="btn btn-secondary" onclick="closePhotoModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Frontend Core Application Script -->
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

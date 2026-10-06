@@ -16,7 +16,10 @@ from pynput import keyboard
 # Append project root
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_dir not in sys.path:
-    sys.path.append(project_dir)
+    sys.path.insert(0, project_dir)
+
+from deception.forensic_tracker import get_tracker
+from deception.decoy_chrome import DecoyChrome
 
 class HotkeySignals(QObject):
     """Signals to communicate safely from background keyboard threads to the UI thread."""
@@ -145,6 +148,7 @@ class DecoyNotepad(QFrame):
         super().__init__(parent)
         self.sandbox_dir = sandbox_dir
         self.log_path = os.path.join(log_dir, "honeypot_commands.log")
+        self.tracker = get_tracker()
         self.is_maximized = False
         self.normal_geom = None
         self.drag_position = QPoint()
@@ -324,6 +328,8 @@ class DecoyNotepad(QFrame):
             sandbox_file = os.path.join(self.sandbox_dir, "passwords.txt")
             with open(sandbox_file, "w", encoding="utf-8") as f:
                 f.write(content)
+            self.tracker.record_file_access("passwords.txt", action="MODIFY")
+            self.tracker.record_sandbox_write("passwords.txt", len(content.encode("utf-8")))
             with open(self.log_path, "a", encoding="utf-8") as f:
                 f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [NOTEPAD_EDIT] passwords.txt modified in sandbox\n")
         except Exception:
@@ -332,18 +338,97 @@ class DecoyNotepad(QFrame):
 class DecoyExplorer(QFrame):
     """
     Authentic Windows File Explorer decoy window displaying user's folder contents.
-    Fully minimizable, draggable, maximizable, and closable.
+    Fully interactive:
+    - Clickable folders that navigate deeper into directory structures
+    - Up arrow (↑) and Back arrow (←) navigation
+    - Dynamic breadcrumbs in the address bar
+    - Clickable files that trigger DecoyNotepad or document preview dialogs
+    - Real-time search filter
+    - Every folder change, file open, and search is logged to ForensicTracker!
     """
     def __init__(self, sandbox_dir, log_dir, parent=None):
         super().__init__(parent)
         self.sandbox_dir = sandbox_dir
+        self.tracker = get_tracker()
         self.is_maximized = False
         self.normal_geom = None
         self.drag_position = QPoint()
+        
+        self.current_path = "C:\\Users\\Dell\\Desktop\\clg"
+        self.path_history = [self.current_path]
+        
+        # Virtual filesystem map with rich, realistic project and sensitive honey files
+        self.fs_map = {
+            "C:\\Users\\Dell": [
+                ("📁", "Desktop", True),
+                ("📁", "Documents", True),
+                ("📁", "Downloads", True),
+                ("📁", "Pictures", True),
+                ("📄", "user_profile.ini", False)
+            ],
+            "C:\\Users\\Dell\\Desktop": [
+                ("📁", "clg", True),
+                ("📁", "Personal_Vault", True),
+                ("📁", "Financial_Records_2026", True),
+                ("📄", "root_credentials.txt", False),
+                ("📄", "crypto_wallets.txt", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\clg": [
+                ("📁", "Behavioral-Drift-Security", True),
+                ("📁", "documents", True),
+                ("📄", "project_analysis_and_plan.pdf", False),
+                ("📄", "thesis_final_draft.docx", False),
+                ("📊", "system_evaluation_metrics.xlsx", False),
+                ("🎥", "major_project_demo.mp4", False),
+                ("📝", "tester.txt", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security": [
+                ("📁", "data", True),
+                ("📁", "ml_engine", True),
+                ("📁", "security", True),
+                ("📁", "deception", True),
+                ("📁", "dashboard", True),
+                ("📁", "models", True),
+                ("📁", "scripts", True),
+                ("📄", "passwords.txt", False),
+                ("📄", ".env", False),
+                ("📄", "README.md", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data": [
+                ("📁", "forensics", True),
+                ("📁", "raw", True),
+                ("📁", "sandbox", True),
+                ("📁", "sessions", True),
+                ("📊", "telemetry_data.jsonl", False),
+                ("📄", "app_profiles.json", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\clg\\documents": [
+                ("📊", "ISE_MAJORPROJECTPPT.pptx", False),
+                ("📄", "Literature_Review_id_30.pdf", False),
+                ("📄", "Major_Project Synopsis_30.pdf", False),
+                ("📄", "confidential_admin_keys.pdf", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\Personal_Vault": [
+                ("📄", "master_passwords_vault.txt", False),
+                ("🔑", "aws_secret_credentials.json", False),
+                ("📄", "private_ssh_id_rsa", False)
+            ],
+            "C:\\Users\\Dell\\Desktop\\Financial_Records_2026": [
+                ("📊", "bank_account_tax_filings.xlsx", False),
+                ("📄", "direct_deposit_routing_numbers.pdf", False),
+                ("📄", "investment_portfolio.csv", False)
+            ],
+            "C:\\Users\\Dell\\Documents": [
+                ("📁", "Projects", True),
+                ("📄", "backup_recovery_keys.txt", False),
+                ("📄", "academic_transcripts.pdf", False)
+            ]
+        }
+        
         self.init_ui()
 
     def init_ui(self):
-        self.setFixedSize(QSize(760, 460))
+        self.setFixedSize(QSize(780, 480))
         self.setStyleSheet("""
             QFrame#ExplorerContainer {
                 background-color: #202020;
@@ -390,7 +475,7 @@ class DecoyExplorer(QFrame):
             QLabel#AddressText {
                 color: #cccccc;
                 font-family: 'Segoe UI', sans-serif;
-                font-size: 12px;
+                font-size: 11px;
             }
             QFrame#FolderArea {
                 background-color: #191919;
@@ -400,11 +485,29 @@ class DecoyExplorer(QFrame):
                 color: #e2e8f0;
                 font-family: 'Segoe UI', sans-serif;
                 font-size: 11px;
-                padding: 4px;
+                padding: 2px;
             }
-            QLabel#ItemLabel:hover {
-                background-color: #2c3e50;
+            QPushButton#NavArrowBtn {
+                background: transparent;
+                color: #9aa0a6;
+                border: none;
+                font-size: 14px;
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+            }
+            QPushButton#NavArrowBtn:hover {
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QLineEdit#SearchField {
+                background-color: #262626;
+                color: #ffffff;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                border: 1px solid #383838;
                 border-radius: 4px;
+                padding: 2px 6px;
             }
         """)
         self.setObjectName("ExplorerContainer")
@@ -425,9 +528,9 @@ class DecoyExplorer(QFrame):
         icon_lbl.setStyleSheet("font-size: 12px; margin-right: 4px;")
         tb_layout.addWidget(icon_lbl)
         
-        title_lbl = QLabel("clg - File Explorer")
-        title_lbl.setObjectName("ExplorerTitle")
-        tb_layout.addWidget(title_lbl)
+        self.title_lbl = QLabel("clg - File Explorer")
+        self.title_lbl.setObjectName("ExplorerTitle")
+        tb_layout.addWidget(self.title_lbl)
         tb_layout.addStretch()
         
         min_btn = QPushButton("─")
@@ -449,69 +552,83 @@ class DecoyExplorer(QFrame):
         title_bar.setLayout(tb_layout)
         layout.addWidget(title_bar)
         
-        # Address Bar row
+        # Navigation & Address Bar row
         nav_row = QFrame()
-        nav_row.setFixedHeight(36)
+        nav_row.setFixedHeight(38)
         nav_row.setStyleSheet("background-color: #1f1f1f; border-bottom: 1px solid #2d2d2d; padding: 2px 8px;")
         nav_layout = QHBoxLayout()
         nav_layout.setContentsMargins(6, 2, 6, 2)
-        nav_layout.setSpacing(8)
+        nav_layout.setSpacing(6)
         
-        arrow_lbl = QLabel("←  →  ↑")
-        arrow_lbl.setStyleSheet("color: #888888; font-size: 13px;")
-        nav_layout.addWidget(arrow_lbl)
+        back_btn = QPushButton("←")
+        back_btn.setObjectName("NavArrowBtn")
+        back_btn.clicked.connect(self.navigate_back)
+        nav_layout.addWidget(back_btn)
+
+        up_btn = QPushButton("↑")
+        up_btn.setObjectName("NavArrowBtn")
+        up_btn.clicked.connect(self.navigate_up)
+        nav_layout.addWidget(up_btn)
         
         addr_box = QFrame()
         addr_box.setObjectName("AddressBar")
         addr_box_layout = QHBoxLayout()
         addr_box_layout.setContentsMargins(6, 0, 6, 0)
-        addr_lbl = QLabel("📁 This PC > Local Disk (C:) > Users > Dell > Desktop > clg")
-        addr_lbl.setObjectName("AddressText")
-        addr_box_layout.addWidget(addr_lbl)
+        self.addr_lbl = QLabel(f"📁 This PC > {self.current_path.replace(':', '').replace('\\', ' > ')}")
+        self.addr_lbl.setObjectName("AddressText")
+        addr_box_layout.addWidget(self.addr_lbl)
         addr_box.setLayout(addr_box_layout)
         nav_layout.addWidget(addr_box, 1)
         
-        search_box = QFrame()
-        search_box.setObjectName("AddressBar")
-        search_box.setFixedWidth(160)
-        sb_layout = QHBoxLayout()
-        sb_layout.setContentsMargins(6, 0, 6, 0)
-        sb_lbl = QLabel("🔍 Search clg")
-        sb_lbl.setStyleSheet("color: #777777; font-size: 11px;")
-        sb_layout.addWidget(sb_lbl)
-        search_box.setLayout(sb_layout)
-        nav_layout.addWidget(search_box)
+        self.search_box = QLineEdit()
+        self.search_box.setObjectName("SearchField")
+        self.search_box.setPlaceholderText("🔍 Search folder")
+        self.search_box.setFixedWidth(160)
+        self.search_box.textChanged.connect(self.on_search_changed)
+        nav_layout.addWidget(self.search_box)
         
         nav_row.setLayout(nav_layout)
         layout.addWidget(nav_row)
         
-        # Folder grid content
-        folder_area = QFrame()
-        folder_area.setObjectName("FolderArea")
-        f_layout = QGridLayout()
-        f_layout.setContentsMargins(20, 20, 20, 20)
-        f_layout.setHorizontalSpacing(30)
-        f_layout.setVerticalSpacing(20)
-        f_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        
-        items = [
-            ("📁", "Behavioral-Drift-Security"),
-            ("📁", "models"),
-            ("📁", "data"),
-            ("📄", "thesis_final_draft.docx"),
-            ("📊", "system_evaluation_metrics.xlsx"),
-            ("🎥", "major_project_demo.mp4"),
-            ("📝", "tester.txt"),
-            ("📁", "scripts")
-        ]
-        
-        for idx, (icon, name) in enumerate(items):
+        # Folder grid content inside scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background-color: #191919; border: none;")
+
+        self.folder_area = QFrame()
+        self.folder_area.setObjectName("FolderArea")
+        self.f_layout = QGridLayout()
+        self.f_layout.setContentsMargins(20, 20, 20, 20)
+        self.f_layout.setHorizontalSpacing(24)
+        self.f_layout.setVerticalSpacing(16)
+        self.f_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.folder_area.setLayout(self.f_layout)
+        scroll.setWidget(self.folder_area)
+
+        layout.addWidget(scroll, 1)
+        self.setLayout(layout)
+
+        self.render_items()
+
+    def render_items(self, filter_query=""):
+        # Clear existing grid widgets
+        while self.f_layout.count():
+            item = self.f_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        items = self.fs_map.get(self.current_path, [])
+        if filter_query:
+            items = [it for it in items if filter_query.lower() in it[1].lower()]
+
+        for idx, (icon, name, is_dir) in enumerate(items):
             row = idx // 4
             col = idx % 4
             
             box = QFrame()
-            box.setFixedSize(130, 80)
-            box.setStyleSheet("QFrame:hover { background-color: #2d3748; border-radius: 6px; }")
+            box.setFixedSize(140, 84)
+            box.setStyleSheet("QFrame { background-color: transparent; border-radius: 6px; } QFrame:hover { background-color: #2d3748; }")
+            box.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             b_layout = QVBoxLayout()
             b_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             b_layout.setSpacing(4)
@@ -529,12 +646,103 @@ class DecoyExplorer(QFrame):
             b_layout.addWidget(t_lbl)
             
             box.setLayout(b_layout)
-            f_layout.addWidget(box, row, col)
             
-        folder_area.setLayout(f_layout)
-        layout.addWidget(folder_area, 1)
+            # Interactive click handler
+            if is_dir:
+                box.mousePressEvent = lambda e, n=name: self.on_folder_clicked(n)
+            else:
+                box.mousePressEvent = lambda e, n=name: self.on_file_clicked(n)
+                
+            self.f_layout.addWidget(box, row, col)
+
+    def on_folder_clicked(self, folder_name):
+        new_path = f"{self.current_path}\\{folder_name}"
+        if new_path not in self.fs_map:
+            # Generate dynamic fallback empty directory
+            self.fs_map[new_path] = [("📄", "desktop.ini", False)]
+            
+        print(f"[DECEPTION EXPLORER] Intruder navigated into directory: '{new_path}'", flush=True)
+        self.tracker.record_folder_navigation(new_path, source_path=self.current_path)
+        self.current_path = new_path
+        self.path_history.append(new_path)
         
-        self.setLayout(layout)
+        self.title_lbl.setText(f"{folder_name} - File Explorer")
+        self.addr_lbl.setText(f"📁 This PC > {self.current_path.replace(':', '').replace('\\', ' > ')}")
+        self.search_box.clear()
+        self.render_items()
+
+    def on_file_clicked(self, file_name):
+        full_file_path = f"{self.current_path}\\{file_name}"
+        print(f"[DECEPTION EXPLORER] Intruder clicked file: '{full_file_path}'", flush=True)
+        self.tracker.record_file_access(full_file_path, action="OPEN")
+        
+        if "password" in file_name.lower() or file_name.endswith(".txt") or file_name.endswith(".env") or file_name.endswith(".ini") or file_name.endswith(".json"):
+            # Open decoy notepad
+            parent = self.parent()
+            if parent and hasattr(parent, 'open_notepad'):
+                parent.open_notepad()
+        else:
+            # Show simulated Windows document viewer dialog
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"{file_name} - Protected Document Preview")
+            dlg.setFixedSize(520, 260)
+            dlg.setStyleSheet("background-color: #1e1e24; color: #ffffff;")
+            d_lay = QVBoxLayout()
+            d_lay.setContentsMargins(20, 20, 20, 20)
+            
+            lbl_title = QLabel(f"<b>{file_name}</b>")
+            lbl_title.setStyleSheet("font-size: 15px; color: #00d2d3;")
+            d_lay.addWidget(lbl_title)
+            
+            lbl_desc = QLabel("Corporate Security Notice: This file is restricted under corporate policy.\nContents are decrypted in sandboxed memory container.")
+            lbl_desc.setStyleSheet("color: #a4b0be; font-size: 12px;")
+            d_lay.addWidget(lbl_desc)
+            
+            content_preview = QTextEdit()
+            content_preview.setReadOnly(True)
+            content_preview.setStyleSheet("background-color: #121217; color: #00ff00; font-family: 'Consolas'; font-size: 11px;")
+            content_preview.setText(f"--- DUMP OF {file_name} ---\nDocument Classification: STRICTLY CONFIDENTIAL\nOwner: NMAMIT Dept of ISE\nProject ID: 30\nStatus: Archived in Honeypot Sandbox\nChecksum Verified: OK")
+            d_lay.addWidget(content_preview)
+            
+            btn_close = QPushButton("Close")
+            btn_close.setStyleSheet("background-color: #2ed573; color: #ffffff; padding: 6px; border-radius: 4px;")
+            btn_close.clicked.connect(dlg.accept)
+            d_lay.addWidget(btn_close)
+            
+            dlg.setLayout(d_lay)
+            dlg.exec()
+
+    def navigate_up(self):
+        if "\\" in self.current_path:
+            parts = self.current_path.split("\\")
+            if len(parts) > 1:
+                parent_path = "\\".join(parts[:-1])
+                if parent_path in self.fs_map:
+                    self.tracker.record_folder_navigation(parent_path, source_path=self.current_path)
+                    self.current_path = parent_path
+                    self.path_history.append(parent_path)
+                    folder_name = parts[-2]
+                    self.title_lbl.setText(f"{folder_name} - File Explorer")
+                    self.addr_lbl.setText(f"📁 This PC > {self.current_path.replace(':', '').replace('\\', ' > ')}")
+                    self.search_box.clear()
+                    self.render_items()
+
+    def navigate_back(self):
+        if len(self.path_history) > 1:
+            self.path_history.pop()
+            prev_path = self.path_history[-1]
+            self.tracker.record_folder_navigation(prev_path, source_path=self.current_path)
+            self.current_path = prev_path
+            folder_name = self.current_path.split("\\")[-1]
+            self.title_lbl.setText(f"{folder_name} - File Explorer")
+            self.addr_lbl.setText(f"📁 This PC > {self.current_path.replace(':', '').replace('\\', ' > ')}")
+            self.search_box.clear()
+            self.render_items()
+
+    def on_search_changed(self, text):
+        if len(text.strip()) > 1:
+            self.tracker.record_event("EXPLORER_SEARCH", text.strip(), {"path": self.current_path})
+        self.render_items(filter_query=text.strip())
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and not self.is_maximized:
@@ -557,9 +765,10 @@ class DecoyExplorer(QFrame):
             if self.normal_geom:
                 self.setGeometry(self.normal_geom)
             else:
-                self.setFixedSize(QSize(760, 460))
+                self.setFixedSize(QSize(780, 480))
             self.max_btn.setText("□")
             self.is_maximized = False
+
 
 class Windows11StartMenu(QFrame):
     """
@@ -651,8 +860,8 @@ class Windows11StartMenu(QFrame):
         apps = [
             ("💻", "PowerShell", self.launch_powershell),
             ("📁", "File Explorer", self.launch_explorer),
+            ("🌐", "Google Chrome", self.launch_edge),
             ("📄", "Passwords", self.launch_notepad),
-            ("🌐", "Microsoft Edge", self.launch_edge),
             ("⚙️", "Settings", self.launch_settings),
             ("📝", "Notepad", self.launch_notepad)
         ]
@@ -705,8 +914,7 @@ class Windows11StartMenu(QFrame):
 
     def launch_edge(self):
         self.hide()
-        self.desktop.terminal.console.append("\n[Network Simulation] Sandbox proxy routing web requests safely.")
-        self.desktop.open_terminal()
+        self.desktop.open_chrome()
 
     def launch_settings(self):
         self.hide()
@@ -902,6 +1110,7 @@ class HoneyShell(QFrame):
         super().__init__(parent)
         self.sandbox_dir = sandbox_dir
         self.log_path = os.path.join(log_dir, "honeypot_commands.log")
+        self.tracker = get_tracker()
         self.current_dir = "C:\\Windows\\system32"
         self.drag_position = QPoint()
         self.is_maximized = False
@@ -1126,6 +1335,7 @@ class HoneyShell(QFrame):
         
         self.console.append(f"PS {self.current_dir}> {cmd_raw}")
         self.log_action(cmd_raw)
+        self.tracker.record_shell_command(cmd_raw, self.current_dir)
         
         parts = cmd_raw.split()
         base_cmd = parts[0].lower()
@@ -1153,6 +1363,22 @@ class HoneyShell(QFrame):
             response = self._handle_systeminfo()
         elif base_cmd in ["netstat"]:
             response = self._handle_netstat(args)
+        elif base_cmd in ["ping", "ping.exe"]:
+            response = self._handle_ping(args)
+        elif base_cmd in ["arp", "arp.exe"]:
+            response = self._handle_arp(args)
+        elif base_cmd in ["route", "route.exe"]:
+            response = self._handle_route(args)
+        elif base_cmd in ["curl", "curl.exe", "wget", "wget.exe", "iwr", "invoke-webrequest"]:
+            response = self._handle_curl(cmd_raw, args)
+        elif base_cmd in ["ssh", "ssh.exe"]:
+            response = self._handle_ssh(args)
+        elif base_cmd in ["nslookup", "nslookup.exe"]:
+            response = self._handle_nslookup(args)
+        elif base_cmd in ["tracert", "tracert.exe", "traceroute"]:
+            response = self._handle_tracert(args)
+        elif base_cmd in ["nmap", "nmap.exe"]:
+            response = self._handle_nmap(args)
         elif base_cmd in ["whoami"]:
             response = self._handle_whoami(args)
         elif base_cmd in ["hostname"]:
@@ -1167,7 +1393,7 @@ class HoneyShell(QFrame):
             else:
                 response = "The syntax of this command is: NET [ ACCOUNTS | COMPUTER | CONFIG | GROUP | USER ]"
         elif base_cmd in ["help", "Get-Help"]:
-            response = "Supported Diagnostic Commands: tasklist, Get-Process, systeminfo, netstat, cd, dir, ls, type, cat, echo, ipconfig, whoami, hostname, net user, cls, clear, exit"
+            response = "Supported Diagnostic Commands: tasklist, Get-Process, systeminfo, netstat, ipconfig, ping, arp, route, curl, wget, ssh, nslookup, tracert, nmap, cd, dir, ls, type, cat, echo, whoami, hostname, net user, cls, clear, exit"
         else:
             response = f"{base_cmd} : The term '{base_cmd}' is not recognized as the name of a cmdlet, function, script file, or operable program.\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again."
             
@@ -1331,6 +1557,7 @@ class HoneyShell(QFrame):
         if not args:
             return "Cannot bind argument to parameter 'Path' because it is null."
         target = args[0]
+        self.tracker.record_file_access(target, action="SHELL_CAT")
         
         if "password" in target.lower():
             return ("=== PRIVILEGED CREDENTIALS VAULT ===\n"
@@ -1372,6 +1599,8 @@ class HoneyShell(QFrame):
             with open(sandbox_path, "w", encoding="utf-8") as f:
                 f.write(text + "\n")
                 
+            self.tracker.record_sandbox_write(filename, len(text.encode("utf-8")))
+            
             items = self.virtual_fs.get(self.current_dir, [])
             if filename not in items:
                 items.append(filename)
@@ -1381,6 +1610,231 @@ class HoneyShell(QFrame):
             return ""
         except Exception as e:
             return f"Error writing file: {e}"
+
+    def _handle_ping(self, args):
+        if not args:
+            return "Usage: ping [-t] [-a] [-n count] [-l size] target_name"
+        target = args[0] if not args[0].startswith("-") else (args[-1] if len(args) > 1 else "127.0.0.1")
+        ip = "192.168.1.1" if ("gateway" in target or "192" in target) else ("8.8.8.8" if ("google" in target or "8.8" in target) else "10.0.1.55")
+        
+        self.tracker.record_network_recon(f"ping {' '.join(args)}", target, recon_type="ICMP_PING")
+        print(f"[HONEYPOT DECEPTION] Intruder executed ping network probe against '{target}' ({ip})", flush=True)
+
+        return (
+            f"\nPinging {target} [{ip}] with 32 bytes of data:\n"
+            f"Reply from {ip}: bytes=32 time=4ms TTL=64\n"
+            f"Reply from {ip}: bytes=32 time=3ms TTL=64\n"
+            f"Reply from {ip}: bytes=32 time=5ms TTL=64\n"
+            f"Reply from {ip}: bytes=32 time=3ms TTL=64\n\n"
+            f"Ping statistics for {ip}:\n"
+            f"    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+            f"Approximate round trip times in milli-seconds:\n"
+            f"    Minimum = 3ms, Maximum = 5ms, Average = 3ms"
+        )
+
+    def _handle_arp(self, args):
+        cmd_str = f"arp {' '.join(args)}" if args else "arp -a"
+        self.tracker.record_network_recon(cmd_str, "192.168.1.0/24", recon_type="ARP_CACHE_ENUM")
+        print("[HONEYPOT DECEPTION] Intruder enumerated local ARP neighbor cache table", flush=True)
+
+        return (
+            "\nInterface: 192.168.1.142 --- 0xa\n"
+            "  Internet Address      Physical Address      Type\n"
+            "  192.168.1.1           f4-f5-e8-11-22-33     dynamic\n"
+            "  192.168.1.10          00-15-5d-01-22-34     dynamic\n"
+            "  192.168.1.25          3c-52-82-41-bb-aa     dynamic\n"
+            "  192.168.1.55          a0-36-bc-99-14-11     dynamic\n"
+            "  192.168.1.255         ff-ff-ff-ff-ff-ff     static\n"
+            "  224.0.0.22            01-00-5e-00-00-16     static\n"
+            "  224.0.0.251           01-00-5e-00-00-fb     static\n"
+            "  239.255.255.250       01-00-5e-7f-ff-fa     static"
+        )
+
+    def _handle_route(self, args):
+        cmd_str = f"route {' '.join(args)}" if args else "route print"
+        self.tracker.record_network_recon(cmd_str, "192.168.1.1", recon_type="ROUTING_TABLE_ENUM")
+        print("[HONEYPOT DECEPTION] Intruder printed IP routing table", flush=True)
+
+        return (
+            "===========================================================================\n"
+            "Interface List\n"
+            " 10 ...00 15 5d 82 4a 1b ...... Intel(R) Ethernet Connection (14) I219-LM\n"
+            "  1 ........................... Software Loopback Interface 1\n"
+            "===========================================================================\n\n"
+            "IPv4 Route Table\n"
+            "===========================================================================\n"
+            "Active Routes:\n"
+            "Network Destination        Netmask          Gateway       Interface  Metric\n"
+            "          0.0.0.0          0.0.0.0      192.168.1.1   192.168.1.142      25\n"
+            "        127.0.0.0        255.0.0.0        On-link         127.0.0.1     331\n"
+            "      192.168.1.0    255.255.255.0        On-link     192.168.1.142     281\n"
+            "    192.168.1.142  255.255.255.255        On-link     192.168.1.142     281\n"
+            "    192.168.1.255  255.255.255.255        On-link     192.168.1.142     281\n"
+            "        224.0.0.0        240.0.0.0        On-link         127.0.0.1     331\n"
+            "  255.255.255.255  255.255.255.255        On-link         127.0.0.1     331\n"
+            "===========================================================================\n"
+            "Persistent Routes:\n"
+            "  None"
+        )
+
+    def _handle_curl(self, cmd_raw, args):
+        """
+        Emulates curl, wget, and Invoke-WebRequest.
+        Intercepts remote attacker payload downloads, diverts the dropped executable
+        safely into data/sandbox/, and logs C2 server infrastructure to ForensicTracker.
+        """
+        if not args:
+            return "curl: try 'curl --help' for more information"
+
+        # Identify URL
+        url = None
+        for a in args:
+            if a.startswith("http://") or a.startswith("https://") or "://" in a or ("." in a and not a.startswith("-") and not a.startswith("/")):
+                url = a
+                break
+
+        if not url:
+            url = args[-1]
+
+        # Extract C2 Host
+        c2_host = "194.26.29.112"
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url if "://" in url else f"http://{url}")
+            c2_host = parsed.netloc or parsed.path.split("/")[0] or "attacker.c2.net"
+        except Exception:
+            c2_host = "attacker.c2.net"
+
+        # Check for destination filename (-o filename, -OutFile filename, or URL basename)
+        out_filename = None
+        for i, a in enumerate(args):
+            if a in ["-o", "-O", "--output", "-OutFile", "-outfile"] and i + 1 < len(args):
+                out_filename = args[i + 1]
+                break
+
+        if not out_filename:
+            # Check URL path
+            parts = url.rstrip("/").split("/")
+            if len(parts) > 1 and ("." in parts[-1]):
+                out_filename = parts[-1]
+            elif any(ext in url.lower() for ext in [".exe", ".ps1", ".bat", ".dll", ".sh", ".vbs", ".zip"]):
+                for ext in [".exe", ".ps1", ".bat", ".dll", ".sh", ".vbs", ".zip"]:
+                    if ext in url.lower():
+                        idx = url.lower().find(ext) + len(ext)
+                        sub = url[:idx]
+                        out_filename = sub.split("/")[-1]
+                        break
+
+        # Check if this is a payload download
+        is_download = bool(out_filename) or any(ext in url.lower() for ext in [".exe", ".ps1", ".bat", ".dll", ".sh", ".vbs", ".zip", ".tar.gz", "payload", "malware", "shell", "dropper"])
+
+        if is_download:
+            if not out_filename:
+                out_filename = "malware.exe" if ".exe" in url else "payload.bin"
+
+            # Divert and isolate into sandbox
+            sandbox_path = os.path.join(self.sandbox_dir, out_filename)
+            os.makedirs(self.sandbox_dir, exist_ok=True)
+            quarantine_content = (
+                f"# ============================================================\n"
+                f"# [QUARANTINED BY HONEYPOT DECEPTION ENGINE]\n"
+                f"# Captured Threat Vector: Remote C2 Payload Download\n"
+                f"# Target URL            : {url}\n"
+                f"# Identified C2 Host    : {c2_host}\n"
+                f"# Capture Timestamp     : {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"# Action Taken          : File Isolated in data/sandbox/\n"
+                f"# ============================================================\n"
+            )
+            try:
+                with open(sandbox_path, "w", encoding="utf-8") as f:
+                    f.write(quarantine_content)
+                file_size = os.path.getsize(sandbox_path)
+            except Exception:
+                file_size = 256
+
+            # Add to virtual filesystem so 'dir' shows the file
+            items = self.virtual_fs.get(self.current_dir, [])
+            if out_filename not in items:
+                items.append(out_filename)
+                self.virtual_fs[self.current_dir] = items
+
+            # Log to forensics
+            self.tracker.record_c2_download(url, c2_host, out_filename, file_size)
+            self.tracker.record_sandbox_write(out_filename, file_size)
+            print(f"[HONEYPOT DECEPTION] Intercepted payload download from C2 server '{c2_host}'. Diverted to sandbox '{sandbox_path}'!", flush=True)
+
+            return (
+                f"  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n"
+                f"                                 Dload  Upload   Total   Spent    Left  Speed\n"
+                f"100  256k  100  256k    0     0   428k      0 --:--:-- --:--:-- --:--:--  430k"
+            )
+        else:
+            # Simple probe (e.g., curl ifconfig.me)
+            self.tracker.record_network_recon(cmd_raw, url, recon_type="EXTERNAL_IP_PROBE")
+            if any(w in url.lower() for w in ["ifconfig", "ipinfo", "icanhazip", "api.ipify", "ip"]):
+                return "203.0.113.42"
+            else:
+                return (
+                    f"<!DOCTYPE html><html><head><title>200 OK</title></head>\n"
+                    f"<body><h1>Connected to Gateway Proxy</h1><p>Request routed through isolated container.</p></body></html>"
+                )
+
+    def _handle_ssh(self, args):
+        if not args:
+            return "usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] destination [command]"
+        target = args[-1]
+        host = target.split("@")[-1] if "@" in target else target
+        self.tracker.record_network_recon(f"ssh {' '.join(args)}", host, recon_type="LATERAL_MOVEMENT_SSH")
+        print(f"[HONEYPOT DECEPTION] Intruder attempted lateral movement via SSH to '{target}'", flush=True)
+
+        return (
+            f"The authenticity of host '{host} ({host})' can't be established.\n"
+            f"ED25519 key fingerprint is SHA256:4X7mXn82j19slmKq01pOpLm83kALsdjk1290.\n"
+            f"This host key is known by the following other names/addresses:\n"
+            f"ssh: connect to host {host} port 22: Connection timed out"
+        )
+
+    def _handle_nslookup(self, args):
+        if not args:
+            return "Default Server:  dc01.corp.internal\nAddress:  192.168.1.1\n"
+        target = args[0]
+        ip = "10.0.1.20" if ("corp" in target or "internal" in target) else "142.250.190.46"
+        self.tracker.record_network_recon(f"nslookup {target}", target, recon_type="DNS_QUERY")
+        return (
+            f"Server:  dc01.corp.internal\n"
+            f"Address:  192.168.1.1\n\n"
+            f"Non-authoritative answer:\n"
+            f"Name:    {target}\n"
+            f"Address:  {ip}"
+        )
+
+    def _handle_tracert(self, args):
+        target = args[0] if args else "8.8.8.8"
+        self.tracker.record_network_recon(f"tracert {target}", target, recon_type="ROUTE_TRACE")
+        return (
+            f"\nTracing route to {target} over a maximum of 30 hops:\n\n"
+            f"  1     2 ms     2 ms     2 ms  192.168.1.1\n"
+            f"  2    12 ms    11 ms    14 ms  10.24.0.1\n"
+            f"  3    18 ms    17 ms    19 ms  172.16.100.1\n"
+            f"  4    24 ms    23 ms    25 ms  {target}\n\n"
+            f"Trace complete."
+        )
+
+    def _handle_nmap(self, args):
+        target = args[-1] if args else "192.168.1.1"
+        self.tracker.record_network_recon(f"nmap {' '.join(args)}", target, recon_type="PORT_SCAN")
+        return (
+            f"\nStarting Nmap 7.94 ( https://nmap.org ) at {time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"Nmap scan report for {target}\n"
+            f"Host is up (0.0024s latency).\n"
+            f"Not shown: 996 closed tcp ports\n"
+            f"PORT     STATE SERVICE\n"
+            f"53/tcp   open  domain\n"
+            f"80/tcp   open  http\n"
+            f"443/tcp  open  https\n"
+            f"8080/tcp open  http-proxy\n\n"
+            f"Nmap done: 1 IP address (1 host up) scanned in 1.42 seconds"
+        )
 
 
 class DesktopIconWidget(QWidget):
@@ -1516,8 +1970,8 @@ class TaskbarWidget(QFrame):
         # Chrome / Browser
         chrome_btn = QPushButton("🌐")
         chrome_btn.setObjectName("TaskbarBtn")
-        chrome_btn.setToolTip("Browser")
-        chrome_btn.clicked.connect(self.desktop.open_terminal)
+        chrome_btn.setToolTip("Google Chrome")
+        chrome_btn.clicked.connect(self.desktop.toggle_chrome)
         center_box.addWidget(chrome_btn)
         
         # PowerShell Terminal
@@ -1682,6 +2136,11 @@ class HoneypotDesktop(QWidget):
         self.decoy_explorer.move(max(20, center_x - 60), max(20, center_y - 30))
         self.decoy_explorer.hide()
         
+        # High-Fidelity Decoy Google Chrome Browser
+        self.decoy_chrome = DecoyChrome(parent=self)
+        self.decoy_chrome.move(max(30, center_x - 30), max(20, center_y - 20))
+        self.decoy_chrome.hide()
+        
         # 6. Windows 11 Start Menu
         self.start_menu = Windows11StartMenu(self, parent=self)
         sm_x = max(10, (screen_geom.width() - self.start_menu.width()) // 2)
@@ -1692,6 +2151,7 @@ class HoneypotDesktop(QWidget):
     def setup_desktop_icons(self):
         """Creates authentic desktop icons matching user's real desktop."""
         icons = [
+            ("🌐", "Google Chrome", self.open_chrome),
             ("💻", "This PC", self.open_explorer),
             ("🗑️", "Recycle Bin", self.open_explorer),
             ("📁", "clg", self.open_explorer),
@@ -1703,7 +2163,7 @@ class HoneypotDesktop(QWidget):
         
         start_y = 20
         start_x = 20
-        spacing_y = 96
+        spacing_y = 86
         
         for idx, (icon_char, label_text, handler) in enumerate(icons):
             icon_widget = DesktopIconWidget(icon_char, label_text, handler, parent=self)
@@ -1717,6 +2177,7 @@ class HoneypotDesktop(QWidget):
             self.start_menu.raise_()
 
     def open_terminal(self):
+        get_tracker().record_app_launch("Windows PowerShell")
         self.terminal.show()
         self.terminal.raise_()
         self.terminal.input_field.setFocus()
@@ -1727,7 +2188,19 @@ class HoneypotDesktop(QWidget):
         else:
             self.open_terminal()
 
+    def open_chrome(self):
+        get_tracker().record_app_launch("Google Chrome")
+        self.decoy_chrome.show()
+        self.decoy_chrome.raise_()
+
+    def toggle_chrome(self):
+        if self.decoy_chrome.isVisible():
+            self.decoy_chrome.hide()
+        else:
+            self.open_chrome()
+
     def open_notepad(self):
+        get_tracker().record_app_launch("Notepad")
         self.decoy_notepad.show()
         self.decoy_notepad.raise_()
 
@@ -1738,6 +2211,7 @@ class HoneypotDesktop(QWidget):
             self.open_notepad()
 
     def open_explorer(self):
+        get_tracker().record_app_launch("File Explorer")
         self.decoy_explorer.show()
         self.decoy_explorer.raise_()
 
