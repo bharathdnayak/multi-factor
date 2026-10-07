@@ -2038,6 +2038,8 @@ class HoneypotDesktop(QWidget):
         self.log_dir = os.path.join(project_dir, "data", "forensics")
         os.makedirs(self.sandbox_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
+        self.tracker = get_tracker()
+        self.tracker.start_new_session()
         self._can_close = False
         self._last_esc_time = 0.0
         

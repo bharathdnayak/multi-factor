@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import json
@@ -11,8 +12,16 @@ if PROJECT_ROOT not in sys.path:
 
 from deception.forensic_tracker import get_tracker, SENSITIVE_KEYWORDS
 
-# Prefer fast, accurate local models in order of priority
-OLLAMA_PREFERRED_MODELS = ["qwen2.5:3b", "qwen2.5:1.5b", "deepseek-r1:1.5b", "qwen2.5-coder:1.5b"]
+# Prefer fast, accurate local models in order of priority (1.5b is extremely fast for real-time response)
+OLLAMA_PREFERRED_MODELS = ["qwen2.5:1.5b", "deepseek-r1:1.5b", "qwen2.5:3b", "qwen2.5-coder:1.5b"]
+
+# Dedicated Cyber Forensics & Incident Response (DFIR) Unit System Prompt
+DFIR_SYSTEM_PROMPT = """You are the Lead Digital Forensics & Incident Response (DFIR) Cyber Investigation Unit and Computer Crime Analysis Team.
+You specialize in hostile adversary tradecraft profiling, deception counter-intelligence, post-breach filesystem and command trajectory reconstruction, and MITRE ATT&CK kill-chain mapping.
+Conduct a rigorous, authoritative forensic post-incident examination of the unauthorized intruder captured inside our deception honeypot sandbox.
+Behave strictly as an elite digital forensics laboratory: objective, technically precise, evidence-grounded, and authoritative.
+Do NOT output conversational pleasantries, greetings, speculative filler, or emojis.
+Output clean, standard ASCII cybersecurity analysis strictly conforming to the requested section headers."""
 
 
 class IntruderIntentAnalyzer:
@@ -31,7 +40,7 @@ class IntruderIntentAnalyzer:
     with seamless fallback to an expert cybersecurity rule-based heuristic engine
     if the local LLM server is temporarily unavailable.
     """
-    def __init__(self, ollama_url="http://localhost:11434", model_name=None, timeout=30):
+    def __init__(self, ollama_url="http://localhost:11434", model_name=None, timeout=45):
         self.ollama_url = ollama_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
@@ -58,7 +67,7 @@ class IntruderIntentAnalyzer:
                 if avail == pref or avail.startswith(pref.split(":")[0]):
                     return avail
                     
-        return available_models[0] if available_models else "qwen2.5:3b"
+        return available_models[0] if available_models else "qwen2.5:1.5b"
 
     def analyze_session(self, timeline=None, stats=None):
         """
@@ -77,14 +86,25 @@ class IntruderIntentAnalyzer:
         # Attempt to run via local Ollama LLM
         is_ollama_up, installed_models = self.check_ollama_available()
         if is_ollama_up and installed_models:
-            chosen_model = self.select_best_model(installed_models)
-            try:
-                print(f"[AI INTENT] Querying local offline Ollama model '{chosen_model}' for intruder behavioral analysis...", flush=True)
-                llm_result = self._query_ollama(timeline, stats, chosen_model)
-                if llm_result:
-                    return self._parse_llm_response(llm_result, chosen_model, stats)
-            except Exception as e:
-                print(f"[AI INTENT] [WARNING] Ollama inference encountered issue: {e}. Falling back to expert heuristics.", file=sys.stderr, flush=True)
+            models_to_try = []
+            if self.model_name and self.model_name in installed_models:
+                models_to_try.append(self.model_name)
+            for pref in OLLAMA_PREFERRED_MODELS:
+                for avail in installed_models:
+                    if (avail == pref or avail.startswith(pref.split(":")[0])) and avail not in models_to_try:
+                        models_to_try.append(avail)
+            for avail in installed_models:
+                if avail not in models_to_try:
+                    models_to_try.append(avail)
+
+            for chosen_model in models_to_try:
+                try:
+                    print(f"[AI INTENT] Querying local offline Ollama model '{chosen_model}' (DFIR Cyber Investigation Team role)...", flush=True)
+                    llm_result = self._query_ollama(timeline, stats, chosen_model)
+                    if llm_result:
+                        return self._parse_llm_response(llm_result, chosen_model, stats)
+                except Exception as e:
+                    print(f"[AI INTENT] [WARNING] Ollama model '{chosen_model}' issue: {e}. Trying next option...", file=sys.stderr, flush=True)
 
         # Fallback: Expert Rule-Based Cybersecurity Heuristic Engine
         print("[AI INTENT] Running offline expert heuristic intelligence engine...", flush=True)
@@ -102,45 +122,49 @@ class IntruderIntentAnalyzer:
 
         events_dump = "\n".join(chronology_text[:40]) # limit to first 40 events for token efficiency
 
-        prompt = f"""You are a Lead Digital Forensics & Incident Response (DFIR) Specialist.
-An unauthorized intruder hijacked a workstation terminal and was trapped inside our high-interaction Honeypot sandbox.
+        prompt = f"""[INCIDENT RESPONSE CASE REPORT: DFIR FORENSIC UNIT]
+Operational Context: Workstation continuous biometric anomaly detectors flagged an unauthorized intruder and diverted them into our high-interaction sandboxed deception honeypot.
+Review the forensic telemetry capturing the adversary's actions:
 
-Review the chronological log of what the intruder opened, searched, and executed:
-
---- HONEYPOT INTRUDER AUDIT TRAIL ---
-Total Actions: {stats.get('total_actions', 0)}
-Session Duration: {stats.get('session_duration_seconds', 0)} seconds
+--- HONEYPOT FORENSIC AUDIT TRAIL ---
+Case Session ID: {stats.get('session_id', 'ACTIVE')}
+Total Recorded Actions: {stats.get('total_actions', 0)}
+Engagement Duration: {stats.get('session_duration_seconds', 0)}s
 Folders Navigated: {stats.get('folders_visited', [])}
-Files Accessed/Previewed: {stats.get('files_accessed', [])}
+Files Accessed / Inspected: {stats.get('files_accessed', [])}
 Shell Commands Run: {stats.get('commands_executed', [])}
+Network Reconnaissance: {stats.get('network_recon_events', [])}
+Credential Traps Triggered: {stats.get('credential_traps', [])}
 Browser Searches / Visited URLs: {stats.get('browser_searches', [])}
 Sandbox Interceptions: {stats.get('sandbox_interceptions', [])}
+C2 Interceptions: {stats.get('c2_payloads_intercepted', [])}
 
---- DETAILED CHRONOLOGICAL ACTIONS ---
+--- CHRONOLOGICAL ACTION SEQUENCE ---
 {events_dump}
 
---- REQUIRED FORENSIC ANALYSIS FORMAT ---
-Provide a concise, professional cybersecurity incident analysis with these exact sections:
+--- REQUIRED DFIR FORENSIC ASSESSMENT SECTIONS ---
+Produce a concise, technical forensic incident report with these exact section headers:
 
-[ATTACKER PERSONA]: Classify the attacker (e.g. Opportunistic Snooper, Malicious Insider, Targeted Data Thief, Script Kiddie).
-[ESTIMATED INTENT]: What was the intruder hunting for or attempting to achieve?
-[BEHAVIORAL TRAJECTORY]: Analyze why they opened specific folders, ran specific commands, or searched for specific items.
+[ATTACKER PERSONA]: Classify adversary typology (e.g. Opportunistic Physical Snooper, Malicious Insider, Targeted Data Thief, Automated Script Operator, Staging Infiltrator).
+[ESTIMATED INTENT]: Technical forensic deduction of the intruder's primary strategic objective and target assets.
+[BEHAVIORAL TRAJECTORY]: Step-by-step analysis of why they traversed specific folders, executed specific commands, or probed credentials.
 [THREAT LEVEL]: State strictly one of: LOW, MEDIUM, HIGH, CRITICAL.
-[TARGETED HIGH-VALUE ASSETS]: List any confidential data or sensitive system assets targeted.
-[MITRE ATT&CK TACTICS]: List applicable MITRE tactics (e.g., T1082 System Information Discovery, T1552 Unsecured Credentials, T1071 C2).
-[INCIDENT RESPONSE ACTIONS]: 2-3 immediate technical containment recommendations.
+[TARGETED HIGH-VALUE ASSETS]: List confidential data, credentials, and internal resources targeted.
+[MITRE ATT&CK TACTICS]: List mapped MITRE technique IDs and tactic names (e.g., T1082 System Information Discovery, T1087 Account Discovery, T1552 Unsecured Credentials, T1059 Command Execution, T1016 Network Configuration Discovery).
+[INCIDENT RESPONSE ACTIONS]: 2-3 immediate, actionable technical containment and remediation procedures for the SOC team.
 """
         return prompt
 
     def _query_ollama(self, timeline, stats, model_name):
-        """Dispatches prompt to local Ollama generate API."""
+        """Dispatches prompt to local Ollama generate API with DFIR system prompt."""
         prompt = self._build_prompt(timeline, stats)
         payload = {
             "model": model_name,
+            "system": DFIR_SYSTEM_PROMPT,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.2,
+                "temperature": 0.15,
                 "top_p": 0.9,
                 "num_predict": 600
             }
@@ -157,11 +181,17 @@ Provide a concise, professional cybersecurity incident analysis with these exact
             return data.get("response", "")
 
     def _parse_llm_response(self, raw_text, model_name, stats):
-        """Extracts structured fields from the LLM textual response."""
+        """Extracts structured fields from the LLM textual response and sanitizes formatting."""
+        # Strip DeepSeek thinking tags (<think>...</think>)
+        cleaned_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+        # Strip emojis / non-ascii characters
+        cleaned_text = re.sub(r'[\U00010000-\U0010ffff]', '', cleaned_text)
+        cleaned_text = re.sub(r'[\u2600-\u27bf\ufe00-\ufe0f\u2300-\u23ff]', '', cleaned_text)
+
         persona = "Targeted Intruder / Data Exfiltrator"
         intent = "Credential hunting and unauthorized sensitive data discovery"
         threat = "HIGH"
-        trajectory = raw_text
+        trajectory = cleaned_text
         mitre = ["T1082 (System Discovery)", "T1552 (Credential Access)", "T1005 (Data from Local System)"]
         recommendations = [
             "Rotate all corporate passwords and SSH keys stored or accessed during the active session.",
@@ -170,7 +200,7 @@ Provide a concise, professional cybersecurity incident analysis with these exact
         ]
 
         # Extract sections if markers exist
-        lines = raw_text.splitlines()
+        lines = cleaned_text.splitlines()
         for line in lines:
             if "[ATTACKER PERSONA]" in line:
                 persona = line.replace("[ATTACKER PERSONA]:", "").replace("[ATTACKER PERSONA]", "").strip()
@@ -182,15 +212,23 @@ Provide a concise, professional cybersecurity incident analysis with these exact
                     if valid in t_str:
                         threat = valid
                         break
+            elif "[MITRE ATT&CK TACTICS]" in line:
+                t_val = line.replace("[MITRE ATT&CK TACTICS]:", "").replace("[MITRE ATT&CK TACTICS]", "").strip()
+                if t_val:
+                    mitre = [t.strip() for t in t_val.split(",") if t.strip()]
+            elif "[INCIDENT RESPONSE ACTIONS]" in line:
+                r_val = line.replace("[INCIDENT RESPONSE ACTIONS]:", "").replace("[INCIDENT RESPONSE ACTIONS]", "").strip()
+                if r_val:
+                    recommendations = [r.strip() for r in r_val.split(",") if r.strip()]
 
         return {
-            "source": f"Ollama Local AI ({model_name})",
+            "source": f"Ollama DFIR Forensic Unit ({model_name})",
             "model": model_name,
             "status": "SUCCESS",
             "attacker_persona": persona,
             "primary_intent": intent,
             "threat_level": threat,
-            "trajectory_analysis": raw_text,
+            "trajectory_analysis": cleaned_text,
             "mitre_tactics": mitre,
             "recommendations": recommendations,
             "stats_summary": stats

@@ -261,51 +261,42 @@ class ForensicDashboard(QWidget):
             self.image_display.setText("No intruder snapshot captured.\n(Webcam not found or sensor offline)")
 
     def load_sandbox_files(self):
-        """Scans sandbox folder and lists file paths modified by intruder."""
-        if os.path.exists(self.sandbox_dir):
+        """Displays sandboxed file writes intercepted during the CURRENT active session."""
+        stats = self.tracker.get_summary_stats()
+        sandboxed_files = stats.get("sandbox_interceptions", [])
+        if sandboxed_files:
+            self.sandbox_list.setText("\n".join([f"📁 [INTERCEPTED] {f} -> Quarantined in sandbox" for f in sandboxed_files]))
+        elif os.path.exists(self.sandbox_dir) and os.listdir(self.sandbox_dir):
             files = os.listdir(self.sandbox_dir)
-            if files:
-                self.sandbox_list.setText("\n".join([f"📁 [INTERCEPTED] {f} -> Stored safely in sandbox" for f in files]))
-                return
-        self.sandbox_list.setText("No file writes intercepted in sandbox directory.\nHost filesystem remains 100% pristine.")
+            self.sandbox_list.setText("\n".join([f"📁 [QUARANTINED] {f} -> Stored safely in sandbox" for f in files]))
+        else:
+            self.sandbox_list.setText("No file writes intercepted in current session.\nHost filesystem remains 100% pristine.")
 
     def load_activity_logs(self):
-        """Loads all recorded events from session_actions.jsonl or fallback text log."""
-        jsonl_path = os.path.join(self.forensics_dir, "session_actions.jsonl")
+        """Loads recorded events strictly for the CURRENT session."""
+        timeline = self.tracker.get_timeline()
         lines_formatted = []
-        
-        if os.path.exists(jsonl_path):
-            try:
-                with open(jsonl_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if line.strip():
-                            ev = json.loads(line)
-                            t = ev.get("timestamp", "")
-                            atype = ev.get("action_type", "")
-                            target = ev.get("target", "")
-                            sev = ev.get("severity", "INFO")
-                            lines_formatted.append(f"[{t}] [{sev}] [{atype}] {target}")
-            except Exception:
-                pass
-
-        if not lines_formatted and os.path.exists(self.log_path):
-            try:
-                with open(self.log_path, "r", encoding="utf-8") as f:
-                    lines_formatted = [l.strip() for l in f if l.strip()]
-            except Exception:
-                pass
+        for ev in timeline:
+            t = ev.get("timestamp", "")
+            atype = ev.get("action_type", "")
+            target = ev.get("target", "")
+            sev = ev.get("severity", "INFO")
+            lines_formatted.append(f"[{t}] [{sev}] [{atype}] {target}")
 
         if lines_formatted:
             self.log_console.setText("\n".join(lines_formatted))
         else:
-            self.log_console.setText("No honeypot interaction events recorded yet.")
+            self.log_console.setText("No honeypot interaction events recorded in this session yet.")
 
     def run_ai_analysis(self):
         """Invokes offline AI intent analyzer (Ollama / Heuristics) and updates the UI."""
         self.ai_summary_lbl.setText("Analyzing behavioral trajectory across opened folders, searches, and commands...")
         QApplication.processEvents()
         
-        report = self.ai_analyzer.analyze_session()
+        timeline = self.tracker.get_timeline()
+        stats = self.tracker.get_summary_stats()
+        report = self.ai_analyzer.analyze_session(timeline=timeline, stats=stats)
+        self.latest_ai_report = report
         persona = report.get("attacker_persona", "Opportunistic Explorer")
         intent = report.get("primary_intent", "Reconnaissance & credential hunting")
         threat = report.get("threat_level", "MEDIUM").upper()
@@ -329,13 +320,17 @@ class ForensicDashboard(QWidget):
         self.ai_summary_lbl.setText(summary_text)
 
     def export_pdf_report(self):
-        """Generates comprehensive PDF report and prompts user to open it."""
+        """Generates comprehensive PDF report for the active session and prompts user to open it."""
         try:
             self.export_btn.setText("Generating PDF...")
             QApplication.processEvents()
             
             gen = ForensicReportGenerator()
-            pdf_path = gen.generate_report()
+            timeline = self.tracker.get_timeline()
+            stats = self.tracker.get_summary_stats()
+            ai_report = getattr(self, "latest_ai_report", None)
+            
+            pdf_path = gen.generate_report(ai_report=ai_report, timeline=timeline, stats=stats)
             self.latest_pdf_path = pdf_path
             
             self.export_btn.setText("📄 Export Forensic PDF Report")

@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import glob
@@ -14,16 +15,102 @@ from deception.forensic_tracker import get_tracker
 from deception.ai_intent_analyzer import IntruderIntentAnalyzer
 
 
+def sanitize_pdf_text(text, font_family="helvetica"):
+    """
+    Sanitizes any string destined for PDF generation to eliminate encoding crashes.
+    - Strips DeepSeek <think>...</think> reasoning tags
+    - Replaces common Unicode symbols (smart quotes, em-dashes, bullets, etc.) with safe equivalents
+    - Strips emoji characters (code points > 0xFFFF or miscellaneous symbols) that break standard PDF fonts
+    - Enforces Latin-1 encodability if using core fonts (Helvetica) to prevent FPDFUnicodeEncodingException
+    """
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+
+    # 1. Strip DeepSeek-R1 / thinking model reasoning tags
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
+    # 2. Convert common unicode typography to clean ASCII / Latin-1 equivalents
+    replacements = {
+        '\u201c': '"', '\u201d': '"',  # Left/right double quotes
+        '\u2018': "'", '\u2019': "'",  # Left/right single quotes
+        '\u2014': '--', '\u2013': '-', # Em-dash, En-dash
+        '\u2022': '-', '\u00b7': '-',  # Bullets
+        '\u2026': '...',               # Horizontal ellipsis
+        '\u2192': '->', '\u2190': '<-', # Arrows
+        '\u2713': '[OK]', '\u2714': '[OK]', # Checkmarks
+        '\u2717': '[X]', '\u2718': '[X]',
+        '\u00a9': '(c)', '\u00ae': '(R)', '\u2122': '(TM)',
+        '\u00b0': ' deg',
+    }
+    for orig, repl in replacements.items():
+        text = text.replace(orig, repl)
+
+    # 3. Strip all emojis (astral plane \U00010000-\U0010ffff, and misc symbols)
+    text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
+    text = re.sub(r'[\u2600-\u27bf\ufe00-\ufe0f\u2300-\u23ff]', '', text)
+
+    # 4. If using standard core fonts like helvetica, ensure latin-1 encodability
+    if font_family.lower() == "helvetica":
+        text = text.encode("latin-1", "replace").decode("latin-1")
+
+    return text.strip()
+
+
 class ForensicPDF(FPDF):
-    """Custom FPDF layout with corporate cybersecurity header and footer."""
+    """Custom FPDF layout with corporate cybersecurity header and footer and unicode font support."""
     def __init__(self, incident_id):
         super().__init__()
         self.incident_id = incident_id
+        self.doc_font_family = "helvetica"
+        self._init_unicode_fonts()
+
+    def _init_unicode_fonts(self):
+        """Attempts to register system TrueType Unicode fonts (Arial) on Windows."""
+        if sys.platform == "win32":
+            font_dir = os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts")
+            arial_reg = os.path.join(font_dir, "arial.ttf")
+            arial_bd = os.path.join(font_dir, "arialbd.ttf")
+            arial_it = os.path.join(font_dir, "ariali.ttf")
+            if os.path.exists(arial_reg):
+                try:
+                    self.add_font("Arial", "", arial_reg)
+                    if os.path.exists(arial_bd):
+                        self.add_font("Arial", "B", arial_bd)
+                    if os.path.exists(arial_it):
+                        self.add_font("Arial", "I", arial_it)
+                    self.doc_font_family = "Arial"
+                except Exception:
+                    self.doc_font_family = "helvetica"
+
+    def set_font(self, family=None, style="", size=0):
+        if family is None or family.lower() in ("helvetica", "arial"):
+            family = self.doc_font_family
+        return super().set_font(family, style, size)
+
+    def cell(self, *args, **kwargs):
+        if "text" in kwargs:
+            kwargs["text"] = sanitize_pdf_text(kwargs["text"], self.doc_font_family)
+        elif len(args) >= 3:
+            args_list = list(args)
+            args_list[2] = sanitize_pdf_text(args_list[2], self.doc_font_family)
+            args = tuple(args_list)
+        return super().cell(*args, **kwargs)
+
+    def multi_cell(self, *args, **kwargs):
+        if "text" in kwargs:
+            kwargs["text"] = sanitize_pdf_text(kwargs["text"], self.doc_font_family)
+        elif len(args) >= 3:
+            args_list = list(args)
+            args_list[2] = sanitize_pdf_text(args_list[2], self.doc_font_family)
+            args = tuple(args_list)
+        return super().multi_cell(*args, **kwargs)
 
     def header(self):
         self.set_fill_color(18, 24, 38) # Dark Navy Header
         self.rect(0, 0, 210, 16, 'F')
-        self.set_font('helvetica', 'B', 8)
+        self.set_font(self.doc_font_family, 'B', 8)
         self.set_text_color(220, 225, 235)
         self.set_xy(10, 4)
         self.cell(100, 8, "MAJOR PROJECT 30 | CONTINUOUS AUTHENTICATION & HONEYPOT FORENSICS", align='L')
@@ -33,7 +120,7 @@ class ForensicPDF(FPDF):
 
     def footer(self):
         self.set_y(-14)
-        self.set_font('helvetica', 'I', 8)
+        self.set_font(self.doc_font_family, 'I', 8)
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f"Page {self.page_no()}/{{nb}} | Confidential Incident Forensics Report | ISE Dept", align='C')
 
@@ -156,10 +243,11 @@ class ForensicReportGenerator:
         # Look for photos in forensics directory
         photos = glob.glob(os.path.join(self.output_dir, "intruder_*.jpg"))
         photos.sort(key=os.path.getmtime, reverse=True)
+        valid_photos = [p for p in photos if os.path.exists(p) and os.path.getsize(p) > 500]
         
         curr_y = pdf.get_y()
-        if photos and os.path.exists(photos[0]):
-            photo_path = photos[0]
+        if valid_photos:
+            photo_path = valid_photos[0]
             try:
                 # Add image on the left
                 pdf.image(photo_path, x=14, y=curr_y + 2, w=55, h=40)

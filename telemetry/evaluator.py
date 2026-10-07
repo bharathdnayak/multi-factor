@@ -290,6 +290,11 @@ class ThreatEvaluator:
                 capture_intruder()
                 dispatch_otp(self.active_otp)
                 self._save_active_otp(self.active_otp)
+                try:
+                    from deception.forensic_tracker import get_tracker
+                    get_tracker().start_new_session()
+                except Exception:
+                    pass
                 
         return float(fused_risk), float(smoothed_risk), triggered
 
@@ -322,6 +327,11 @@ class ThreatEvaluator:
             self._clear_active_otp()
             if self.orchestrator is not None:
                 self.orchestrator.reset()
+            try:
+                from deception.forensic_tracker import get_tracker
+                get_tracker().reset_session()
+            except Exception:
+                pass
             
             # Retrain models to adapt to behavior drift
             try:
