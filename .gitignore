@@ -10,6 +10,9 @@ data/*
 data/sessions/active_session.json
 !data/sessions/.gitkeep
 !data/sessions/app_baselines.json
+!data/benchmarks/
+!data/benchmarks/*.json
+!data/benchmarks/*.png
 telemetry_data.jsonl
 *.jsonl
 *.csv

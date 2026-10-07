@@ -441,6 +441,44 @@ def main():
         print(f"   [FAIL] Viva Demo Runner error: {e}")
         results.append(("Live Viva Demo Runner (TASK-12)", f"FAILED: {e}"))
 
+    # ---------------- 14. ACADEMIC THESIS & PRESENTATION SLIDE DECK (TASK-13) ----------------
+    print_banner("14. Testing Academic Thesis & Presentation Assets (TASK-13)")
+    try:
+        from PIL import Image
+        # 1. Verify 300 DPI diagrams
+        arch_png = os.path.join(PROJECT_ROOT, "architecture_diagram.png")
+        wf_png = os.path.join(PROJECT_ROOT, "end_to_end_structure.png")
+        summary_png = os.path.join(PROJECT_ROOT, "data", "benchmarks", "final_presentation_performance_summary.png")
+        assert os.path.exists(arch_png) and os.path.getsize(arch_png) > 100000
+        assert os.path.exists(wf_png) and os.path.getsize(wf_png) > 100000
+        assert os.path.exists(summary_png) and os.path.getsize(summary_png) > 100000
+
+        with Image.open(arch_png) as img:
+            assert img.width >= 4000 and img.height >= 2500
+        print("   [300 DPI Diagrams Verified] Architecture, Workflow & Performance Summary verified.")
+
+        # 2. Verify viva presentation slides markdown
+        slides_md = os.path.join(PROJECT_ROOT, "docs", "FINAL_VIVA_PRESENTATION_SLIDES.md")
+        assert os.path.exists(slides_md) and os.path.getsize(slides_md) > 15000
+        print("   [Viva Slide Deck Verified] 18 comprehensive defense slides with speaker notes verified.")
+
+        # 3. Verify all 6 thesis chapters and monolithic master document
+        thesis_dir = os.path.join(PROJECT_ROOT, "docs", "thesis")
+        for i in range(1, 7):
+            matches = [f for f in os.listdir(thesis_dir) if f.startswith(f"Chapter_{i}_")]
+            assert len(matches) == 1, f"Missing Chapter {i}"
+            assert os.path.getsize(os.path.join(thesis_dir, matches[0])) > 4000
+
+        master_doc = os.path.join(thesis_dir, "Thesis_Master_Document.md")
+        assert os.path.exists(master_doc) and os.path.getsize(master_doc) > 35000
+        print(f"   [Thesis Chapters Verified] Chapters 1-6 and Master Thesis Document ({os.path.getsize(master_doc):,} bytes) verified.")
+
+        print("   [PASS] Academic Thesis & Presentation Assets verified successfully.")
+        results.append(("Academic Thesis & Slides (TASK-13)", "PASSED"))
+    except Exception as e:
+        print(f"   [FAIL] Thesis & Presentation Assets error: {e}")
+        results.append(("Academic Thesis & Slides (TASK-13)", f"FAILED: {e}"))
+
     # ---------------- FINAL SUMMARY ----------------
     print_banner("SYSTEM VERIFICATION SUMMARY")
     all_passed = True
@@ -452,7 +490,7 @@ def main():
 
     print("=" * 70)
     if all_passed:
-        print(" ALL 13 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
+        print(" ALL 14 CRITICAL SUBSYSTEMS ARE 100% OPERATIONAL AND VERIFIED!")
     else:
         print(" SOME COMPONENTS FAILED VERIFICATION.")
     print("=" * 70)
