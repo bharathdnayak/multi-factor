@@ -9,7 +9,7 @@ echo =====================================================================
 echo.
 echo  [ACTIVE MONITORING]
 echo  - Tracks Google Chrome, Microsoft Edge, Brave, Firefox, Opera
-echo  - Tracks VS Code, Terminals, Office Docs, Coding & Problem Solving
+echo  - Tracks VS Code, Terminals, Office Docs, Coding and Problem Solving
 echo  - Automatically classifies tabs: LeetCode, YouTube, Docs, Chat, IDE
 echo  - Captures: Thinking pauses, typing bursts, syntax symbols, scrolls
 echo.
@@ -20,9 +20,10 @@ echo  - To stop collecting, simply press Ctrl+C or close this window.
 echo =====================================================================
 echo.
 
-:: 1. Compute project root directory
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
 :: 2. Locate Python executable
@@ -43,12 +44,13 @@ if not defined PYTHON_EXE (
     exit /b 1
 )
 
-echo [INFO] Using Python: "%PYTHON_EXE%"
-echo [INFO] Data Storage: "%PROJECT_DIR%\data\sessions"
+echo [INFO] Project Directory : "%PROJECT_DIR%"
+echo [INFO] Using Python      : "%PYTHON_EXE%"
+echo [INFO] Data Storage      : "%PROJECT_DIR%\data\sessions"
 echo [INFO] Starting Live Telemetry and Micro-Session Profiling...
 echo.
 
-"%PYTHON_EXE%" "%PROJECT_DIR%\telemetry\agent.py" --friendly
+"%PYTHON_EXE%" "%PROJECT_DIR%\telemetry\agent.py" --friendly %*
 
 echo.
 echo [INFO] Collector stopped. All micro-sessions have been safely saved.

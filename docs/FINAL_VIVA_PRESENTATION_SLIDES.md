@@ -316,7 +316,7 @@
 ---
 
 ## SLIDE 17: Demonstration Walkthrough (The 5 Viva Stages)
-* **Automated Runner:** [`demo_viva_runner.py`](demo_viva_runner.py) and [`run_viva_demo.bat`](run_viva_demo.bat)
+* **Automated Runner:** [`demo_viva_runner.py`](demo_viva_runner.py) and [`bat/run_viva_demo.bat`](../bat/run_viva_demo.bat)
 * **Stage 1 (Legitimate Baseline):**
   - Authentic typing and mouse motion stream into evaluator.
   - Live Threat Risk evaluates to **~0.10 (Tier 1 Nominal, $< 0.40$)**.

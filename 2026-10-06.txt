@@ -343,7 +343,7 @@ TASK-5: End-to-End Live OTP & Multi-Channel Alert Dispatcher (security/otp_servi
 - Objective: Complete the documentation deliverables for final thesis submission and academic viva defense aligning with NMAMIT ISE project guidelines.
 - Deliverables:
   * High-Resolution 300 DPI Architectural & Workflow Diagrams:
-    - Updated generate_architecture_diagram.py and regenerated 300 DPI vector-sharp rchitecture_diagram.png and rchitecture_diagram.jpg (>4000x2500 px).
+    - Updated generate_architecture_diagram.py and regenerated 300 DPI vector-sharp architecture_diagram.png and architecture_diagram.jpg (>4000x2500 px).
     - Updated generate_workflow_diagram.py and regenerated 300 DPI 4-stage procedural flowchart end_to_end_structure.png and end_to_end_structure.jpg.
   * Academic Presentation Assets & Viva Slide Deck:
     - Created scripts/generate_slide_deck_assets.py:
@@ -360,25 +360,28 @@ TASK-5: End-to-End Live OTP & Multi-Channel Alert Dispatcher (security/otp_servi
       * Compiled monolithic master thesis report: docs/thesis/Thesis_Master_Document.md (>45 KB) with full table of contents and academic bibliography.
     - Exported self-contained presentation and thesis assets into docs/assets/.
   * Dedicated Unit Test Suite:
-    - 	ests/test_thesis_and_presentation.py: 6/6 tests passing in 1.10s (diagram resolutions, slide deck completeness, all 6 chapters, and master document integrity).
+    -     ests/test_thesis_and_presentation.py: 6/6 tests passing in 1.10s (diagram resolutions, slide deck completeness, all 6 chapters, and master document integrity).
   * System-Wide Verification:
     - Section 14 added to scripts/verify_all_components.py: 14/14 critical subsystems 100% operational and verified.
     - Full repository regression suite: 70/70 unit tests passing cleanly.
 
-[x] TASK-14: Batch Script Consolidation & Standardized Execution Launchers [COMPLETED]
+[x] TASK-14: Batch Script Consolidation & Dedicated bat/ Folder Organization [COMPLETED]
 - Priority: MEDIUM
 - Status: COMPLETED & VERIFIED
-- Objective: Clean up unused / redundant duplicate .bat scripts and provide standardized, bulletproof production launchers for both normal application execution and unauthorized dataset attack simulation.
+- Objective: Remove unnecessary / redundant duplicate batch files and organize all production execution launchers inside a dedicated bat/ folder with automatic parent project directory discovery.
 - Deliverables:
-  * Launcher 1: `run_security_system.bat` (Normal Application Execution):
-    - Automatically discovers Python / virtual environment (`venv`, `.venv`, or system PATH).
-    - Spawns Telemetry Hook Agent (`telemetry/agent.py`), Threat Evaluation Daemon (`security/drift_detector.py`), and FastAPI Web Dashboard (`dashboard/app.py` on http://localhost:8000).
-    - Displays clean banners, ports, and operational guidance.
-  * Launcher 2: `simulate_unauthorized_attack.bat` (Unauthorized Dataset & Attack Simulator):
-    - Standardized root-level launcher for `scripts/simulate_unauthorized_attack.py`.
-    - Injects unauthorized imposter telemetry to trigger acute anomaly spike, webcam capture, OTP lock screen, honeypot diversion, and offline AI forensic reporting.
+  * Dedicated bat/ Directory Created:
+    - bat/run_viva_demo.bat: Interactive 5-stage live viva defense runner for academic evaluators.
+    - bat/run_security_system.bat: Unified process supervisor, background hooks, tray icon, and web dashboard.
+    - bat/simulate_unauthorized_attack.bat: Unauthorized intrusion simulator with lockdown and honeypot diversion.
+    - bat/start_real_data_collection.bat: Multi-application continuous telemetry harvester.
+    - bat/train_models.bat: Model trainer and verification test suite runner.
+    - bat/bootstrap_dataset.bat: Cold-start baseline dataset generator and model trainer.
+    - bat/README.md: Comprehensive reference guide detailing the purpose and usage of every script.
+  * Automatic Project Root Discovery:
+    - Each batch script dynamically resolves %~dp0.. to establish canonical project root context across Windows shells.
   * Cleanup & Consolidation:
-    - Remove redundant duplicate scripts (`scripts/run_passive_collector.bat`, duplicate wrappers).
-    - Keep only clean, self-contained scripts with proper error handling.
-- Verification: Running both batch files starts the respective workflows reliably with zero path errors.
+    - Removed root-level clutter (*.bat files moved into bat/).
+    - Removed redundant / deprecated scripts (scripts/run_passive_collector.bat, scripts/run_unauthorized_attack.bat, scripts/run_drip_feed.bat, scripts/bootstrap_dataset.bat).
+- Verification: All 6 launchers in bat/ execute cleanly with zero path or ampersand syntax errors.
 ================================================================================

@@ -5,23 +5,24 @@ title Live Viva Demonstration Runner - Major Project 30
 
 echo =====================================================================
 echo       LIVE VIVA DEMONSTRATION RUNNER - MAJOR PROJECT TEAM 30         
-echo   Multi-Factor Behavioral Drift Continuous Authentication & Deception
-echo         Department of Information Science & Engineering, NMAMIT      
+echo   Multi-Factor Behavioral Drift Continuous Authentication and Deception
+echo         Department of Information Science and Engineering, NMAMIT      
 echo =====================================================================
 echo.
 echo [PURPOSE]
 echo - Coordinates an end-to-end 5-stage demonstration for project viva,
 echo   guide reviews, and academic evaluations.
 echo - Stage 1: Legitimate user baseline operations (Continuous Quad-Factor)
-echo - Stage 2: Physical walk-away & imposter takeover (BLE & ADWIN drift)
-echo - Stage 3: Behavioral drift threshold crossed & autonomous defense
+echo - Stage 2: Physical walk-away and imposter takeover (BLE and ADWIN drift)
+echo - Stage 3: Behavioral drift threshold crossed and autonomous defense
 echo - Stage 4: Attacker diverted into sandboxed Deception Honeypot
-echo - Stage 5: Legitimate user recovery & automated AI Forensic PDF report
+echo - Stage 5: Legitimate user recovery and automated AI Forensic PDF report
 echo.
 
-:: 1. Compute absolute project root directory safely
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
 :: 2. Find Python executable

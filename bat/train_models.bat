@@ -14,11 +14,13 @@ echo        3. Deep Keystroke Sequence Biometrics (Deep SVDD 1D-CNN)
 echo        4. Behavioral AI Controller Baselines
 echo.
 
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
-:: Locate Python
+:: 2. Locate Python
 set "PYTHON_EXE="
 if exist "%PROJECT_DIR%\venv\Scripts\python.exe" set "PYTHON_EXE=%PROJECT_DIR%\venv\Scripts\python.exe"
 if not defined PYTHON_EXE if exist "%PROJECT_DIR%\.venv\Scripts\python.exe" set "PYTHON_EXE=%PROJECT_DIR%\.venv\Scripts\python.exe"
@@ -35,7 +37,8 @@ if not defined PYTHON_EXE (
     exit /b 1
 )
 
-echo [INFO] Using Python: "%PYTHON_EXE%"
+echo [INFO] Project Directory : "%PROJECT_DIR%"
+echo [INFO] Using Python      : "%PYTHON_EXE%"
 echo.
 "%PYTHON_EXE%" "%PROJECT_DIR%\ml_engine\train.py"
 

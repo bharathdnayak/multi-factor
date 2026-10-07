@@ -14,9 +14,10 @@ echo - Tests acute anomaly spikes, rapid behavioral drift detection,
 echo   silent webcam snapshot capture, OTP dispatch, and the Deception Lockout.
 echo.
 
-:: 1. Compute absolute project root directory safely
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
 :: 2. Find Python executable
