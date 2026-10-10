@@ -8,6 +8,7 @@ This directory contains all verified, production-ready Windows batch scripts for
 
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
+| **`setup_environment.bat`** | **One-Click Environment Setup & Dependency Installer**<br>Validates Python, configures virtual environment, installs manifests, initializes runtime folders/configs, and verifies models. | Double-click or run from terminal |
 | **`run_viva_demo.bat`** | **Interactive 5-Stage Live Viva Defense Runner**<br>Guides examiners through baseline operations, physical walk-away takeover, Tier 2 step-up toast challenge, Tier 3 honeypot diversion, and offline AI forensic reporting. Includes speaking points. | Double-click or run from terminal |
 | **`run_security_system.bat`** | **Production Continuous Security System**<br>Spawns the Unified Process Supervisor, low-level OS telemetry hooks, threat evaluator daemon, system tray icon, and live cyber-ops web dashboard on `http://localhost:8000`. | Double-click or run from terminal |
 | **`simulate_unauthorized_attack.bat`** | **Unauthorized Imposter Intrusion Simulator**<br>Injects acute typing anomaly spikes to demonstrate immediate behavioral drift detection, webcam intruder snapshot, screen lockdown, and honeypot diversion. | Double-click or run from terminal |

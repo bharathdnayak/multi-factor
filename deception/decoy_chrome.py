@@ -4,9 +4,10 @@ import time
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QTextEdit, QFrame, QScrollArea, QStackedWidget
+    QLineEdit, QPushButton, QTextEdit, QFrame, QScrollArea, QStackedWidget,
+    QTextBrowser
 )
-from PyQt6.QtCore import Qt, QSize, QPoint
+from PyQt6.QtCore import Qt, QSize, QPoint, QUrl
 from PyQt6.QtGui import QFont, QColor, QCursor
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,7 +22,7 @@ class DecoyChrome(QFrame):
     High-Fidelity Google Chrome Decoy Window with Honey-Token Web Portals.
     Provides a hyper-realistic browser environment to trap and record the intruder's web activity.
     Features:
-    - Authentic Chrome Tab Bar & Bookmarks Bar
+    - Authentic Chrome Tab Bar & Bookmarks Bar with multi-tab support
     - Chrome Omnibox / URL address bar with dynamic routing
     - Interactive Google Search engine that logs queries and displays results
     - Decoy Corporate NetBanking Portal (credential harvesting trap)
@@ -29,6 +30,7 @@ class DecoyChrome(QFrame):
     - Decoy Internal GitHub Enterprise (fake repositories with .env secrets)
     - Decoy Corporate Webmail with honey-token emails
     - Decoy Cloud Vault / Internal Infrastructure
+    - Optional Isolated Real Internet Browsing with download sandbox interception
     - All actions recorded directly to ForensicTracker for offline Ollama threat intelligence.
     """
     def __init__(self, parent=None):
@@ -40,6 +42,17 @@ class DecoyChrome(QFrame):
         self.current_url = "https://www.google.com"
         self.history = ["https://www.google.com"]
         self.history_idx = 0
+        
+        # Real internet access configuration (Disabled by default for strict isolation)
+        self.internet_enabled = os.environ.get("DECOY_BROWSER_INTERNET_ENABLED", "false").lower() in ("true", "1", "yes")
+        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
+        os.makedirs(self.sandbox_dir, exist_ok=True)
+        
+        # Tabs model
+        self.tabs = [
+            {"id": 0, "title": "Google", "url": "https://www.google.com", "stack_idx": 0}
+        ]
+        self.active_tab_idx = 0
         
         self.init_ui()
 
@@ -212,6 +225,14 @@ class DecoyChrome(QFrame):
         self.drive_tab.mousePressEvent = lambda e: self.navigate_to_drive()
         tb_layout.addWidget(self.drive_tab)
 
+        # Add Tab button (+)
+        self.new_tab_btn = QPushButton("+")
+        self.new_tab_btn.setObjectName("NewTabBtn")
+        self.new_tab_btn.setToolTip("New tab")
+        self.new_tab_btn.setStyleSheet("background: transparent; color: #9aa0a6; border: none; font-size: 16px; font-weight: bold; width: 26px; height: 26px; border-radius: 13px;")
+        self.new_tab_btn.clicked.connect(self.on_new_tab_clicked)
+        tb_layout.addWidget(self.new_tab_btn)
+
         tb_layout.addStretch()
 
         # Window Controls (Min, Max, Close)
@@ -249,6 +270,7 @@ class DecoyChrome(QFrame):
 
         fwd_btn = QPushButton("→")
         fwd_btn.setObjectName("NavBtn")
+        fwd_btn.clicked.connect(self.go_forward)
         nr_layout.addWidget(fwd_btn)
 
         refresh_btn = QPushButton("⟳")
@@ -262,6 +284,15 @@ class DecoyChrome(QFrame):
         self.omnibox.setText("https://www.google.com")
         self.omnibox.returnPressed.connect(self.on_omnibox_enter)
         nr_layout.addWidget(self.omnibox, 1)
+
+        # Internet mode indicator badge
+        self.internet_badge = QPushButton("🌐 Real Web: ON" if self.internet_enabled else "🛡️ Isolated Mode")
+        self.internet_badge.setObjectName("InternetBadge")
+        badge_bg = "#2ed573" if self.internet_enabled else "#383838"
+        self.internet_badge.setStyleSheet(f"background-color: {badge_bg}; color: #ffffff; border-radius: 12px; font-size: 10px; font-weight: 600; padding: 4px 8px; border: none;")
+        self.internet_badge.setToolTip("Click to toggle Decoy Browser internet connectivity mode")
+        self.internet_badge.clicked.connect(self.toggle_internet_mode)
+        nr_layout.addWidget(self.internet_badge)
 
         avatar_lbl = QLabel("👤")
         avatar_lbl.setStyleSheet("font-size: 14px; padding: 0 4px;")
@@ -347,6 +378,10 @@ class DecoyChrome(QFrame):
         # Page 7: Internal GitHub Enterprise (TASK-6)
         self.github_page = self.create_github_page()
         self.pages_stack.addWidget(self.github_page)
+
+        # Page 8: Isolated Real Internet Browser
+        self.real_browser_page = self.create_real_browser_page()
+        self.pages_stack.addWidget(self.real_browser_page)
 
         layout.addWidget(self.pages_stack, 1)
         self.setLayout(layout)
@@ -934,6 +969,38 @@ class DecoyChrome(QFrame):
         page.setLayout(layout)
         return page
 
+    def create_real_browser_page(self):
+        page = QFrame()
+        page.setStyleSheet("background-color: #202124;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Status header for real web
+        self.real_web_status = QLabel("Isolated Web Engine Active | Sandboxed Profile")
+        self.real_web_status.setFixedHeight(22)
+        self.real_web_status.setStyleSheet("background-color: #2b2b2b; color: #00d2d3; font-size: 11px; padding-left: 10px; border-bottom: 1px solid #3c3c3c;")
+        layout.addWidget(self.real_web_status)
+
+        # HTML / Web renderer
+        self.real_web_browser = QTextBrowser()
+        self.real_web_browser.setOpenExternalLinks(False)
+        self.real_web_browser.anchorClicked.connect(self.on_real_browser_anchor_clicked)
+        self.real_web_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: #ffffff;
+                color: #202124;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 13px;
+                border: none;
+                padding: 16px;
+            }
+        """)
+        layout.addWidget(self.real_web_browser, 1)
+
+        page.setLayout(layout)
+        return page
+
     # ---------------- INTERACTION LOGIC & FORENSIC HOOKS ----------------
 
     def execute_google_search(self):
@@ -1075,9 +1142,10 @@ class DecoyChrome(QFrame):
         print(f"[DECEPTION CHROME] Intruder clicked sensitive cloud file: '{filename}'", flush=True)
 
     def on_omnibox_enter(self):
-        url = self.omnibox.text().strip().lower()
-        self.tracker.record_url_visit(url)
-        print(f"[DECEPTION CHROME] Intruder entered URL: '{url}'", flush=True)
+        raw_url = self.omnibox.text().strip()
+        url = raw_url.lower()
+        self.tracker.record_url_visit(raw_url)
+        print(f"[DECEPTION CHROME] Intruder entered URL: '{raw_url}'", flush=True)
         
         if "bank" in url or "finance" in url:
             self.navigate_to_banking()
@@ -1092,50 +1160,208 @@ class DecoyChrome(QFrame):
         elif "google" in url and "search" not in url:
             self.navigate_to_google()
         else:
-            self.gen_url_lbl.setText(f"Secure Gateway: {url}")
-            self.tab_title.setText(url[:20])
-            self.pages_stack.setCurrentIndex(4)
+            if self.internet_enabled:
+                self.navigate_to_real_web(raw_url)
+            else:
+                self.gen_url_lbl.setText(f"Secure Gateway: {raw_url}")
+                self.tab_title.setText(raw_url[:20])
+                self.pages_stack.setCurrentIndex(4)
+                self.record_history_entry(raw_url, 4)
+
+    def navigate_to_real_web(self, target_url: str):
+        if not target_url.startswith("http://") and not target_url.startswith("https://"):
+            target_url = f"https://{target_url}"
+
+        self.omnibox.setText(target_url)
+        self.tracker.record_event(
+            "BROWSER_NAVIGATE_START",
+            target_url,
+            {"source": "omnibox", "internet_enabled": self.internet_enabled},
+            severity="INFO"
+        )
+
+        # Check for remote executable / binary payload download attempt
+        lower_url = target_url.lower()
+        is_payload = any(lower_url.endswith(ext) or ext + "?" in lower_url for ext in [".exe", ".bat", ".dll", ".ps1", ".vbs", ".zip", ".bin"])
+        if is_payload:
+            # Block execution and safely isolate into data/sandbox/
+            parts = target_url.rstrip("/").split("/")
+            filename = parts[-1].split("?")[0] if parts else "quarantined_payload.exe"
+            if not filename or "." not in filename:
+                filename = "quarantined_payload.exe"
+
+            sandbox_path = os.path.join(self.sandbox_dir, filename)
+            quarantine_content = (
+                f"# ============================================================\n"
+                f"# [QUARANTINED BY HONEYPOT DECEPTION BROWSER]\n"
+                f"# Captured Threat Vector: Browser Executable Download Attempt\n"
+                f"# Source URL            : {target_url}\n"
+                f"# Timestamp             : {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"# Action Taken          : File Quarantined in data/sandbox/\n"
+                f"# ============================================================\n"
+            )
+            try:
+                with open(sandbox_path, "w", encoding="utf-8") as f:
+                    f.write(quarantine_content)
+            except Exception:
+                pass
+
+            netloc = "c2-server.net"
+            try:
+                from urllib.parse import urlparse
+                netloc = urlparse(target_url).netloc or "c2-server.net"
+            except Exception:
+                pass
+
+            self.tracker.record_c2_download(target_url, netloc, filename, len(quarantine_content.encode("utf-8")))
+            self.real_web_browser.setHtml(
+                f"<div style='font-family: Segoe UI, sans-serif; padding: 24px; color: #ffffff; background-color: #1e1e1e;'>"
+                f"<h2 style='color: #ff4757;'>⚠️ Download Intercepted & Quarantined</h2>"
+                f"<p>The browser intercepted an executable payload download: <b>{filename}</b></p>"
+                f"<p style='color: #00d2d3;'>File safely isolated to: <code>data/sandbox/{filename}</code></p>"
+                f"<p style='color: #aaaaaa;'>Execution against the host operating system was prevented by honeypot policy.</p>"
+                f"</div>"
+            )
+            self.tab_title.setText(f"Blocked: {filename}")
+            self.pages_stack.setCurrentIndex(8)
+            self.record_history_entry(target_url, 8)
+            return
+
+        # Attempt safe real HTTP fetch
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                target_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                code = resp.getcode()
+                content_bytes = resp.read(500000)  # Max 500KB
+                encoding = resp.headers.get_content_charset() or "utf-8"
+                html_text = content_bytes.decode(encoding, errors="replace")
+
+            title = "Web Page"
+            if "<title>" in html_text.lower() and "</title>" in html_text.lower():
+                s = html_text.lower().find("<title>") + 7
+                e = html_text.lower().find("</title>", s)
+                title = html_text[s:e].strip()
+
+            self.real_web_browser.setHtml(html_text)
+            self.tab_title.setText(title[:25])
+            self.real_web_status.setText(f"Connected: {target_url} (HTTP {code})")
+            self.pages_stack.setCurrentIndex(8)
+            self.record_history_entry(target_url, 8)
+            self.tracker.record_event(
+                "BROWSER_NAVIGATE_SUCCESS",
+                target_url,
+                {"title": title, "status": code},
+                severity="INFO"
+            )
+        except Exception as e:
+            from urllib.parse import urlparse
+            host_str = urlparse(target_url).netloc or target_url
+            error_html = (
+                f"<div style='font-family: Segoe UI, sans-serif; padding: 40px; color: #ffffff; background-color: #202124; text-align: center;'>"
+                f"<div style='font-size: 54px; margin-bottom: 12px;'>🌐</div>"
+                f"<h2 style='color: #e8eaed;'>This site can’t be reached</h2>"
+                f"<p style='color: #9aa0a6;'>Check if there is a typo in {host_str}.</p>"
+                f"<p style='color: #5f6368; font-size: 11px;'>DNS_PROBE_FINISHED_NXDOMAIN / ERR_NAME_NOT_RESOLVED</p>"
+                f"</div>"
+            )
+            self.real_web_browser.setHtml(error_html)
+            self.tab_title.setText(target_url[:20])
+            self.real_web_status.setText(f"Navigation Failed: {e}")
+            self.pages_stack.setCurrentIndex(8)
+            self.record_history_entry(target_url, 8)
+            self.tracker.record_event(
+                "BROWSER_NAVIGATE_ERROR",
+                target_url,
+                {"error": str(e)},
+                severity="INFO"
+            )
+
+    def on_real_browser_anchor_clicked(self, qurl: QUrl):
+        link = qurl.toString()
+        if link:
+            self.omnibox.setText(link)
+            self.on_omnibox_enter()
+
+    def record_history_entry(self, url: str, stack_idx: int):
+        if not self.history or self.history[self.history_idx] != url:
+            self.history = self.history[:self.history_idx + 1]
+            self.history.append(url)
+            self.history_idx = len(self.history) - 1
 
     def navigate_to_google(self):
         self.omnibox.setText("https://www.google.com")
         self.tab_title.setText("Google")
         self.pages_stack.setCurrentIndex(0)
+        self.record_history_entry("https://www.google.com", 0)
 
     def navigate_to_banking(self):
         self.tracker.record_url_visit("https://bank.corp.internal/login")
         self.omnibox.setText("https://bank.corp.internal/login")
         self.tab_title.setText("Corporate NetBanking")
         self.pages_stack.setCurrentIndex(5)
+        self.record_history_entry("https://bank.corp.internal/login", 5)
 
     def navigate_to_aws(self):
         self.tracker.record_url_visit("https://aws.amazon.com/console/signin")
         self.omnibox.setText("https://aws.amazon.com/console/signin")
         self.tab_title.setText("AWS Management Console")
         self.pages_stack.setCurrentIndex(6)
+        self.record_history_entry("https://aws.amazon.com/console/signin", 6)
 
     def navigate_to_github(self):
         self.tracker.record_url_visit("https://github.corp.internal")
         self.omnibox.setText("https://github.corp.internal")
         self.tab_title.setText("GitHub Enterprise")
         self.pages_stack.setCurrentIndex(7)
+        self.record_history_entry("https://github.corp.internal", 7)
 
     def navigate_to_mail(self):
         self.tracker.record_url_visit("https://mail.internal.corp")
         self.omnibox.setText("https://mail.internal.corp/inbox")
         self.tab_title.setText("Corp Webmail (3)")
         self.pages_stack.setCurrentIndex(2)
+        self.record_history_entry("https://mail.internal.corp/inbox", 2)
 
     def navigate_to_drive(self):
         self.tracker.record_url_visit("https://vault.internal.corp/drive")
         self.omnibox.setText("https://vault.internal.corp/drive")
         self.tab_title.setText("Cloud Vault")
         self.pages_stack.setCurrentIndex(3)
+        self.record_history_entry("https://vault.internal.corp/drive", 3)
 
     def go_back(self):
-        self.navigate_to_google()
+        if self.history_idx > 0:
+            self.history_idx -= 1
+            prev_url = self.history[self.history_idx]
+            self.omnibox.setText(prev_url)
+            self.on_omnibox_enter()
+        else:
+            self.navigate_to_google()
+
+    def go_forward(self):
+        if self.history_idx < len(self.history) - 1:
+            self.history_idx += 1
+            next_url = self.history[self.history_idx]
+            self.omnibox.setText(next_url)
+            self.on_omnibox_enter()
 
     def reload_page(self):
-        pass
+        cur = self.omnibox.text().strip()
+        if cur:
+            self.on_omnibox_enter()
+
+    def toggle_internet_mode(self):
+        self.internet_enabled = not self.internet_enabled
+        badge_bg = "#2ed573" if self.internet_enabled else "#383838"
+        self.internet_badge.setText("🌐 Real Web: ON" if self.internet_enabled else "🛡️ Isolated Mode")
+        self.internet_badge.setStyleSheet(f"background-color: {badge_bg}; color: #ffffff; border-radius: 12px; font-size: 10px; font-weight: 600; padding: 4px 8px; border: none;")
+
+    def on_new_tab_clicked(self):
+        self.navigate_to_google()
 
     # ---------------- WINDOW DRAGGING & SIZING ----------------
 

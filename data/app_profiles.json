@@ -1,0 +1,72 @@
+{
+  "chrome.exe": {
+    "observations": 9,
+    "avg_dwell": 0.2064,
+    "avg_flight": 0.1112,
+    "avg_backspace_ratio": 0.0556,
+    "avg_special_ratio": 0.1818,
+    "avg_scroll_count": 5.3,
+    "avg_pause_ratio": 0.4267,
+    "last_updated": "2026-09-25 20:32:40"
+  },
+  "WindowsTerminal.exe": {
+    "observations": 12,
+    "avg_dwell": 0.1689,
+    "avg_flight": 0.2029,
+    "avg_backspace_ratio": 0.0192,
+    "avg_special_ratio": 0.2196,
+    "avg_scroll_count": 0.4,
+    "avg_pause_ratio": 0.3771,
+    "last_updated": "2026-09-25 20:32:50"
+  },
+  "Antigravity.exe": {
+    "observations": 15,
+    "avg_dwell": 0.1941,
+    "avg_flight": 0.226,
+    "avg_backspace_ratio": 0.0298,
+    "avg_special_ratio": 0.3801,
+    "avg_scroll_count": 6.4,
+    "avg_pause_ratio": 0.4806,
+    "last_updated": "2026-09-25 20:33:40"
+  },
+  "Code.exe": {
+    "observations": 13,
+    "avg_dwell": 0.3801,
+    "avg_flight": 0.178,
+    "avg_backspace_ratio": 0.0,
+    "avg_special_ratio": 0.4308,
+    "avg_scroll_count": 14.9,
+    "avg_pause_ratio": 0.5869,
+    "last_updated": "2026-09-25 20:02:26"
+  },
+  "explorer.exe": {
+    "observations": 7,
+    "avg_dwell": 0.2752,
+    "avg_flight": 0.3652,
+    "avg_backspace_ratio": 0.0,
+    "avg_special_ratio": 0.3741,
+    "avg_scroll_count": 2.0,
+    "avg_pause_ratio": 0.3803,
+    "last_updated": "2026-09-25 20:31:00"
+  },
+  "brave.exe": {
+    "observations": 141,
+    "avg_dwell": 0.1737,
+    "avg_flight": 0.2185,
+    "avg_backspace_ratio": 0.0959,
+    "avg_special_ratio": 0.2084,
+    "avg_scroll_count": 3.6,
+    "avg_pause_ratio": 0.4403,
+    "last_updated": "2026-09-25 20:25:15"
+  },
+  "msedge.exe": {
+    "observations": 5,
+    "avg_dwell": 0.0975,
+    "avg_flight": 0.1656,
+    "avg_backspace_ratio": 0.0,
+    "avg_special_ratio": 0.0053,
+    "avg_scroll_count": 36.4,
+    "avg_pause_ratio": 0.4,
+    "last_updated": "2026-09-25 20:22:44"
+  }
+}

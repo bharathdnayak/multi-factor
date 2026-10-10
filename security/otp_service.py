@@ -36,37 +36,67 @@ def get_alert_config():
     """Merges configurations from .env and config.json with priority to .env."""
     env_vars = parse_env_file()
     
-    sender_pwd = env_vars.get("SMTP_APP_PASSWORD", "")
-    if not sender_pwd and os.path.exists(CONFIG_PATH):
+    # Base configuration from config.json if present
+    cfg = {}
+    if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                json_cfg = json.load(f)
-                sender_pwd = json_cfg.get("email", {}).get("sender_password", "")
-        except Exception:
-            pass
+                cfg = json.load(f)
+        except Exception as e:
+            print(f"[OTP] [WARNING] Could not read config.json: {e}", flush=True)
 
-    # Clean password of any spaces
-    clean_pwd = sender_pwd.replace(" ", "").strip()
-    
-    sender_email = env_vars.get("SMTP_EMAIL", "jd444583@gmail.com")
-    recipient_email = env_vars.get("ALERT_EMAIL", sender_email)
-    
+    email_cfg = cfg.get("email", {})
+    tg_cfg = cfg.get("telegram", {})
+    sec_cfg = cfg.get("security", {})
+    tw_cfg = cfg.get("twilio", {})
+
+    # Priority to .env over config.json
+    sender_pwd = env_vars.get("SMTP_APP_PASSWORD", email_cfg.get("sender_password", ""))
+    clean_pwd = sender_pwd.replace(" ", "").strip() if sender_pwd else ""
+
+    sender_email = env_vars.get("SMTP_EMAIL", email_cfg.get("sender_email", ""))
+    recipient_email = env_vars.get("ALERT_EMAIL", email_cfg.get("recipient_email", sender_email))
+    smtp_server = env_vars.get("SMTP_SERVER", email_cfg.get("smtp_server", "smtp.gmail.com"))
+    smtp_port = int(env_vars.get("SMTP_PORT", email_cfg.get("smtp_port", 465)))
+
+    tg_bot = env_vars.get("TELEGRAM_BOT_TOKEN", tg_cfg.get("bot_token", ""))
+    tg_chat = env_vars.get("TELEGRAM_CHAT_ID", tg_cfg.get("chat_id", ""))
+    bypass_pwd = env_vars.get("MASTER_BYPASS_PASSWORD", sec_cfg.get("master_bypass_password", "admin"))
+
     config = {
         "email": {
-            "enabled": True,
-            "smtp_server": "smtp.gmail.com",
-            "smtp_port": 465,
+            "enabled": email_cfg.get("enabled", True),
+            "smtp_server": smtp_server,
+            "smtp_port": smtp_port,
             "sender_email": sender_email,
             "sender_password": clean_pwd,
             "recipient_email": recipient_email
         },
         "telegram": {
-            "enabled": bool(env_vars.get("TELEGRAM_BOT_TOKEN")),
-            "bot_token": env_vars.get("TELEGRAM_BOT_TOKEN", ""),
-            "chat_id": env_vars.get("TELEGRAM_CHAT_ID", "")
+            "enabled": bool(tg_bot),
+            "bot_token": tg_bot,
+            "chat_id": tg_chat
+        },
+        "twilio": tw_cfg,
+        "security": {
+            "master_bypass_password": bypass_pwd
         }
     }
     return config
+
+
+def load_or_create_config():
+    """Loads configuration details, auto-creating template from config.json.example if missing."""
+    if not os.path.exists(CONFIG_PATH):
+        example_path = CONFIG_PATH + ".example"
+        if os.path.exists(example_path):
+            try:
+                import shutil
+                shutil.copyfile(example_path, CONFIG_PATH)
+                print(f"[OTP] Generated default configuration template at '{CONFIG_PATH}'", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Failed to copy example config: {e}", flush=True)
+    return get_alert_config()
 
 
 def generate_otp():
@@ -140,7 +170,13 @@ def send_email_otp(otp, photo_path=None, threat_info=None):
 
     try:
         context = ssl.create_default_context()
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15)
+        smtp_server = mail_conf.get("smtp_server", "smtp.gmail.com")
+        smtp_port = int(mail_conf.get("smtp_port", 465))
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, context=context, timeout=15)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=15)
+            server.starttls(context=context)
         server.login(sender, password)
         server.sendmail(sender, recipient, msg.as_string())
         server.quit()

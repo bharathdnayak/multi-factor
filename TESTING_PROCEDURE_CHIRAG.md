@@ -8,12 +8,12 @@ We wrote this guide so that it is super simple to follow. Each member's task (Me
 
 ## 🛠️ Step 0: Get Things Ready (Install Python Stuff)
 Before we run anything, we need to download the Python code libraries that make this project run.
-1. Open your Command Prompt (CMD) in the project directory.
-2. Run this command:
+- **Fast automated option:** Simply double-click **`setup.bat`** in the project folder! It will automatically set up your environment, install all libraries, and verify the models for you.
+- **Manual option:** Open your Command Prompt (CMD) in the project directory and run:
    ```bash
    pip install -r requirements.txt
    ```
-3. **Verify:** Check that the installation finishes successfully without errors.
+- **Verify:** Check that the installation finishes successfully without errors.
 
 ---
 

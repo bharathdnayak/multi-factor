@@ -1,0 +1,144 @@
+timestamp,active_window,process_name,cpu_usage,memory_usage
+1787477000.0,Project Plan - Word,winword.exe,7.1,40.9
+1787477004.7693,main.py - VS Code,code.exe,14.4,47.3
+1787477009.357,main.py - VS Code,code.exe,1.0,41.6
+1787477013.1092,Project Plan - Word,winword.exe,14.8,46.3
+1787477017.0924,main.py - VS Code,code.exe,3.0,45.3
+1787477020.4058,Google Chrome - Research,chrome.exe,7.0,40.7
+1787477023.3661,File Explorer,explorer.exe,14.0,46.4
+1787477026.8508,File Explorer,explorer.exe,14.6,42.7
+1787477030.1372,Google Chrome - Research,chrome.exe,2.5,51.3
+1787477033.2735,File Explorer,explorer.exe,9.1,51.4
+1787477037.7937,Google Chrome - Research,chrome.exe,1.7,40.4
+1787477041.144,Google Chrome - Research,chrome.exe,6.9,43.3
+1787477045.864,Google Chrome - Research,chrome.exe,6.7,40.4
+1787477050.4644,File Explorer,explorer.exe,2.3,44.4
+1787477054.1642,File Explorer,explorer.exe,7.0,51.9
+1787477058.4353,File Explorer,explorer.exe,5.2,47.7
+1787477062.3354,File Explorer,explorer.exe,6.4,46.8
+1787477064.4706,File Explorer,explorer.exe,4.4,44.0
+1787477068.3415,Google Chrome - Research,chrome.exe,4.9,42.5
+1787477071.4372,main.py - VS Code,code.exe,8.2,46.8
+1787477074.9553,Google Chrome - Research,chrome.exe,4.9,46.1
+1787477078.2353,Google Chrome - Research,chrome.exe,8.1,46.9
+1787477080.9594,File Explorer,explorer.exe,1.0,50.3
+1787477084.4453,File Explorer,explorer.exe,9.3,50.8
+1787477087.6256,main.py - VS Code,code.exe,1.3,40.9
+1787477090.895,File Explorer,explorer.exe,14.3,43.3
+1787477094.8364,Project Plan - Word,winword.exe,3.9,44.2
+1787477097.2855,File Explorer,explorer.exe,12.4,42.9
+1787477099.7563,main.py - VS Code,code.exe,11.0,43.0
+1787477102.2952,main.py - VS Code,code.exe,13.1,48.0
+1787477105.4672,Project Plan - Word,winword.exe,14.6,46.0
+1787477107.852,Project Plan - Word,winword.exe,9.5,47.6
+1787477112.6039,main.py - VS Code,code.exe,14.2,47.8
+1787477116.1555,main.py - VS Code,code.exe,3.1,46.4
+1787477120.0892,File Explorer,explorer.exe,14.5,41.8
+1787477122.5683,Project Plan - Word,winword.exe,12.6,48.8
+1787477124.7315,main.py - VS Code,code.exe,13.1,40.0
+1787477127.2398,File Explorer,explorer.exe,15.0,42.7
+1787477131.8714,main.py - VS Code,code.exe,12.2,42.8
+1787477135.9937,Project Plan - Word,winword.exe,3.5,42.2
+1787477138.9603,File Explorer,explorer.exe,3.3,50.0
+1787477141.1427,main.py - VS Code,code.exe,11.0,40.9
+1787477145.1665,File Explorer,explorer.exe,10.1,45.5
+1787477148.8185,File Explorer,explorer.exe,8.1,49.2
+1787477151.9796,Project Plan - Word,winword.exe,1.9,49.8
+1787477156.276,Google Chrome - Research,chrome.exe,14.3,43.4
+1787477158.5366,main.py - VS Code,code.exe,8.2,42.0
+1787477161.0803,main.py - VS Code,code.exe,7.1,41.9
+1787477165.2836,main.py - VS Code,code.exe,6.6,48.0
+1787477167.5167,Project Plan - Word,winword.exe,7.5,43.6
+1787477170.6034,Google Chrome - Research,chrome.exe,8.8,47.6
+1787477175.5141,File Explorer,explorer.exe,13.4,46.8
+1787477177.721,File Explorer,explorer.exe,13.8,49.9
+1787477181.1435,main.py - VS Code,code.exe,8.8,45.4
+1787477185.5372,File Explorer,explorer.exe,12.5,46.2
+1787477187.8229,main.py - VS Code,code.exe,12.8,51.3
+1787477192.3856,Project Plan - Word,winword.exe,4.0,48.6
+1787477195.3798,Project Plan - Word,winword.exe,8.2,51.1
+1787477198.6009,Google Chrome - Research,chrome.exe,1.3,49.7
+1787477201.7832,Google Chrome - Research,chrome.exe,7.0,47.4
+1787477206.6485,Project Plan - Word,winword.exe,5.1,44.6
+1787477210.2794,main.py - VS Code,code.exe,14.7,42.5
+1787477214.1417,Project Plan - Word,winword.exe,4.9,40.1
+1787477217.9354,Google Chrome - Research,chrome.exe,7.8,42.2
+1787477220.7159,Project Plan - Word,winword.exe,12.0,49.8
+1787477224.7628,Google Chrome - Research,chrome.exe,9.1,41.0
+1787477227.8784,main.py - VS Code,code.exe,6.9,47.1
+1787477231.0812,Project Plan - Word,winword.exe,12.8,48.4
+1787477233.3455,File Explorer,explorer.exe,6.7,49.9
+1787477235.5798,main.py - VS Code,code.exe,11.8,46.0
+1787477240.1366,Google Chrome - Research,chrome.exe,11.2,51.1
+1787477244.342,File Explorer,explorer.exe,5.0,49.5
+1787477248.22,File Explorer,explorer.exe,8.3,43.1
+1787477251.7304,main.py - VS Code,code.exe,4.1,47.6
+1787477255.6904,File Explorer,explorer.exe,12.2,46.4
+1787477260.5559,File Explorer,explorer.exe,11.4,49.2
+1787477265.2029,Google Chrome - Research,chrome.exe,5.2,46.5
+1787477267.9677,Project Plan - Word,winword.exe,3.1,44.0
+1787477270.9679,Project Plan - Word,winword.exe,3.8,48.8
+1787477274.2745,File Explorer,explorer.exe,5.7,47.5
+1787477278.6712,main.py - VS Code,code.exe,6.6,42.0
+1787477283.183,Google Chrome - Research,chrome.exe,3.4,45.2
+1787477285.7273,File Explorer,explorer.exe,3.2,49.0
+1787477290.3332,Google Chrome - Research,chrome.exe,13.6,41.6
+1787477294.1743,File Explorer,explorer.exe,9.8,41.9
+1787477297.3329,Project Plan - Word,winword.exe,4.0,46.2
+1787477301.7943,File Explorer,explorer.exe,2.4,50.5
+1787477305.2401,Project Plan - Word,winword.exe,10.4,43.3
+1787477309.7985,File Explorer,explorer.exe,7.0,45.3
+1787477312.8807,main.py - VS Code,code.exe,6.3,46.3
+1787477316.3356,File Explorer,explorer.exe,5.8,42.6
+1787477321.1853,File Explorer,explorer.exe,14.2,47.6
+1787477323.7289,main.py - VS Code,code.exe,13.7,49.8
+1787477328.0511,Google Chrome - Research,chrome.exe,5.1,40.6
+1787477330.9601,Google Chrome - Research,chrome.exe,11.0,48.7
+1787477335.172,Project Plan - Word,winword.exe,9.0,40.4
+1787477338.7251,File Explorer,explorer.exe,11.2,46.9
+1787477342.5545,Project Plan - Word,winword.exe,7.0,41.9
+1787477346.3825,main.py - VS Code,code.exe,1.5,40.6
+1787477351.0735,main.py - VS Code,code.exe,11.7,49.1
+1787477353.3766,Google Chrome - Research,chrome.exe,13.8,51.6
+1787477356.5212,Project Plan - Word,winword.exe,6.1,47.5
+1787477359.88,Project Plan - Word,winword.exe,10.6,46.4
+1787477362.1239,Project Plan - Word,winword.exe,5.7,49.5
+1787477365.7301,Google Chrome - Research,chrome.exe,1.9,51.5
+1787477368.4989,main.py - VS Code,code.exe,4.1,45.1
+1787477372.7836,main.py - VS Code,code.exe,10.7,49.3
+1787477377.3169,main.py - VS Code,code.exe,12.5,49.3
+1787477380.5855,File Explorer,explorer.exe,12.2,48.9
+1787477384.0214,File Explorer,explorer.exe,11.7,49.6
+1787477387.6213,Google Chrome - Research,chrome.exe,12.5,45.5
+1787477391.1672,Project Plan - Word,winword.exe,11.1,46.0
+1787477396.0492,Google Chrome - Research,chrome.exe,1.0,49.3
+1787477399.2789,Project Plan - Word,winword.exe,12.0,51.1
+1787477404.2727,Google Chrome - Research,chrome.exe,13.9,44.7
+1787477406.3346,Project Plan - Word,winword.exe,5.9,50.0
+1787477408.4289,File Explorer,explorer.exe,10.8,43.0
+1787477411.026,File Explorer,explorer.exe,5.8,40.0
+1787477415.8491,Google Chrome - Research,chrome.exe,7.5,51.3
+1787477418.2762,main.py - VS Code,code.exe,12.5,51.2
+1787477421.0239,File Explorer,explorer.exe,14.4,51.3
+1787477424.2937,File Explorer,explorer.exe,11.3,50.4
+1787477426.9061,main.py - VS Code,code.exe,11.8,45.4
+1787477430.4032,Project Plan - Word,winword.exe,14.7,47.5
+1787477432.522,main.py - VS Code,code.exe,12.8,45.6
+1787477436.6805,File Explorer,explorer.exe,2.5,50.8
+1787477441.2953,main.py - VS Code,code.exe,7.7,43.3
+1787477443.4808,main.py - VS Code,code.exe,1.2,40.6
+1787477448.1696,Project Plan - Word,winword.exe,8.1,41.0
+1787477451.028,main.py - VS Code,code.exe,4.2,45.7
+1787477454.7046,main.py - VS Code,code.exe,6.3,45.0
+1787477459.4033,Google Chrome - Research,chrome.exe,9.8,47.5
+1787477464.069,File Explorer,explorer.exe,1.4,45.7
+1787477466.8973,Google Chrome - Research,chrome.exe,1.5,40.8
+1787477470.7322,main.py - VS Code,code.exe,14.1,45.2
+1787477473.9896,main.py - VS Code,code.exe,7.0,45.1
+1787477478.4192,File Explorer,explorer.exe,1.8,43.7
+1787477482.9526,main.py - VS Code,code.exe,3.6,50.5
+1787477486.203,File Explorer,explorer.exe,1.4,49.5
+1787477489.2273,Google Chrome - Research,chrome.exe,4.4,46.9
+1787477493.6961,Google Chrome - Research,chrome.exe,4.1,40.8
+1787477497.0152,File Explorer,explorer.exe,5.1,40.4
+1787477499.173,File Explorer,explorer.exe,4.2,46.5

@@ -4,35 +4,71 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Local raw data and logs
-data/*
-!data/sessions/
-!data/sessions/**
-data/sessions/active_session.json
-!data/sessions/.gitkeep
-!data/sessions/app_baselines.json
-!data/benchmarks/
-!data/benchmarks/*.json
-!data/benchmarks/*.png
-telemetry_data.jsonl
-*.jsonl
-*.csv
-
-# Local models directory
-models/
-
-# Environments
+# Python Virtual Environments
 .venv/
 venv/
 ENV/
 env/
 
-# IDEs
+# IDEs and Editor metadata
 .vscode/
 .idea/
 
-# Secret configs
+# Machine Secrets and Active Transient Keys
 security/config.json
+models/.active_otp
 
-# Active keys
+# Local environment file (copy from .env.example)
+.env
+
+# Dynamic session logs and active state (preserve baseline envelopes)
+data/sessions/active_session.json
+data/sessions/session_history.jsonl
+
+# CMU Benchmark raw dataset cache (auto-fetched on demand by scripts/benchmark_cmu_dataset.py)
+data/benchmarks/cmu_dataset.csv
+
+# Runtime Logs, Sandboxed Quarantines, Forensics Captures (ignore all contents except .gitkeep)
+data/logs/**
+!data/logs/.gitkeep
+data/sandbox/**
+!data/sandbox/.gitkeep
+data/harvested/**
+!data/harvested/.gitkeep
+data/forensics/**
+!data/forensics/.gitkeep
+
+# Ignore untracked root data items by default
+data/*
+
+# Whitelist tracked session baselines
+!data/sessions/
+!data/sessions/.gitkeep
+!data/sessions/app_baselines.json
+
+# Whitelist dynamic application profiles & unauthorized dataset
+!data/app_profiles.json
+!data/unauthorized_dataset.jsonl
+
+# Whitelist benchmark results
+!data/benchmarks/
+!data/benchmarks/*.json
+!data/benchmarks/*.png
+
+# Whitelist core baseline raw keystroke & kinematics training data
+!data/raw/
+!data/raw/**
+
+# Preserve runtime directories with .gitkeep
+!data/forensics/
+!data/sandbox/
+!data/logs/
+!data/harvested/
+
+# Whitelist baseline telemetry log
+!telemetry_data.jsonl
+
+# Whitelist model checkpoints & metadata (excluding temporary OTP)
+!models/
+!models/**
 models/.active_otp

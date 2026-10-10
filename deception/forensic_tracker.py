@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import glob
 import threading
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,17 +60,39 @@ class ForensicTracker:
         self._write_lock = threading.Lock()
         self._initialized = True
         
-        # Log session initialization
-        self.record_event(
-            action_type="HONEYPOT_ACTIVATED",
-            target="Honeypot Deception Subsystem",
-            details={"status": "Intruder trapped in active deception sandbox", "session_id": self.session_id},
-            severity="ALERT"
-        )
+        # Check if an active session already exists on disk
+        has_active_session = False
+        if os.path.exists(self.jsonl_path) and os.path.getsize(self.jsonl_path) > 0:
+            try:
+                disk_events = []
+                with open(self.jsonl_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            disk_events.append(json.loads(line))
+                if disk_events:
+                    self.events = disk_events
+                    last_event = disk_events[-1]
+                    self.session_id = last_event.get("session_id", self.session_id)
+                    self.session_start = disk_events[0].get("unix_time", self.session_start)
+                    has_active_session = True
+            except Exception:
+                pass
 
-    def record_event(self, action_type, target, details=None, severity="INFO"):
+        if not has_active_session:
+            # Log initial session activation
+            self.record_event(
+                action_type="HONEYPOT_ACTIVATED",
+                target="Honeypot Deception Subsystem",
+                details={"status": "Intruder trapped in active deception sandbox", "session_id": self.session_id},
+                severity="ALERT",
+                application="SYSTEM",
+                outcome="SUCCESS"
+            )
+
+    def record_event(self, action_type, target, details=None, severity="INFO", application="SYSTEM", outcome="SUCCESS"):
         """
-        Records a single forensic event with ISO timestamp, classification, and severity.
+        Records a single forensic event with standardized schema, ISO timestamp,
+        sequential event_id, outcome, and immediate persistent flush.
         """
         now = time.time()
         timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
@@ -82,55 +105,133 @@ class ForensicTracker:
             severity = "SUSPICIOUS"
             details["flagged_keywords"] = flagged_keywords
 
-        event = {
-            "timestamp": timestamp_str,
-            "unix_time": now,
-            "elapsed_seconds": round(now - self.session_start, 2),
-            "session_id": getattr(self, "session_id", "SESS_DEFAULT"),
-            "action_type": action_type,
-            "target": str(target),
-            "severity": severity,
-            "details": details
-        }
-        
         with self._write_lock:
+            evt_num = len(self.events) + 1
+            event_id = f"EVT-{evt_num:04d}"
+
+            event = {
+                "event_id": event_id,
+                "session_id": getattr(self, "session_id", "SESS_DEFAULT"),
+                "timestamp": timestamp_str,
+                "unix_time": now,
+                "elapsed_seconds": round(now - self.session_start, 2),
+                "action_type": action_type,
+                "application": application or details.get("application", "SYSTEM"),
+                "target": str(target),
+                "severity": severity,
+                "outcome": outcome,
+                "details": details,
+                "metadata": details
+            }
+
             self.events.append(event)
             
-            # 1. Append to JSONL log
+            # 1. Append to JSONL log with immediate flush and sync
             try:
                 with open(self.jsonl_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(event) + "\n")
+                    f.flush()
+                    try:
+                        os.fsync(f.fileno())
+                    except Exception:
+                        pass
             except Exception as e:
                 print(f"[FORENSICS] Error writing to JSONL: {e}", file=sys.stderr)
                 
-            # 2. Append to human-readable log
+            # 2. Append to human-readable log with flush
             try:
                 with open(self.text_log_path, "a", encoding="utf-8") as f:
-                    f.write(f"[{timestamp_str}] [{severity}] [{action_type}] {target} | {json.dumps(details)}\n")
+                    f.write(f"[{timestamp_str}] [{severity}] [{action_type}] [{application}] {target} ({outcome}) | {json.dumps(details)}\n")
+                    f.flush()
             except Exception as e:
                 print(f"[FORENSICS] Error writing to text log: {e}", file=sys.stderr)
                 
         return event
 
     def record_app_launch(self, app_name):
-        return self.record_event("APP_LAUNCH", app_name, {"application": app_name}, severity="INFO")
+        return self.record_event(
+            "APP_LAUNCH",
+            app_name,
+            {"application": app_name},
+            severity="INFO",
+            application="DESKTOP",
+            outcome="SUCCESS"
+        )
 
-    def record_folder_navigation(self, folder_path, source_path=None):
+    def record_folder_navigation(self, folder_path, source_path=None, method="NAVIGATE", outcome="SUCCESS"):
         return self.record_event(
             "FOLDER_NAVIGATED",
             folder_path,
-            {"source_folder": source_path, "destination_folder": folder_path},
-            severity="INFO"
+            {
+                "source_folder": source_path,
+                "destination_folder": folder_path,
+                "navigation_method": method
+            },
+            severity="INFO",
+            application="FILE_EXPLORER",
+            outcome=outcome
         )
 
-    def record_file_access(self, file_path, action="VIEW"):
+    def record_failed_access(self, path, reason="Path not found in virtual filesystem", application="FILE_EXPLORER"):
+        return self.record_event(
+            "PATH_ACCESS_FAILED",
+            path,
+            {"path": path, "reason": reason},
+            severity="SUSPICIOUS",
+            application=application,
+            outcome="FAILURE"
+        )
+
+    def record_window_action(self, app_id, action="focused"):
+        return self.record_event(
+            f"WINDOW_{action.upper()}",
+            app_id,
+            {"window": app_id, "window_action": action},
+            severity="INFO",
+            application="WINDOW_MANAGER",
+            outcome="SUCCESS"
+        )
+
+    def record_desktop_icon_click(self, icon_name):
+        return self.record_event(
+            "DESKTOP_ICON_CLICKED",
+            icon_name,
+            {"icon_name": icon_name},
+            severity="INFO",
+            application="DESKTOP",
+            outcome="SUCCESS"
+        )
+
+    def record_properties_view(self, item_path, is_dir=False):
+        return self.record_event(
+            "PROPERTIES_VIEW",
+            item_path,
+            {"path": item_path, "is_directory": is_dir},
+            severity="INFO",
+            application="FILE_EXPLORER",
+            outcome="SUCCESS"
+        )
+
+    def record_clipboard_action(self, action="COPY", paths=None, application="FILE_EXPLORER"):
+        return self.record_event(
+            f"CLIPBOARD_{action.upper()}",
+            str(paths or []),
+            {"action": action, "paths": paths or []},
+            severity="INFO",
+            application=application,
+            outcome="SUCCESS"
+        )
+
+    def record_file_access(self, file_path, action="VIEW", application="FILE_EXPLORER", outcome="SUCCESS"):
         is_sensitive = any(kw in file_path.lower() for kw in SENSITIVE_KEYWORDS)
         sev = "SUSPICIOUS" if is_sensitive else "INFO"
         return self.record_event(
             f"FILE_{action.upper()}",
             file_path,
             {"file_path": file_path, "mode": action, "sensitive_flag": is_sensitive},
-            severity=sev
+            severity=sev,
+            application=application,
+            outcome=outcome
         )
 
     def record_shell_command(self, command, current_dir):
@@ -275,41 +376,49 @@ class ForensicTracker:
     def get_timeline(self):
         """
         Returns the chronological list of recorded events for the CURRENT active session.
-        Strictly isolates from any previous sessions.
+        Strictly isolates from any previous sessions, but seamlessly synchronizes with disk.
         """
         with self._write_lock:
-            if self.events:
-                return list(self.events)
-
+            disk_events = []
             if os.path.exists(self.jsonl_path):
                 try:
-                    all_events = []
                     with open(self.jsonl_path, "r", encoding="utf-8") as f:
                         for line in f:
                             if line.strip():
-                                all_events.append(json.loads(line))
-                    
-                    if not all_events:
-                        return []
-
-                    # Filter to return only the latest active session
-                    latest_sess_id = getattr(self, "session_id", None)
-                    if latest_sess_id is None:
-                        latest_sess_id = all_events[-1].get("session_id")
-
-                    if latest_sess_id:
-                        session_events = [e for e in all_events if e.get("session_id") == latest_sess_id]
-                        if session_events:
-                            return session_events
-
-                    # Fallback: find the last HONEYPOT_ACTIVATED index
-                    last_idx = 0
-                    for i, e in enumerate(all_events):
-                        if e.get("action_type") == "HONEYPOT_ACTIVATED":
-                            last_idx = i
-                    return all_events[last_idx:]
+                                disk_events.append(json.loads(line))
                 except Exception:
-                    return []
+                    pass
+
+            if disk_events and len(disk_events) >= len(self.events):
+                self.events = disk_events
+
+            # If current active file has only 1 event (just HONEYPOT_ACTIVATED),
+            # check if a recently archived session from the last 15 minutes contains the actual interactions
+            if len(self.events) <= 1 and os.path.exists(self.archive_dir):
+                try:
+                    archive_files = sorted(
+                        glob.glob(os.path.join(self.archive_dir, "session_actions_*.jsonl")),
+                        key=os.path.getmtime,
+                        reverse=True
+                    )
+                    now = time.time()
+                    for af in archive_files[:3]:
+                        if (now - os.path.getmtime(af) < 1800) and os.path.getsize(af) > 500:
+                            with open(af, "r", encoding="utf-8") as f:
+                                arch_events = [json.loads(line) for line in f if line.strip()]
+                            if len(arch_events) > 1:
+                                return arch_events
+                except Exception:
+                    pass
+
+            if self.events:
+                latest_sess_id = getattr(self, "session_id", None)
+                if latest_sess_id:
+                    session_events = [e for e in self.events if e.get("session_id") == latest_sess_id]
+                    if session_events:
+                        return session_events
+                return list(self.events)
+
             return []
 
     def get_summary_stats(self):

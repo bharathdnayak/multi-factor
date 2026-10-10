@@ -1,0 +1,21 @@
+{
+    "_comment": "Configuration template for Multi-Factor Behavioral Drift Continuous Security. Copy to config.json or let setup auto-generate it.",
+    "email": {
+        "enabled": false,
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "your_email@gmail.com",
+        "sender_password": "your_smtp_app_password",
+        "recipient_email": "owner_email@gmail.com"
+    },
+    "twilio": {
+        "enabled": false,
+        "account_sid": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "auth_token": "your_auth_token",
+        "from_number": "+1234567890",
+        "to_number": "+1234567890"
+    },
+    "security": {
+        "master_bypass_password": "admin"
+    }
+}

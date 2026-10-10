@@ -21,7 +21,18 @@ def capture_intruder(output_dir=None):
     print("[WEBCAM] Triggering silent intruder capture...", flush=True)
     os.makedirs(output_dir, exist_ok=True)
     
-    cap = cv2.VideoCapture(0)
+    device_idx = 0
+    if "WEBCAM_DEVICE_INDEX" in os.environ:
+        try:
+            device_idx = int(os.environ["WEBCAM_DEVICE_INDEX"])
+        except ValueError:
+            device_idx = 0
+
+    cap = cv2.VideoCapture(device_idx)
+    if not cap.isOpened() and device_idx == 0:
+        # Fallback to secondary video device (index 1) if default index 0 is unavailable
+        cap = cv2.VideoCapture(1)
+
     if not cap.isOpened():
         print("[WARNING] Webcam device could not be opened.", flush=True)
         return None

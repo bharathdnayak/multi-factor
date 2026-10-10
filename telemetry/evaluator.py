@@ -287,8 +287,9 @@ class ThreatEvaluator:
                 print(f"[OTP] Master Bypass Password: >>> admin <<< (or admin123 / 123456)", flush=True)
                 
                 # Active Security Responses
-                capture_intruder()
-                dispatch_otp(self.active_otp)
+                captured_photo = capture_intruder()
+                active_app_name = telemetry_row.get("active_app", "Unknown") if isinstance(telemetry_row, dict) else "Active Desktop Session"
+                dispatch_otp(self.active_otp, photo_path=captured_photo, threat_info={"risk_score": float(fused_risk), "active_app": active_app_name})
                 self._save_active_otp(self.active_otp)
                 try:
                     from deception.forensic_tracker import get_tracker
@@ -315,7 +316,23 @@ class ThreatEvaluator:
         except Exception:
             pass
 
-        master_passwords = {"admin", "admin123", "123456", str(configured_bypass)}
+        # Environment-based explicit recovery password
+        env_master = os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD") or os.environ.get("EMERGENCY_RECOVERY_KEY")
+        strict_recovery = os.environ.get("STRICT_SECURITY_RECOVERY", "false").lower() in ("true", "1", "yes") or os.environ.get("ENVIRONMENT") == "production"
+
+        if strict_recovery:
+            # Production Mode: Hardcoded passwords (admin, admin123, 123456) are disabled
+            master_passwords = set()
+            if env_master:
+                master_passwords.add(env_master.strip())
+            if configured_bypass and configured_bypass not in ("admin", "admin123", "123456"):
+                master_passwords.add(str(configured_bypass).strip())
+        else:
+            # Dev / Testing Mode: Backwards-compatible fallback
+            master_passwords = {"admin", "admin123", "123456", str(configured_bypass)}
+            if env_master:
+                master_passwords.add(env_master.strip())
+
         is_valid_otp = bool(stored_otp and entered == stored_otp.strip())
         is_valid_bypass = entered in master_passwords
         

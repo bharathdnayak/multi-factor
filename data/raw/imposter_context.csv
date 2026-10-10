@@ -1,0 +1,84 @@
+timestamp,active_window,process_name,cpu_usage,memory_usage
+1787477000.0,Process Hacker,processhacker.exe,61.0,73.0
+1787477004.8509,Administrator: Command Prompt,cmd.exe,70.1,78.3
+1787477007.0466,Administrator: Command Prompt,cmd.exe,58.4,70.4
+1787477009.1459,Registry Editor,regedit.exe,52.4,74.8
+1787477011.6337,Process Hacker,processhacker.exe,47.5,81.7
+1787477016.4339,Administrator: Command Prompt,cmd.exe,65.1,74.2
+1787477020.5179,Administrator: Command Prompt,cmd.exe,63.8,78.9
+1787477025.184,Registry Editor,regedit.exe,36.0,68.5
+1787477028.9469,Administrator: Command Prompt,cmd.exe,73.9,78.6
+1787477031.5009,Process Hacker,processhacker.exe,35.8,81.6
+1787477034.3703,Windows PowerShell,powershell.exe,65.5,75.3
+1787477039.2466,Administrator: Command Prompt,cmd.exe,47.0,70.4
+1787477043.2296,Windows PowerShell,powershell.exe,46.2,75.7
+1787477046.4327,Windows PowerShell,powershell.exe,43.1,69.1
+1787477050.9056,Registry Editor,regedit.exe,69.5,73.8
+1787477054.5949,Windows PowerShell,powershell.exe,54.4,73.1
+1787477059.2622,Registry Editor,regedit.exe,36.2,81.1
+1787477064.0866,Windows PowerShell,powershell.exe,38.6,70.4
+1787477068.2972,Registry Editor,regedit.exe,43.0,68.2
+1787477072.9618,Registry Editor,regedit.exe,61.5,72.8
+1787477075.7903,Administrator: Command Prompt,cmd.exe,38.2,73.6
+1787477079.4511,Administrator: Command Prompt,cmd.exe,44.5,81.7
+1787477083.1088,Windows PowerShell,powershell.exe,60.6,71.1
+1787477087.6301,Registry Editor,regedit.exe,43.8,73.7
+1787477092.2393,Administrator: Command Prompt,cmd.exe,61.4,70.0
+1787477094.8244,Windows PowerShell,powershell.exe,79.4,71.8
+1787477099.7894,Windows PowerShell,powershell.exe,42.7,75.1
+1787477103.6079,Windows PowerShell,powershell.exe,62.7,71.6
+1787477105.7214,Registry Editor,regedit.exe,60.8,76.5
+1787477109.4154,Windows PowerShell,powershell.exe,73.3,68.1
+1787477112.6555,Process Hacker,processhacker.exe,62.1,72.4
+1787477114.887,Registry Editor,regedit.exe,55.3,74.0
+1787477116.9557,Administrator: Command Prompt,cmd.exe,67.5,76.2
+1787477119.8894,Process Hacker,processhacker.exe,51.3,68.1
+1787477123.2445,Administrator: Command Prompt,cmd.exe,56.1,68.7
+1787477127.749,Registry Editor,regedit.exe,50.2,73.5
+1787477132.0113,Registry Editor,regedit.exe,56.0,73.4
+1787477134.4135,Windows PowerShell,powershell.exe,53.6,77.3
+1787477137.6002,Administrator: Command Prompt,cmd.exe,79.5,72.7
+1787477140.4789,Process Hacker,processhacker.exe,41.9,68.4
+1787477144.4042,Administrator: Command Prompt,cmd.exe,42.6,69.3
+1787477147.3622,Windows PowerShell,powershell.exe,63.0,73.6
+1787477151.8611,Administrator: Command Prompt,cmd.exe,51.0,72.1
+1787477154.7118,Registry Editor,regedit.exe,51.2,69.4
+1787477158.2109,Registry Editor,regedit.exe,42.2,81.2
+1787477162.7434,Registry Editor,regedit.exe,74.7,75.2
+1787477167.6361,Windows PowerShell,powershell.exe,73.6,81.9
+1787477171.1718,Registry Editor,regedit.exe,68.5,77.5
+1787477176.0536,Process Hacker,processhacker.exe,76.6,79.0
+1787477179.8526,Process Hacker,processhacker.exe,47.4,80.2
+1787477183.4587,Windows PowerShell,powershell.exe,44.4,72.9
+1787477186.7958,Administrator: Command Prompt,cmd.exe,74.0,69.6
+1787477191.4888,Windows PowerShell,powershell.exe,59.6,71.9
+1787477194.6749,Administrator: Command Prompt,cmd.exe,76.6,75.5
+1787477199.1095,Process Hacker,processhacker.exe,58.7,75.3
+1787477202.4124,Process Hacker,processhacker.exe,41.5,68.7
+1787477206.5654,Administrator: Command Prompt,cmd.exe,59.3,73.1
+1787477209.0584,Process Hacker,processhacker.exe,59.6,76.0
+1787477213.8516,Process Hacker,processhacker.exe,35.0,73.9
+1787477216.3854,Administrator: Command Prompt,cmd.exe,49.6,72.5
+1787477221.2708,Administrator: Command Prompt,cmd.exe,57.3,81.5
+1787477224.6134,Process Hacker,processhacker.exe,35.2,68.8
+1787477228.1703,Process Hacker,processhacker.exe,55.3,76.5
+1787477230.7605,Process Hacker,processhacker.exe,38.8,73.6
+1787477234.5581,Administrator: Command Prompt,cmd.exe,75.4,81.1
+1787477237.6717,Windows PowerShell,powershell.exe,54.6,78.8
+1787477242.2388,Administrator: Command Prompt,cmd.exe,65.7,72.8
+1787477245.1677,Registry Editor,regedit.exe,48.7,69.3
+1787477248.2197,Administrator: Command Prompt,cmd.exe,45.6,71.5
+1787477252.3463,Windows PowerShell,powershell.exe,50.6,81.8
+1787477256.4531,Windows PowerShell,powershell.exe,37.7,71.3
+1787477259.9383,Windows PowerShell,powershell.exe,54.8,73.0
+1787477264.8378,Administrator: Command Prompt,cmd.exe,37.8,75.1
+1787477268.0708,Registry Editor,regedit.exe,60.2,73.3
+1787477272.7845,Administrator: Command Prompt,cmd.exe,59.3,77.5
+1787477276.5929,Administrator: Command Prompt,cmd.exe,78.3,73.8
+1787477279.0863,Administrator: Command Prompt,cmd.exe,75.0,78.2
+1787477283.6642,Windows PowerShell,powershell.exe,74.3,81.9
+1787477286.5319,Registry Editor,regedit.exe,68.8,78.7
+1787477290.2211,Process Hacker,processhacker.exe,46.9,70.1
+1787477293.7142,Administrator: Command Prompt,cmd.exe,61.5,69.7
+1787477297.4385,Administrator: Command Prompt,cmd.exe,61.2,81.1
+1787477299.6445,Administrator: Command Prompt,cmd.exe,79.6,78.9

@@ -131,6 +131,55 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
             
         print(f"[OK] Generated valid Forensic PDF Report ({os.path.getsize(pdf_path):,} bytes) at '{pdf_path}'")
 
+    def test_05_nested_folder_navigation_telemetry(self):
+        print("\n--- Testing Nested Folder Navigation & Telemetry Reliability ---")
+        from deception.decoy_explorer import DecoyExplorer
+        sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
+        log_dir = os.path.join(PROJECT_ROOT, "data", "forensics")
+
+        explorer = DecoyExplorer(sandbox_dir, log_dir)
+        initial_count = len(self.tracker.get_timeline())
+
+        # 1. Navigate through nested virtual directories
+        p1 = "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security"
+        p2 = "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data"
+        p3 = "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data\\forensics"
+
+        explorer.navigate_to(p1, navigation_method="DOUBLE_CLICK")
+        explorer.navigate_to(p2, navigation_method="DOUBLE_CLICK")
+        explorer.navigate_to(p3, navigation_method="DOUBLE_CLICK")
+
+        # 2. Navigate Back and Forward
+        explorer.navigate_back()
+        self.assertEqual(explorer.current_path, p2)
+        explorer.navigate_forward()
+        self.assertEqual(explorer.current_path, p3)
+
+        # 3. Navigate Up
+        explorer.navigate_up()
+        self.assertEqual(explorer.current_path, p2)
+
+        # 4. Attempt failed access to nonexistent path
+        explorer.navigate_to("C:\\Restricted\\NonExistentPath\\Secrets")
+
+        timeline = self.tracker.get_timeline()
+        new_events = timeline[initial_count:]
+
+        # Verify event types
+        nav_events = [e for e in new_events if e["action_type"] == "FOLDER_NAVIGATED"]
+        failed_events = [e for e in new_events if e["action_type"] == "PATH_ACCESS_FAILED"]
+
+        self.assertGreaterEqual(len(nav_events), 6)
+        self.assertGreaterEqual(len(failed_events), 1)
+
+        # Verify event_id format and sequential progression
+        for ev in new_events:
+            self.assertIn("event_id", ev)
+            self.assertTrue(ev["event_id"].startswith("EVT-"))
+            self.assertIn("outcome", ev)
+
+        print(f"[OK] Verified {len(nav_events)} folder navigations and {len(failed_events)} failed access events with EVT-xxxx schema.")
+
 
 if __name__ == "__main__":
     unittest.main()

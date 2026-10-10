@@ -490,19 +490,19 @@ async def download_forensic_pdf(name: Optional[str] = None):
     if name:
         target_path = os.path.join(forensics_dir, os.path.basename(name))
         if os.path.exists(target_path):
-            return FileResponse(target_path, media_type="application/pdf", filename=os.path.basename(target_path))
+            return FileResponse(target_path, media_type="application/pdf", filename=os.path.basename(target_path), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     # Pick latest PDF
     pdfs = glob.glob(os.path.join(forensics_dir, "*.pdf"))
     if pdfs:
         pdfs.sort(key=os.path.getmtime, reverse=True)
         latest = pdfs[0]
-        return FileResponse(latest, media_type="application/pdf", filename=os.path.basename(latest))
+        return FileResponse(latest, media_type="application/pdf", filename=os.path.basename(latest), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     # If no PDF exists, generate one dynamically!
     try:
         new_pdf = report_generator.generate_report()
-        return FileResponse(new_pdf, media_type="application/pdf", filename=os.path.basename(new_pdf))
+        return FileResponse(new_pdf, media_type="application/pdf", filename=os.path.basename(new_pdf), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate forensic PDF: {str(e)}")
 
