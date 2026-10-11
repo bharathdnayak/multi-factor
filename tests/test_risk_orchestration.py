@@ -73,8 +73,13 @@ class TestRiskOrchestrationPolicy(unittest.TestCase):
         self.orchestrator.evaluate_policy(instant_risk=0.60, smoothed_risk=0.55)
         self.assertEqual(self.orchestrator.current_tier, RiskTier.TIER_2_MEDIUM)
 
-        # Verify using master bypass password
-        success, msg = self.orchestrator.verify_step_up(entered_code="admin")
+        # Verify trivial code 'admin' is strictly rejected
+        fail_trivial, _ = self.orchestrator.verify_step_up(entered_code="admin")
+        self.assertFalse(fail_trivial)
+        self.orchestrator.step_up_failures = 0
+
+        # Verify using active session OTP
+        success, msg = self.orchestrator.verify_step_up(entered_code="654321", active_otp="654321")
         self.assertTrue(success)
         self.assertEqual(self.orchestrator.current_tier, RiskTier.TIER_1_LOW)
         self.assertFalse(self.orchestrator.active_challenge)
@@ -125,7 +130,9 @@ class TestRiskOrchestrationPolicy(unittest.TestCase):
         self.assertEqual(sdata["thresholds"]["high"], 0.75)
 
         # 2. POST /api/security/step_up_verify
-        verify_res = client.post("/api/security/step_up_verify", json={"entered_code": "admin"})
+        from dashboard.app import evaluator
+        evaluator.active_otp = "654321"
+        verify_res = client.post("/api/security/step_up_verify", json={"entered_code": "654321"})
         self.assertEqual(verify_res.status_code, 200)
         vdata = verify_res.json()
         self.assertTrue(vdata["success"])

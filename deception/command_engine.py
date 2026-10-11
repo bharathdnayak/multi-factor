@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 from deception.virtual_fs import get_vfs, PathUtils, VirtualNode
 from deception.forensic_tracker import get_tracker
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class VirtualCommandEngine:
     """
     Safe, Controlled Virtual Command Execution Engine.
@@ -15,10 +17,10 @@ class VirtualCommandEngine:
     SECURITY BOUNDARY: Never executes arbitrary attacker shell commands against the host OS!
     All state modifications occur strictly within the honeypot's virtual environment.
     """
-    def __init__(self, sandbox_dir: str, log_dir: str):
-        self.sandbox_dir = sandbox_dir
-        self.log_dir = log_dir
-        self.log_path = os.path.join(log_dir, "honeypot_commands.log")
+    def __init__(self, sandbox_dir: Optional[str] = None, log_dir: Optional[str] = None):
+        self.sandbox_dir = sandbox_dir or os.path.join(PROJECT_ROOT, "data", "sandbox")
+        self.log_dir = log_dir or os.path.join(PROJECT_ROOT, "data", "forensics")
+        self.log_path = os.path.join(self.log_dir, "honeypot_commands.log")
         self.tracker = get_tracker()
         self.vfs = get_vfs()
         self.current_dir = "C:\\Windows\\system32"
@@ -59,9 +61,15 @@ class VirtualCommandEngine:
             return "", True
         elif base_cmd in ["clear", "cls", "clear-host"]:
             return "__CLEAR__", False
-        elif base_cmd in ["pwd", "get-location"]:
+        elif base_cmd in ["pwd", "get-location", "gl"]:
             return f"\nPath\n----\n{self.current_dir}", False
-        elif base_cmd in ["cd", "chdir", "set-location"]:
+        elif base_cmd in ["tree"]:
+            return self._cmd_tree(args), False
+        elif base_cmd in ["date", "get-date"]:
+            return self._cmd_date(args), False
+        elif base_cmd in ["get-service", "gsv", "services"]:
+            return self._cmd_get_service(args), False
+        elif base_cmd in ["cd", "chdir", "set-location", "sl"]:
             return self._cmd_cd(args), False
         elif base_cmd in ["dir", "ls", "get-childitem", "gci"]:
             return self._cmd_dir(args), False
@@ -120,8 +128,8 @@ class VirtualCommandEngine:
         elif base_cmd in ["help", "get-help"]:
             return (
                 "Supported Diagnostic Cmdlets & Commands:\n"
-                "  pwd, cd, dir, ls, Get-ChildItem, cat, type, Get-Content, mkdir, New-Item,\n"
-                "  Copy-Item, Move-Item, Rename-Item, Remove-Item, Get-Item, Get-Process, tasklist,\n"
+                "  pwd, cd, dir, ls, Get-ChildItem, cat, type, Get-Content, tree, Get-Date, mkdir, New-Item,\n"
+                "  Copy-Item, Move-Item, Rename-Item, Remove-Item, Get-Item, Get-Process, Get-Service, tasklist,\n"
                 "  whoami, hostname, ipconfig, ping, arp, route, netstat, curl, wget, ssh,\n"
                 "  nslookup, tracert, nmap, net user, net localgroup, systeminfo, Get-History, cls, exit"
             ), False
@@ -386,6 +394,59 @@ class VirtualCommandEngine:
 
         self.tracker.record_sandbox_write(PathUtils.split_path(resolved)[1], len(text.encode("utf-8")))
         return ""
+
+    def _cmd_tree(self, args: List[str]) -> str:
+        target = args[0].strip('"').strip("'") if args else self.current_dir
+        resolved = self.vfs.resolve_path(self.current_dir, target)
+        node = self.vfs.get_node(resolved)
+        if not node:
+            return f"Invalid path - {target}"
+        if not node.is_dir:
+            return f"{node.name} is a file, not a directory."
+
+        lines = [
+            f"Folder PATH listing for volume OS",
+            f"Volume serial number is 84D2-91B4",
+            resolved,
+        ]
+
+        def _walk(curr_node, prefix=""):
+            children = curr_node.list_children(include_hidden=False)
+            dirs = [c for c in children if c.is_dir]
+            for i, child in enumerate(dirs):
+                is_last = (i == len(dirs) - 1)
+                connector = "\\---" if is_last else "+---"
+                sub_prefix = "    " if is_last else "|   "
+                lines.append(f"{prefix}{connector}{child.name}")
+                _walk(child, prefix + sub_prefix)
+
+        _walk(node)
+        return "\n".join(lines)
+
+    def _cmd_date(self, args: List[str]) -> str:
+        return time.strftime("%A, %B %d, %Y %I:%M:%S %p")
+
+    def _cmd_get_service(self, args: List[str]) -> str:
+        services = [
+            ("Running", "WinDefend", "Microsoft Defender Antivirus Service"),
+            ("Running", "LanmanWorkstation", "Workstation"),
+            ("Running", "Dnscache", "DNS Client"),
+            ("Running", "Spooler", "Print Spooler"),
+            ("Running", "EventLog", "Windows Event Log"),
+            ("Running", "TermService", "Remote Desktop Services"),
+            ("Running", "MpsSvc", "Windows Defender Firewall"),
+            ("Running", "CryptSvc", "Cryptographic Services"),
+            ("Stopped", "wuauserv", "Windows Update"),
+            ("Stopped", "W32Time", "Windows Time"),
+            ("Stopped", "SysMain", "SysMain"),
+        ]
+        out_lines = [
+            "\nStatus   Name               DisplayName",
+            "------   ----               -----------"
+        ]
+        for status, name, display in services:
+            out_lines.append(f"{status:<8} {name:<18} {display}")
+        return "\n".join(out_lines)
 
     # --------------------------------------------------------------------------
     # System & Network Diagnostics

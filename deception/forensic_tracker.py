@@ -4,6 +4,7 @@ import time
 import json
 import glob
 import threading
+from collections import deque
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -58,6 +59,7 @@ class ForensicTracker:
         self.session_start = time.time()
         self.events = []
         self._write_lock = threading.Lock()
+        self._recent_signatures = deque(maxlen=25)
         self._initialized = True
         
         # Check if an active session already exists on disk
@@ -92,12 +94,55 @@ class ForensicTracker:
     def record_event(self, action_type, target, details=None, severity="INFO", application="SYSTEM", outcome="SUCCESS"):
         """
         Records a single forensic event with standardized schema, ISO timestamp,
-        sequential event_id, outcome, and immediate persistent flush.
+        sequential event_id, outcome, UTC formatting, correlation_id, and immediate persistent flush.
         """
         now = time.time()
         timestamp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
-        details = details or {}
+        timestamp_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        elapsed_ms = int(round((now - self.session_start) * 1000))
+        details = dict(details or {})
         
+        # Redact sensitive parameters
+        for sec_key in ["password", "pwd", "otp", "auth_token", "private_key", "secret_key"]:
+            if sec_key in details and isinstance(details[sec_key], str) and len(details[sec_key]) > 0:
+                details[f"{sec_key}_length"] = len(details[sec_key])
+                details[sec_key] = "***REDACTED***"
+
+        # Categorize event type
+        atype_upper = str(action_type).upper()
+        if any(atype_upper.startswith(prefix) for prefix in ["FILE_", "FOLDER_", "PATH_", "VFS_"]):
+            event_type = "FILE_OPERATION"
+        elif any(atype_upper.startswith(prefix) for prefix in ["SHELL_", "COMMAND_"]):
+            event_type = "COMMAND_EXECUTION"
+        elif any(atype_upper.startswith(prefix) for prefix in ["BROWSER_", "URL_", "SEARCH_", "C2_"]):
+            event_type = "BROWSER_ACTIVITY"
+        elif atype_upper.startswith("WINDOW_") or atype_upper.startswith("HOTKEY_"):
+            event_type = "WINDOW_MANAGEMENT"
+        elif atype_upper in ["HONEYPOT_ACTIVATED", "CREDENTIAL_TRAP_TRIGGERED", "SANDBOX_FILE_INTERCEPTED"]:
+            event_type = "HONEYPOT_SECURITY"
+        elif atype_upper in ["PERSONALIZATION_CHANGED", "START_MENU_SEARCH", "SETTINGS_CHANGED"]:
+            event_type = "SYSTEM_SETTING"
+        else:
+            event_type = atype_upper
+
+        # Determine target type
+        str_target = str(target)
+        if str_target.startswith("http://") or str_target.startswith("https://"):
+            target_type = "URL"
+            target_virtual_path = str_target
+        elif "\\" in str_target or "/" in str_target or str_target.startswith("C:"):
+            target_type = "DIRECTORY" if ("dir" in atype_upper.lower() or "folder" in atype_upper.lower()) else "FILE"
+            target_virtual_path = str_target
+        elif "command" in atype_upper.lower() or "shell" in atype_upper.lower():
+            target_type = "COMMAND"
+            target_virtual_path = str_target
+        elif "window" in atype_upper.lower() or "app" in atype_upper.lower():
+            target_type = "WINDOW"
+            target_virtual_path = str_target
+        else:
+            target_type = "SYSTEM"
+            target_virtual_path = str(details.get("virtual_path", details.get("destination", str_target)))
+
         # Analyze target and details for sensitive indicators
         check_str = f"{target} {json.dumps(details)}".lower()
         flagged_keywords = [kw for kw in SENSITIVE_KEYWORDS if kw in check_str]
@@ -106,22 +151,44 @@ class ForensicTracker:
             details["flagged_keywords"] = flagged_keywords
 
         with self._write_lock:
+            # Deduplication: Check for identical event logged within 50ms (suppress duplicate Qt callbacks)
+            nav_m = str(details.get("navigation_method", ""))
+            src_f = str(details.get("source_folder", ""))
+            sig = (action_type, str_target, application, outcome, nav_m, src_f)
+            if hasattr(self, "_recent_signatures"):
+                for prev_sig, prev_time in self._recent_signatures:
+                    if prev_sig == sig and (now - prev_time) < 0.05:
+                        return self.events[-1] if self.events else None
+                self._recent_signatures.append((sig, now))
+
             evt_num = len(self.events) + 1
             event_id = f"EVT-{evt_num:04d}"
+            correlation_id = details.get("correlation_id", f"CORR-{getattr(self, 'session_id', 'SESS')[-6:]}-{evt_num:04d}")
 
             event = {
+                # Standardized Phase 6 schema fields
                 "event_id": event_id,
                 "session_id": getattr(self, "session_id", "SESS_DEFAULT"),
+                "timestamp_utc": timestamp_utc,
+                "elapsed_ms": elapsed_ms,
+                "application": application or details.get("application", "SYSTEM"),
+                "event_type": event_type,
+                "action": action_type,
+                "target_type": target_type,
+                "target_virtual_path": target_virtual_path,
+                "result": outcome,
+                "severity": severity,
+                "metadata": details,
+                "correlation_id": correlation_id,
+
+                # Legacy fields for complete backward compatibility
                 "timestamp": timestamp_str,
                 "unix_time": now,
                 "elapsed_seconds": round(now - self.session_start, 2),
                 "action_type": action_type,
-                "application": application or details.get("application", "SYSTEM"),
-                "target": str(target),
-                "severity": severity,
+                "target": str_target,
                 "outcome": outcome,
-                "details": details,
-                "metadata": details
+                "details": details
             }
 
             self.events.append(event)
@@ -190,6 +257,16 @@ class ForensicTracker:
             severity="INFO",
             application="WINDOW_MANAGER",
             outcome="SUCCESS"
+        )
+
+    def record_action(self, action_type, target="", details=None, severity="INFO", application=None, outcome="SUCCESS"):
+        return self.record_event(
+            action_type,
+            target,
+            details or {},
+            severity=severity,
+            application=application or "DESKTOP",
+            outcome=outcome
         )
 
     def record_desktop_icon_click(self, icon_name):

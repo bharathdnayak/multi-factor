@@ -123,17 +123,17 @@ def run_attack_simulation(dataset_file=None, count=5, delay=1.0, show_ui=True, p
             print("\n" + "=" * 75)
             print("   [CRITICAL BREACH] INTRUSION CONFIRMED! SYSTEM LOCKDOWN INITIATED")
             print("=" * 75)
-            print(f"   Active OTP Code:         >>> {evaluator.active_otp} <<<")
-            print(f"   Master Bypass Password:  >>> admin <<< (or 123456)")
+            print("   Active OTP Code:         [Dispatched to Owner via Alert Channels (300s TTL)]")
+            print(f"   Emergency Key Auth:      Configured in security/config.json or EMERGENCY_RECOVERY_KEY")
             print("   Automated Responses:")
             print("     -> Webcam snapshot captured in data/forensics/")
-            print("     -> Session OTP logged to models/.active_otp")
+            print("     -> Ephemeral Session OTP issued (300s TTL)")
             print("     -> Verification lock screen triggered")
             print("=" * 75)
             
             if show_ui:
                 print("\n[UI] Launching Verification Lock Screen on display...")
-                print("[INFO] Enter the OTP above or 'admin' to unlock.")
+                print("[INFO] Enter the 6-digit OTP above or configured Emergency Recovery Key to unlock.")
                 try:
                     from security.lock_handler import launch_verification_lock
                     launch_verification_lock(evaluator)
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     parser.add_argument("--pipe-to-daemon", action="store_true", help="Also append attack records to telemetry_data.jsonl for background daemons")
     args = parser.parse_args()
 
-    run_attack_simulation(
+    success = run_attack_simulation(
         dataset_file=args.dataset,
         count=args.count,
         delay=args.delay,
@@ -170,3 +170,4 @@ if __name__ == "__main__":
         pipe_to_daemon=args.pipe_to_daemon,
         typology=args.typology
     )
+    sys.exit(0 if success else 1)

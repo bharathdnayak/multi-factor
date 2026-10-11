@@ -30,8 +30,8 @@ class TestDeceptionUI(unittest.TestCase):
         self.assertGreaterEqual(lock_screen.otp_input.maxLength(), 6)
         self.assertEqual(lock_screen.failed_attempts, 0)
         
-        # Verify master bypass password support
-        self.assertTrue(evaluator.verify_otp_and_reset("admin"))
+        # Verify insecure trivial bypass password 'admin' is strictly rejected
+        self.assertFalse(evaluator.verify_otp_and_reset("admin"))
         
         # Reset and verify active session OTP
         evaluator.is_breached = True

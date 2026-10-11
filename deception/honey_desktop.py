@@ -7,7 +7,7 @@ import psutil
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QPushButton, QTextEdit, QFrame, QDialog, QGridLayout,
-    QScrollArea, QMenu
+    QScrollArea, QMenu, QStackedWidget
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QObject, pyqtSignal, QTimer, QRect
 from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QCursor, QIcon, QPen, QBrush
@@ -31,6 +31,7 @@ from deception.decoy_explorer import DecoyExplorer
 # Re-exports for backwards compatibility across tests and existing scripts
 __all__ = [
     "HoneypotDesktop",
+    "DecoySettings",
     "DecoyExplorer",
     "DecoyNotepad",
     "HoneyShell",
@@ -153,20 +154,514 @@ class WindowsGhostingDialog(QDialog):
         self.setLayout(layout)
 
 
+class DecoySettings(QFrame):
+    """
+    High-Fidelity Windows 11 Decoy Settings Window.
+    Provides realistic mock host configuration across four primary categories:
+    - System: Host device specifications, processor, RAM, and Windows 11 Enterprise specifications.
+    - Display: Resolution (1920x1080), scaling (100%), orientation, refresh rate (60 Hz).
+    - Personalization: Interactive wallpaper themes (Windows Dark, Windows Light, Bloom, Sunrise)
+      that dynamically re-skin the honeypot desktop canvas and emit forensic events.
+    - Privacy & Security: Windows Security dashboard, threat status, continuous behavioral monitoring notice.
+    Draggable, minimizable, maximizable, closable, and integrated with DecoyWindowManager.
+    """
+    def __init__(self, parent_desktop=None, parent=None):
+        super().__init__(parent or parent_desktop)
+        self.desktop = parent_desktop
+        self.tracker = get_tracker()
+        self.is_maximized = False
+        self.normal_geom = None
+        self.drag_position = QPoint()
+        self.active_tab = "System"
+        self.init_ui()
+
+    def init_ui(self):
+        self.setFixedSize(QSize(820, 520))
+        self.setObjectName("SettingsContainer")
+        self.setStyleSheet("""
+            QFrame#SettingsContainer {
+                background-color: #202020;
+                border: 1px solid #3c3c3c;
+                border-radius: 8px;
+            }
+            QFrame#SettingsTitleBar {
+                background-color: #1f1f1f;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border-bottom: 1px solid #2d2d2d;
+            }
+            QLabel#SettingsTitle {
+                color: #e0e0e0;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton#SBtn {
+                background: transparent;
+                color: #a0a0a0;
+                border: none;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                font-weight: bold;
+                width: 34px;
+                height: 26px;
+            }
+            QPushButton#SBtn:hover {
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QPushButton#SCloseBtn:hover {
+                background-color: #e81123;
+                color: #ffffff;
+                border-top-right-radius: 8px;
+            }
+            QFrame#SettingsSidebar {
+                background-color: #1a1a1a;
+                border-right: 1px solid #2d2d2d;
+                border-bottom-left-radius: 8px;
+            }
+            QPushButton#NavTabBtn {
+                background-color: transparent;
+                color: #cccccc;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+                text-align: left;
+                padding: 10px 16px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton#NavTabBtn:hover {
+                background-color: #262626;
+                color: #ffffff;
+            }
+            QPushButton#NavTabBtn[active="true"] {
+                background-color: #2f2f2f;
+                color: #00d2d3;
+                font-weight: bold;
+                border-left: 3px solid #00d2d3;
+            }
+            QFrame#ContentCard {
+                background-color: #272727;
+                border: 1px solid #383838;
+                border-radius: 6px;
+                padding: 10px 14px;
+            }
+            QLabel#CardTitle {
+                color: #ffffff;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QLabel#CardPropKey {
+                color: #94a3b8;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+            }
+            QLabel#CardPropVal {
+                color: #f1f5f9;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton#ThemeCardBtn {
+                background-color: #262626;
+                color: #ffffff;
+                border: 1px solid #3d3d3d;
+                border-radius: 6px;
+                padding: 12px;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton#ThemeCardBtn:hover {
+                background-color: #333333;
+                border-color: #00d2d3;
+            }
+        """)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 1. Title bar
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("SettingsTitleBar")
+        self.title_bar.setFixedHeight(30)
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(10, 0, 0, 0)
+        tb_layout.setSpacing(2)
+
+        icon_lbl = QLabel("⚙️")
+        icon_lbl.setStyleSheet("font-size: 12px; margin-right: 4px;")
+        tb_layout.addWidget(icon_lbl)
+
+        self.title_lbl = QLabel("Settings")
+        self.title_lbl.setObjectName("SettingsTitle")
+        tb_layout.addWidget(self.title_lbl)
+        tb_layout.addStretch()
+
+        min_btn = QPushButton("─")
+        min_btn.setObjectName("SBtn")
+        min_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(min_btn)
+
+        self.max_btn = QPushButton("□")
+        self.max_btn.setObjectName("SBtn")
+        self.max_btn.clicked.connect(self.toggle_maximize)
+        tb_layout.addWidget(self.max_btn)
+
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("SBtn")
+        close_btn.setProperty("class", "SCloseBtn")
+        close_btn.clicked.connect(self.hide)
+        tb_layout.addWidget(close_btn)
+
+        self.title_bar.setLayout(tb_layout)
+        layout.addWidget(self.title_bar)
+
+        # 2. Body: Sidebar + Stacked Widget
+        body_layout = QHBoxLayout()
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        # Sidebar
+        sidebar = QFrame()
+        sidebar.setObjectName("SettingsSidebar")
+        sidebar.setFixedWidth(200)
+        sb_layout = QVBoxLayout()
+        sb_layout.setContentsMargins(10, 14, 10, 14)
+        sb_layout.setSpacing(6)
+
+        u_card = QFrame()
+        u_card.setStyleSheet("background-color: #232323; border-radius: 6px; padding: 4px;")
+        u_layout = QHBoxLayout()
+        u_layout.setContentsMargins(6, 4, 6, 4)
+        u_icon = QLabel("👤")
+        u_icon.setStyleSheet("font-size: 20px;")
+        u_layout.addWidget(u_icon)
+        u_text = QVBoxLayout()
+        u_name = QLabel("Dell")
+        u_name.setStyleSheet("color: #ffffff; font-weight: bold; font-size: 12px;")
+        u_role = QLabel("Administrator")
+        u_role.setStyleSheet("color: #888888; font-size: 10px;")
+        u_text.addWidget(u_name)
+        u_text.addWidget(u_role)
+        u_layout.addLayout(u_text)
+        u_card.setLayout(u_layout)
+        sb_layout.addWidget(u_card)
+        sb_layout.addSpacing(10)
+
+        self.nav_buttons = {}
+        tabs = [
+            ("System", "💻  System"),
+            ("Display", "🖥️  Display"),
+            ("Personalization", "🎨  Personalization"),
+            ("Privacy", "🔒  Privacy & security")
+        ]
+
+        for tab_id, tab_label in tabs:
+            btn = QPushButton(tab_label)
+            btn.setObjectName("NavTabBtn")
+            btn.setProperty("active", "true" if tab_id == "System" else "false")
+            btn.clicked.connect(lambda _, tid=tab_id: self.navigate_tab(tid))
+            self.nav_buttons[tab_id] = btn
+            sb_layout.addWidget(btn)
+
+        sb_layout.addStretch()
+        sidebar.setLayout(sb_layout)
+        body_layout.addWidget(sidebar)
+
+        # Stacked Pages
+        self.stack = QStackedWidget()
+        self.stack.setStyleSheet("background-color: #202020;")
+
+        self.page_system = self._create_system_page()
+        self.stack.addWidget(self.page_system)
+
+        self.page_display = self._create_display_page()
+        self.stack.addWidget(self.page_display)
+
+        self.page_pers = self._create_personalization_page()
+        self.stack.addWidget(self.page_pers)
+
+        self.page_priv = self._create_privacy_page()
+        self.stack.addWidget(self.page_priv)
+
+        body_layout.addWidget(self.stack, 1)
+        layout.addLayout(body_layout)
+        self.setLayout(layout)
+
+    def _create_system_page(self) -> QWidget:
+        widget = QWidget()
+        w_layout = QVBoxLayout()
+        w_layout.setContentsMargins(20, 16, 20, 16)
+        w_layout.setSpacing(12)
+
+        hdr = QLabel("System > About")
+        hdr.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold;")
+        w_layout.addWidget(hdr)
+
+        dev_card = QFrame()
+        dev_card.setObjectName("ContentCard")
+        dc_layout = QVBoxLayout()
+        dc_layout.setSpacing(6)
+        t1 = QLabel("Device specifications")
+        t1.setObjectName("CardTitle")
+        dc_layout.addWidget(t1)
+
+        specs = [
+            ("Device name", "DESKTOP-BEHAVIORAL-SEC"),
+            ("Processor", "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"),
+            ("Installed RAM", "16.0 GB (15.8 GB usable)"),
+            ("Device ID", "4A8F91B2-C1D3-4E5F-8A90-123456789ABC"),
+            ("System type", "64-bit operating system, x64-based processor"),
+            ("Pen and touch", "No pen or touch input is available for this display")
+        ]
+        for k, v in specs:
+            r = QHBoxLayout()
+            lk = QLabel(k)
+            lk.setObjectName("CardPropKey")
+            lk.setFixedWidth(130)
+            lv = QLabel(v)
+            lv.setObjectName("CardPropVal")
+            r.addWidget(lk)
+            r.addWidget(lv)
+            dc_layout.addLayout(r)
+        dev_card.setLayout(dc_layout)
+        w_layout.addWidget(dev_card)
+
+        win_card = QFrame()
+        win_card.setObjectName("ContentCard")
+        wc_layout = QVBoxLayout()
+        wc_layout.setSpacing(6)
+        t2 = QLabel("Windows specifications")
+        t2.setObjectName("CardTitle")
+        wc_layout.addWidget(t2)
+
+        win_specs = [
+            ("Edition", "Windows 11 Enterprise"),
+            ("Version", "23H2"),
+            ("Installed on", "12-10-2023"),
+            ("OS build", "22631.3296"),
+            ("Experience", "Windows Feature Experience Pack 1000.22631.1000.0")
+        ]
+        for k, v in win_specs:
+            r = QHBoxLayout()
+            lk = QLabel(k)
+            lk.setObjectName("CardPropKey")
+            lk.setFixedWidth(130)
+            lv = QLabel(v)
+            lv.setObjectName("CardPropVal")
+            r.addWidget(lk)
+            r.addWidget(lv)
+            wc_layout.addLayout(r)
+        win_card.setLayout(wc_layout)
+        w_layout.addWidget(win_card)
+
+        w_layout.addStretch()
+        widget.setLayout(w_layout)
+        return widget
+
+    def _create_display_page(self) -> QWidget:
+        widget = QWidget()
+        w_layout = QVBoxLayout()
+        w_layout.setContentsMargins(20, 16, 20, 16)
+        w_layout.setSpacing(12)
+
+        hdr = QLabel("Display")
+        hdr.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold;")
+        w_layout.addWidget(hdr)
+
+        card = QFrame()
+        card.setObjectName("ContentCard")
+        c_layout = QVBoxLayout()
+        c_layout.setSpacing(8)
+
+        t = QLabel("Scale & layout")
+        t.setObjectName("CardTitle")
+        c_layout.addWidget(t)
+
+        disp_props = [
+            ("Display resolution", "1920 x 1080 (Recommended)"),
+            ("Scale", "100% (Recommended)"),
+            ("Display orientation", "Landscape"),
+            ("Multiple displays", "Duplicate these displays"),
+            ("Refresh rate", "60.000 Hz"),
+            ("Color format", "RGB 8-bit SDR")
+        ]
+        for k, v in disp_props:
+            r = QHBoxLayout()
+            lk = QLabel(k)
+            lk.setObjectName("CardPropKey")
+            lk.setFixedWidth(150)
+            lv = QLabel(v)
+            lv.setObjectName("CardPropVal")
+            r.addWidget(lk)
+            r.addWidget(lv)
+            c_layout.addLayout(r)
+        card.setLayout(c_layout)
+        w_layout.addWidget(card)
+
+        w_layout.addStretch()
+        widget.setLayout(w_layout)
+        return widget
+
+    def _create_personalization_page(self) -> QWidget:
+        widget = QWidget()
+        w_layout = QVBoxLayout()
+        w_layout.setContentsMargins(20, 16, 20, 16)
+        w_layout.setSpacing(12)
+
+        hdr = QLabel("Personalization > Background")
+        hdr.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold;")
+        w_layout.addWidget(hdr)
+
+        sub = QLabel("Select a theme to change your desktop appearance:")
+        sub.setStyleSheet("color: #a0a0a0; font-size: 12px;")
+        w_layout.addWidget(sub)
+
+        grid = QGridLayout()
+        grid.setSpacing(12)
+
+        themes = [
+            ("Windows (Dark)", "🌙 Dark Mode\nDeep slate aesthetic", "Dark"),
+            ("Windows (Light)", "☀️ Light Mode\nSoft daylight gradient", "Light"),
+            ("Bloom (Windows 11)", "🌸 Bloom Cyan\nVivid ambient bloom", "Bloom"),
+            ("Sunrise", "🌅 Sunrise Glow\nWarm crimson accent", "Sunrise")
+        ]
+
+        for idx, (title, desc, theme_key) in enumerate(themes):
+            btn = QPushButton(f"<b>{title}</b>\n{desc}")
+            btn.setObjectName("ThemeCardBtn")
+            btn.setFixedSize(260, 70)
+            btn.clicked.connect(lambda _, tk=theme_key: self.apply_theme(tk))
+            grid.addWidget(btn, idx // 2, idx % 2)
+
+        w_layout.addLayout(grid)
+
+        self.theme_status_lbl = QLabel("Current Theme: Windows (Dark)")
+        self.theme_status_lbl.setStyleSheet("color: #00d2d3; font-weight: bold; font-size: 12px; margin-top: 10px;")
+        w_layout.addWidget(self.theme_status_lbl)
+
+        w_layout.addStretch()
+        widget.setLayout(w_layout)
+        return widget
+
+    def _create_privacy_page(self) -> QWidget:
+        widget = QWidget()
+        w_layout = QVBoxLayout()
+        w_layout.setContentsMargins(20, 16, 20, 16)
+        w_layout.setSpacing(12)
+
+        hdr = QLabel("Privacy & security > Windows Security")
+        hdr.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold;")
+        w_layout.addWidget(hdr)
+
+        card = QFrame()
+        card.setObjectName("ContentCard")
+        c_layout = QVBoxLayout()
+        c_layout.setSpacing(8)
+
+        t = QLabel("Security at a glance")
+        t.setObjectName("CardTitle")
+        c_layout.addWidget(t)
+
+        sec_items = [
+            ("Virus & threat protection", "⚠️ Actions recommended (Continuous behavioral analysis monitoring active)"),
+            ("Account protection", "✅ Protected (Multimodal biometric continuous authentication)"),
+            ("Firewall & network protection", "✅ Active (Domain, Private, Public networks)"),
+            ("App & browser control", "✅ Reputation-based protection active"),
+            ("Device security", "✅ Core isolation memory integrity active")
+        ]
+        for k, v in sec_items:
+            r = QHBoxLayout()
+            lk = QLabel(k)
+            lk.setObjectName("CardPropKey")
+            lk.setFixedWidth(170)
+            lv = QLabel(v)
+            lv.setObjectName("CardPropVal")
+            r.addWidget(lk)
+            r.addWidget(lv)
+            c_layout.addLayout(r)
+        card.setLayout(c_layout)
+        w_layout.addWidget(card)
+
+        w_layout.addStretch()
+        widget.setLayout(w_layout)
+        return widget
+
+    def apply_theme(self, theme_key: str):
+        if self.desktop and hasattr(self.desktop, 'set_wallpaper_theme'):
+            self.desktop.set_wallpaper_theme(theme_key)
+        self.theme_status_lbl.setText(f"Current Theme: {theme_key}")
+        self.tracker.record_action(
+            action_type="PERSONALIZATION_CHANGED",
+            target=theme_key,
+            details={"theme": theme_key}
+        )
+
+    def navigate_tab(self, tab_name: str):
+        mapping = {
+            "system": (0, "System"),
+            "display": (1, "Display"),
+            "personalization": (2, "Personalization"),
+            "personalize": (2, "Personalization"),
+            "privacy": (3, "Privacy"),
+            "privacy & security": (3, "Privacy")
+        }
+        key = tab_name.lower().strip()
+        idx, canonical = mapping.get(key, (0, "System"))
+        self.stack.setCurrentIndex(idx)
+        self.active_tab = canonical
+        for tid, btn in self.nav_buttons.items():
+            is_active = (tid == canonical)
+            btn.setProperty("active", "true" if is_active else "false")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        self.tracker.record_action(action_type="SETTINGS_ACCESSED", target=canonical, details={"tab": canonical})
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not self.is_maximized:
+            self.drag_position = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, 'drag_position') and not self.is_maximized:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def toggle_maximize(self):
+        if not self.is_maximized:
+            self.normal_geom = self.geometry()
+            parent_rect = self.parent().rect() if self.parent() else QApplication.primaryScreen().geometry()
+            self.setGeometry(0, 0, parent_rect.width(), parent_rect.height() - 48)
+            self.max_btn.setText("❐")
+            self.is_maximized = True
+        else:
+            if self.normal_geom:
+                self.setGeometry(self.normal_geom)
+            else:
+                self.setFixedSize(QSize(820, 520))
+            self.max_btn.setText("□")
+            self.is_maximized = False
+
+
 class Windows11StartMenu(QFrame):
     """
     Authentic Windows 11 Centered Start Menu popup.
     Features pinned applications, active VirtualFileSystem search integration,
-    and power/lock options triggering clean identity verification exit.
+    clickable interactive search results, and power/lock options triggering clean identity verification exit.
     """
     def __init__(self, parent_desktop, parent=None):
         super().__init__(parent)
         self.desktop = parent_desktop
         self.vfs = get_vfs()
+        self.tracker = get_tracker()
         self.init_ui()
 
     def init_ui(self):
-        self.setFixedSize(480, 460)
+        self.setFixedSize(480, 480)
         self.setStyleSheet("""
             QFrame#StartMenuContainer {
                 background-color: #202020;
@@ -200,6 +695,20 @@ class Windows11StartMenu(QFrame):
             QPushButton#AppBtn:hover {
                 background-color: #2d3748;
             }
+            QPushButton#SearchResultBtn {
+                background-color: #282828;
+                color: #ffffff;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                text-align: left;
+                padding: 8px 12px;
+                border: 1px solid #383838;
+                border-radius: 5px;
+            }
+            QPushButton#SearchResultBtn:hover {
+                background-color: #383838;
+                border-color: #00d2d3;
+            }
             QFrame#UserFooter {
                 background-color: #1a1a1a;
                 border-bottom-left-radius: 10px;
@@ -225,7 +734,7 @@ class Windows11StartMenu(QFrame):
         
         layout = QVBoxLayout()
         layout.setContentsMargins(18, 18, 18, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
         
         # Search bar
         self.search = QLineEdit()
@@ -234,16 +743,18 @@ class Windows11StartMenu(QFrame):
         self.search.textChanged.connect(self.on_search_changed)
         layout.addWidget(self.search)
         
-        # Pinned Header
+        # Section Header
         self.hdr = QLabel("Pinned")
         self.hdr.setObjectName("SectionHeader")
         layout.addWidget(self.hdr)
         
-        # Grid of apps
+        # Pinned Grid Container
+        self.grid_widget = QWidget()
         self.grid = QGridLayout()
         self.grid.setSpacing(10)
+        self.grid.setContentsMargins(0, 0, 0, 0)
         
-        apps = [
+        self.apps = [
             ("💻", "PowerShell", self.launch_powershell),
             ("📁", "File Explorer", self.launch_explorer),
             ("🌐", "Google Chrome", self.launch_edge),
@@ -252,7 +763,7 @@ class Windows11StartMenu(QFrame):
             ("📝", "Notepad", self.launch_notepad)
         ]
         
-        for idx, (icon, name, handler) in enumerate(apps):
+        for idx, (icon, name, handler) in enumerate(self.apps):
             r = idx // 3
             c = idx % 3
             btn = QPushButton(f"{icon}\n{name}")
@@ -261,7 +772,22 @@ class Windows11StartMenu(QFrame):
             btn.clicked.connect(handler)
             self.grid.addWidget(btn, r, c)
             
-        layout.addLayout(self.grid)
+        self.grid_widget.setLayout(self.grid)
+        layout.addWidget(self.grid_widget)
+
+        # Search Results Area (Hidden by default)
+        self.results_scroll = QScrollArea()
+        self.results_scroll.setWidgetResizable(True)
+        self.results_scroll.setStyleSheet("background-color: transparent; border: none;")
+        self.results_container = QWidget()
+        self.results_layout = QVBoxLayout()
+        self.results_layout.setContentsMargins(0, 0, 0, 0)
+        self.results_layout.setSpacing(6)
+        self.results_container.setLayout(self.results_layout)
+        self.results_scroll.setWidget(self.results_container)
+        self.results_scroll.hide()
+        layout.addWidget(self.results_scroll, 1)
+        
         layout.addStretch()
         
         # Footer
@@ -290,14 +816,63 @@ class Windows11StartMenu(QFrame):
         q = text.strip()
         if not q:
             self.hdr.setText("Pinned")
+            self.results_scroll.hide()
+            self.grid_widget.show()
             return
-        
-        # Query virtual filesystem for search matches
-        results = self.vfs.search(q, root_path="C:\\Users\\Dell", recursive=True)
-        if results:
-            self.hdr.setText(f"Best match ({len(results)} found in C:\\Users\\Dell)")
+
+        self.grid_widget.hide()
+        self.results_scroll.show()
+
+        # Clear existing search result items
+        while self.results_layout.count():
+            item = self.results_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        matches_found = 0
+
+        # 1. Pinned Application Matches
+        for icon, name, handler in self.apps:
+            if q.lower() in name.lower():
+                matches_found += 1
+                btn = QPushButton(f"{icon}  {name}  (App)")
+                btn.setObjectName("SearchResultBtn")
+                btn.clicked.connect(lambda _, h=handler, n=name: self._launch_search_app(n, h))
+                self.results_layout.addWidget(btn)
+
+        # 2. Virtual Filesystem Matches
+        vfs_matches = self.vfs.search(q, root_path="C:\\Users\\Dell", recursive=True)
+        for node in vfs_matches[:7]:
+            matches_found += 1
+            btn = QPushButton(f"{node.icon}  {node.name}\n   {node.path}")
+            btn.setObjectName("SearchResultBtn")
+            btn.clicked.connect(lambda _, n=node: self._launch_search_file(n))
+            self.results_layout.addWidget(btn)
+
+        if matches_found > 0:
+            self.hdr.setText(f"Best match ({matches_found} found)")
         else:
             self.hdr.setText(f"No results found for '{q}'")
+            no_lbl = QLabel(f"No files or applications matching '{q}' were found.")
+            no_lbl.setStyleSheet("color: #888888; font-size: 12px; padding: 12px;")
+            self.results_layout.addWidget(no_lbl)
+
+        self.results_layout.addStretch()
+
+    def _launch_search_app(self, app_name: str, handler):
+        self.tracker.record_action(action_type="START_MENU_SEARCH_LAUNCH", target=app_name, details={"type": "app"})
+        self.hide()
+        handler()
+
+    def _launch_search_file(self, node):
+        self.tracker.record_action(action_type="START_MENU_SEARCH_LAUNCH", target=node.name, details={"path": node.path, "type": "file"})
+        self.hide()
+        if node.is_dir:
+            self.desktop.open_explorer(folder_path=node.path)
+        elif any(node.name.lower().endswith(ext) for ext in [".html", ".htm", ".url"]):
+            self.desktop.open_chrome()
+        else:
+            self.desktop.open_notepad(file_path=node.path)
 
     def launch_powershell(self):
         self.hide()
@@ -317,7 +892,10 @@ class Windows11StartMenu(QFrame):
 
     def launch_settings(self):
         self.hide()
-        self.desktop.show_verification_prompt()
+        if hasattr(self.desktop, 'open_settings'):
+            self.desktop.open_settings()
+        else:
+            self.desktop.show_verification_prompt()
 
     def trigger_exit(self):
         self.hide()
@@ -1149,6 +1727,12 @@ class HoneypotDesktop(QWidget):
         self.start_menu.move(sm_x, sm_y)
         self.start_menu.hide()
 
+        # 8. Windows Settings
+        self.decoy_settings = DecoySettings(parent_desktop=self, parent=self)
+        self.decoy_settings.move(max(30, center_x - 40), max(20, center_y - 20))
+        self.decoy_settings.hide()
+        self.window_manager.register_window("settings", self.decoy_settings, "Settings", "⚙️")
+
         # Connect Window Manager signals to Forensic Tracker
         self.window_manager.window_state_changed.connect(
             lambda app_id, action: self.tracker.record_window_action(app_id, action=action)
@@ -1251,7 +1835,10 @@ class HoneypotDesktop(QWidget):
         
         menu.addSeparator()
         disp_act = menu.addAction("Display settings")
-        disp_act.triggered.connect(self.show_verification_prompt)
+        disp_act.triggered.connect(lambda: self.open_settings("Display"))
+
+        pers_act = menu.addAction("Personalize")
+        pers_act.triggered.connect(lambda: self.open_settings("Personalization"))
         
         menu.exec(event.globalPos())
 
@@ -1324,6 +1911,71 @@ class HoneypotDesktop(QWidget):
     def toggle_explorer(self):
         self.window_manager.toggle_window("explorer")
 
+    def open_settings(self, tab_name: str = None):
+        get_tracker().record_app_launch("Settings")
+        if hasattr(self, 'decoy_settings'):
+            if tab_name:
+                self.decoy_settings.navigate_tab(tab_name)
+            self.window_manager.bring_to_front("settings")
+
+    def toggle_settings(self):
+        self.window_manager.toggle_window("settings")
+
+    def set_wallpaper_theme(self, theme_name: str):
+        """Dynamically applies a synthesized or colored Windows 11 wallpaper theme."""
+        screen = QApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen else 1.0
+        geom = screen.geometry() if screen else QRect(0, 0, 1920, 1080)
+        target_w = int(geom.width() * dpr)
+        target_h = int(geom.height() * dpr)
+
+        canvas = QPixmap(target_w, target_h)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        theme_lower = theme_name.lower()
+        if "light" in theme_lower:
+            from PyQt6.QtGui import QLinearGradient
+            grad = QLinearGradient(0, 0, target_w, target_h)
+            grad.setColorAt(0.0, QColor("#e2e8f0"))
+            grad.setColorAt(0.5, QColor("#cbd5e1"))
+            grad.setColorAt(1.0, QColor("#94a3b8"))
+            painter.fillRect(0, 0, target_w, target_h, grad)
+        elif "bloom" in theme_lower:
+            from PyQt6.QtGui import QRadialGradient
+            painter.fillRect(0, 0, target_w, target_h, QColor("#070b19"))
+            rad = QRadialGradient(target_w // 2, target_h // 2, min(target_w, target_h) // 2)
+            rad.setColorAt(0.0, QColor(0, 210, 211, 180))
+            rad.setColorAt(0.5, QColor(95, 39, 205, 120))
+            rad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            painter.fillRect(0, 0, target_w, target_h, rad)
+        elif "sunrise" in theme_lower:
+            from PyQt6.QtGui import QLinearGradient
+            grad = QLinearGradient(0, target_h, target_w, 0)
+            grad.setColorAt(0.0, QColor("#2d132c"))
+            grad.setColorAt(0.5, QColor("#801336"))
+            grad.setColorAt(1.0, QColor("#c72c41"))
+            painter.fillRect(0, 0, target_w, target_h, grad)
+        else: # "dark" or default
+            from PyQt6.QtGui import QLinearGradient
+            grad = QLinearGradient(0, 0, target_w, target_h)
+            grad.setColorAt(0.0, QColor("#0d1117"))
+            grad.setColorAt(0.6, QColor("#161b22"))
+            grad.setColorAt(1.0, QColor("#1e293b"))
+            painter.fillRect(0, 0, target_w, target_h, grad)
+
+        painter.end()
+        canvas.setDevicePixelRatio(dpr)
+        self.screenshot = canvas
+        self.current_theme = theme_name
+        self.update()
+
+        self.tracker.record_action(
+            action_type="PERSONALIZATION_CHANGED",
+            target=theme_name,
+            details={"theme_name": theme_name}
+        )
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
@@ -1362,6 +2014,14 @@ class HoneypotDesktop(QWidget):
         dlg.exec()
 
     def keyPressEvent(self, event):
+        # Alt+Tab window cycling
+        if event.key() == Qt.Key.Key_Tab and (event.modifiers() & Qt.KeyboardModifier.AltModifier):
+            switched_app = self.window_manager.cycle_window(forward=True)
+            if switched_app:
+                self.tracker.record_action(action_type="TASK_SWITCH", target=switched_app, details={"app_id": switched_app})
+            event.accept()
+            return
+
         if event.key() == Qt.Key.Key_Escape:
             if hasattr(self, 'start_menu') and self.start_menu.isVisible():
                 self.start_menu.hide()

@@ -5,12 +5,13 @@
 # Core Input Hooks & Windows Process Interception
 pynput>=1.7.6
 psutil>=5.9.0
-pywin32>=306
+pywin32>=306; sys_platform == 'win32'
 
 # Machine Learning & Deep Learning Sequence Biometrics
 scikit-learn>=1.2.0
 pandas>=1.5.0
 numpy>=1.23.0
+scipy>=1.9.0
 matplotlib>=3.6.0
 torch>=2.0.0
 

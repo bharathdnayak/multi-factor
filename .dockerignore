@@ -1,0 +1,53 @@
+# ==============================================================================
+# Multi-Factor Behavioral Drift Continuous Security - Docker Ignore
+# Exclude host virtual environments, caches, local secrets, and runtime artifacts
+# ==============================================================================
+
+# Git metadata
+.git/
+.gitignore
+
+# Python bytecode and virtual environments
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE metadata
+.vscode/
+.idea/
+
+# Local secrets & credentials (never copy host secrets into images)
+.env
+.env.*
+!.env.example
+security/config.json
+models/.active_otp
+
+# Host transient logs, captures, and sandboxed test files
+data/logs/*
+!data/logs/.gitkeep
+data/sandbox/*
+!data/sandbox/.gitkeep
+data/forensics/*
+!data/forensics/.gitkeep
+data/harvested/*
+!data/harvested/.gitkeep
+data/sessions/active_session.json
+data/sessions/session_history.jsonl
+data/benchmarks/cmu_dataset.csv
+
+# Large presentation media & binaries
+*.mp4
+*.pptx
+*.docx
+*.jpg
+*.jpeg
+architecture_diagram.*
+end_to_end_structure.*
+model_performance.png
+2026-10-06.txt

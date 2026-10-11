@@ -351,7 +351,7 @@ class VivaDemoRunner:
 
         for idx, row in enumerate(imposter_rows):
             f_risk, s_risk, triggered = self.evaluator.evaluate_row(row)
-            elevated_risk = f_risk
+            elevated_risk = s_risk
 
             # Check ADWIN drift status
             drift_label = f"{Colors.YELLOW}DRIFT SIGNAL{Colors.RESET}"
@@ -445,8 +445,13 @@ class VivaDemoRunner:
             otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
             if os.path.exists(otp_file):
                 try:
-                    with open(otp_file, "r") as f:
-                        self.generated_otp = f.read().strip()
+                    with open(otp_file, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content.startswith("{"):
+                            data = json.loads(content)
+                            self.generated_otp = str(data.get("otp", "")).strip()
+                        else:
+                            self.generated_otp = content
                 except Exception:
                     pass
         if not self.generated_otp:
@@ -467,7 +472,7 @@ class VivaDemoRunner:
         if self.captured_face_path:
             print(f"                        Path: {self.captured_face_path}")
         print(f"  * Out-of-Band Auth  : Generated 6-digit Session OTP: {Colors.BOLD}{Colors.GREEN}{self.generated_otp}{Colors.RESET}")
-        print(f"  * Master Bypass     : '{Colors.BOLD}admin{Colors.RESET}' (for viva presenter recovery)")
+        print(f"  * Emergency Auth    : Real-time Multi-Channel Dispatch (models/.active_otp, TTL 300s)")
         print(f"  * UI Defense Action : Verification Lock Screen deployed (Blocks desktop access)\n")
 
         print_talking_point("Stage 3 - Threshold Crossed & Autonomous Lockdown", [
@@ -581,9 +586,17 @@ class VivaDemoRunner:
         # 1. Verify owner identity
         print(f"{Colors.BOLD}[STEP 1: OWNER RETURN & VERIFICATION]{Colors.RESET}")
         print(f"  * System Owner presses emergency recovery hotkey: {Colors.CYAN}Ctrl + Alt + Shift + U{Colors.RESET}")
-        print(f"  * Submitting Master Bypass Password / OTP PIN: '{Colors.GREEN}admin{Colors.RESET}'")
-        verified = self.evaluator.verify_otp_and_reset("admin")
-        print(f"  * Verification Status: {Colors.GREEN}CONFIRMED!{Colors.RESET} Session state restored, Threat Risk reset to 0.05.\n")
+        recovery_code = self.evaluator.active_otp or self.generated_otp
+        if not recovery_code:
+            recovery_code = self.evaluator._load_active_otp()
+        if not recovery_code:
+            recovery_code = "123456"
+        print(f"  * Submitting Verified Session OTP PIN: '{Colors.GREEN}{recovery_code}{Colors.RESET}'")
+        verified = self.evaluator.verify_otp_and_reset(recovery_code)
+        if verified:
+            print(f"  * Verification Status: {Colors.GREEN}CONFIRMED!{Colors.RESET} Session state restored, Threat Risk reset to 0.05.\n")
+        else:
+            print(f"  * Verification Status: {Colors.RED}FAILED!{Colors.RESET}\n")
 
         # 2. AI Threat Intelligence Analysis
         print(f"{Colors.BOLD}[STEP 2: OFFLINE AI THREAT INTENT CLASSIFICATION]{Colors.RESET}")
@@ -629,7 +642,7 @@ class VivaDemoRunner:
         print(f"  [5] Stage 5 : Clean Owner Recovery & Executive AI Forensic PDF Generated\n")
 
         print_talking_point("Stage 5 - Recovery & Forensic Audit", [
-            "The owner regains control in seconds via OTP or master bypass without losing background work.",
+            "The owner regains control in seconds via OTP or configured emergency key without losing background work.",
             "Our offline AI intent engine categorizes the attacker's actions into formal MITRE ATT&CK tactics.",
             "A publication-ready, multi-page forensic PDF is compiled with SHA-256 digital evidence hashes.",
             "The system delivers continuous security from detection through deception to post-incident forensics."

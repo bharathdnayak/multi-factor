@@ -16,6 +16,7 @@
         "to_number": "+1234567890"
     },
     "security": {
-        "master_bypass_password": "admin"
+        "emergency_recovery_key": "",
+        "master_bypass_password": ""
     }
 }

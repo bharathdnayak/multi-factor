@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal
+setlocal enabledelayedexpansion
 title Multi-Factor Behavioral Drift Security - Environment Setup
 
 echo =====================================================================
@@ -10,17 +10,17 @@ echo       Department of Information Science and Engineering, NMAMIT
 echo =====================================================================
 echo.
 
-:: 1. Compute absolute project root directory
+:: 1. Compute absolute project root directory (handles paths with spaces)
 set "PROJECT_DIR=%~dp0"
 if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
 cd /d "%PROJECT_DIR%"
 
-echo [STEP 1/6] Validating Project Root Directory...
+echo [STEP 1/7] Validating Project Root Directory...
 echo [INFO] Project Directory: "%PROJECT_DIR%"
 echo.
 
 :: 2. Find System Python
-echo [STEP 2/6] Detecting Python Installation...
+echo [STEP 2/7] Detecting Python Installation (Python 3.10 - 3.14 required)...
 set "SYSTEM_PYTHON="
 for %%P in (python py) do (
     if not defined SYSTEM_PYTHON (
@@ -35,7 +35,7 @@ if not defined SYSTEM_PYTHON (
     echo Please install Python 3.10+ from https://www.python.org/downloads/
     echo Make sure to check "Add Python to PATH" during installation.
     echo.
-    if "%~1" neq "--no-pause" pause
+    if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 
@@ -44,7 +44,7 @@ echo [OK] Detected System Python: "%SYSTEM_PYTHON%"
 echo.
 
 :: 3. Setup Virtual Environment (.venv)
-echo [STEP 3/6] Configuring Virtual Environment...
+echo [STEP 3/7] Configuring Isolated Virtual Environment...
 set "VENV_DIR=%PROJECT_DIR%\.venv"
 if exist "%PROJECT_DIR%\venv\Scripts\python.exe" (
     set "PYTHON_EXE=%PROJECT_DIR%\venv\Scripts\python.exe"
@@ -67,7 +67,7 @@ echo [OK] Active Python Executable: "%PYTHON_EXE%"
 echo.
 
 :: 4. Install Dependencies
-echo [STEP 4/6] Installing and Validating Dependencies from requirements.txt...
+echo [STEP 4/7] Installing and Validating Dependencies from requirements.txt...
 echo [INFO] Upgrading pip...
 "%PYTHON_EXE%" -m pip install --upgrade pip --quiet
 
@@ -77,14 +77,14 @@ if errorlevel 1 (
     echo.
     echo [ERROR] Failed to install one or more dependencies from requirements.txt!
     echo Please inspect the error messages above.
-    if "%~1" neq "--no-pause" pause
+    if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 echo [OK] All dependencies successfully installed and verified!
 echo.
 
 :: 5. Initialize Runtime Directories and Configuration
-echo [STEP 5/6] Initializing Directory Structures and Safe Configurations...
+echo [STEP 5/7] Initializing Directory Structures and Safe Configurations...
 for %%D in (
     "data\sessions"
     "data\raw"
@@ -122,15 +122,21 @@ if not exist "%PROJECT_DIR%\.env" (
 echo.
 
 :: 6. Validate Machine Learning Models
-echo [STEP 6/6] Verifying Machine Learning Models and Sequence Detector...
-"%PYTHON_EXE%" "%PROJECT_DIR%\tests\verify_models.py"
+echo [STEP 6/7] Verifying Machine Learning Models and Sequence Detector...
+"%PYTHON_EXE%" "%PROJECT_DIR%\tests\verify_models.py" >nul 2>&1
 if errorlevel 1 (
-    echo.
     echo [WARNING] Model verification check failed or models require initial training.
-    echo [INFO] Automatically retraining models on baseline dataset...
+    echo [INFO] Automatically calibrating models on baseline dataset...
     "%PYTHON_EXE%" "%PROJECT_DIR%\ml_engine\train.py" --simulate
     "%PYTHON_EXE%" "%PROJECT_DIR%\tests\verify_models.py"
+) else (
+    echo [OK] Machine Learning Models and Deep SVDD detector verified!
 )
+echo.
+
+:: 7. Run Comprehensive Pre-Flight Verification Diagnostics
+echo [STEP 7/7] Running Pre-Flight Diagnostics (Sensors, Ollama, Ports, Camera)...
+"%PYTHON_EXE%" "%PROJECT_DIR%\scripts\check_prerequisites.py"
 
 echo.
 echo =====================================================================
@@ -146,11 +152,15 @@ echo.
 echo  2. Run Live Viva Defense Demonstration:
 echo     - Double-click 'run_viva_demo.bat' or 'bat\run_viva_demo.bat'
 echo.
-echo  3. Simulate Unauthorized Intrusion Breach:
+echo  3. Run Containerized Web Dashboard (Docker Compose - Optional):
+echo     - Run: docker compose up -d
+echo.
+echo  4. Simulate Unauthorized Intrusion Breach:
 echo     - Double-click 'bat\simulate_unauthorized_attack.bat'
 echo.
-echo  4. Run Full Component Test Suite:
+echo  5. Run Full Component Test Suite:
 echo     - Run: "%PYTHON_EXE%" scripts\verify_all_components.py
 echo =====================================================================
 echo.
-if "%~1" neq "--no-pause" pause
+if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause
+exit /b 0

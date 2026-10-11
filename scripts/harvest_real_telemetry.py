@@ -279,32 +279,60 @@ class RealTelemetryHarvester:
             self.mouse_scrolls += abs(dy)
 
     def _compute_mouse_kinematics(self):
-        """Calculates instantaneous velocity, acceleration, jerk, and straightness."""
+        """Calculates instantaneous velocity, acceleration, jerk, and straightness with robust dt filtering."""
         if len(self.mouse_coords) < 3:
             return
 
         coords = list(self.mouse_coords)
+        
+        # Display resolution normalization scale
+        scr_w = 1920
+        scr_h = 1080
+        if sys.platform == "win32" and win32gui is not None:
+            try:
+                import win32api
+                scr_w = win32api.GetSystemMetrics(0) or 1920
+                scr_h = win32api.GetSystemMetrics(1) or 1080
+            except Exception:
+                pass
+        diag = math.sqrt(scr_w**2 + scr_h**2)
+        norm_factor = 2202.9 / max(500.0, diag)
+
+        valid_velocities = []
+        valid_times = []
         for i in range(len(coords) - 1):
             x1, y1, t1 = coords[i]
             x2, y2, t2 = coords[i + 1]
             dt = t2 - t1
-            if dt > 0.001:
-                dist = math.hypot(x2 - x1, y2 - y1)
+            if dt >= 0.005:  # Require at least 5ms interval
+                dist = math.hypot((x2 - x1) * norm_factor, (y2 - y1) * norm_factor)
                 vel = dist / dt
-                if vel < 3500:
+                if vel <= 4000.0:  # Physical speed bound
+                    valid_velocities.append(vel)
+                    valid_times.append(t2)
                     self.velocities.append(vel)
 
-        if len(self.velocities) >= 2:
-            for i in range(len(self.velocities) - 1):
-                dv = self.velocities[i + 1] - self.velocities[i]
-                acc = dv / 0.05
-                self.accelerations.append(acc)
+        if len(valid_velocities) >= 2:
+            acc_times = []
+            valid_acc = []
+            for i in range(len(valid_velocities) - 1):
+                dv = valid_velocities[i + 1] - valid_velocities[i]
+                dt = valid_times[i + 1] - valid_times[i]
+                if dt >= 0.008:
+                    acc = dv / dt
+                    if abs(acc) <= 50000.0:
+                        valid_acc.append(acc)
+                        acc_times.append(valid_times[i + 1])
+                        self.accelerations.append(acc)
 
-        if len(self.accelerations) >= 2:
-            for i in range(len(self.accelerations) - 1):
-                da = self.accelerations[i + 1] - self.accelerations[i]
-                jerk = da / 0.05
-                self.jerks.append(jerk)
+            if len(valid_acc) >= 2:
+                for i in range(len(valid_acc) - 1):
+                    da = valid_acc[i + 1] - valid_acc[i]
+                    dt = acc_times[i + 1] - acc_times[i]
+                    if dt >= 0.012:
+                        jerk = da / dt
+                        if abs(jerk) <= 500000.0:
+                            self.jerks.append(jerk)
 
         if len(coords) >= 4:
             x_start, y_start, _ = coords[0]

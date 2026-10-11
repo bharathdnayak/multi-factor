@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal
+setlocal enabledelayedexpansion
 title Unauthorized Intrusion Attack Simulator - Behavioral Drift
 
 echo =====================================================================
@@ -34,7 +34,7 @@ if not defined PYTHON_EXE (
 if not defined PYTHON_EXE (
     echo [ERROR] Python was not found in PATH or in a virtual environment!
     echo Please ensure Python is installed and added to PATH.
-    pause
+    if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 
@@ -43,13 +43,35 @@ echo [INFO] Python Executable : "%PYTHON_EXE%"
 echo [INFO] Attack Script     : "%PROJECT_DIR%\scripts\simulate_unauthorized_attack.py"
 echo.
 
-:: 3. Run attack simulator with any passed parameters
-"%PYTHON_EXE%" "%PROJECT_DIR%\scripts\simulate_unauthorized_attack.py" %*
+:: Parse arguments to isolate --no-pause and pass other parameters to Python
+set "PY_ARGS="
+set "NO_PAUSE_FLAG="
+if "%NO_PAUSE%"=="1" set "NO_PAUSE_FLAG=1"
+
+:parse_args
+if "%~1"=="" goto end_parse
+if /i "%~1"=="--no-pause" (
+    set "NO_PAUSE_FLAG=1"
+) else (
+    set PY_ARGS=!PY_ARGS! "%~1"
+)
+shift
+goto parse_args
+:end_parse
+
+:: 3. Run attack simulator with forwarded parameters
+"%PYTHON_EXE%" "%PROJECT_DIR%\scripts\simulate_unauthorized_attack.py" %PY_ARGS%
+set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
-echo =====================================================================
-echo       UNAUTHORIZED ATTACK SIMULATION COMPLETED!                      
-echo =====================================================================
-echo Check data\forensics\ for newly captured intruder photos and reports.
+if %EXIT_CODE% equ 0 (
+    echo =====================================================================
+    echo       UNAUTHORIZED ATTACK SIMULATION COMPLETED!                      
+    echo =====================================================================
+    echo Check data\forensics\ for newly captured intruder photos and reports.
+) else (
+    echo [ERROR] Attack simulation finished with exit code %EXIT_CODE%.
+)
 echo.
-pause
+if not defined NO_PAUSE_FLAG pause
+exit /b %EXIT_CODE%

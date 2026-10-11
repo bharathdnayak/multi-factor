@@ -352,12 +352,38 @@ class DynamicRiskOrchestrator:
         Returns: (success: bool, status_message: str)
         """
         entered = str(entered_code).strip()
-        bypass_passwords = {"admin", "admin123", "123456"}
+        TRIVIAL_BLACKLIST = {"admin", "admin123", "123456", "password", "root", "guest", "default", "qwerty"}
 
-        is_valid = (
-            (active_otp and entered == str(active_otp).strip()) or
-            (entered in bypass_passwords)
-        )
+        # 1. Match against active 6-digit session OTP
+        is_valid = bool(active_otp and entered == str(active_otp).strip())
+
+        if not is_valid and entered.lower() in TRIVIAL_BLACKLIST:
+            self.step_up_failures += 1
+            remaining = self.max_step_up_failures - self.step_up_failures
+            if self.step_up_failures >= self.max_step_up_failures:
+                self.current_tier = RiskTier.TIER_3_HIGH
+                return False, "Maximum failed attempts exceeded. Escalating to Tier 3 Lockdown!"
+            return False, f"Trivial credential '{entered}' rejected. Remaining attempts: {remaining}"
+
+        # 2. Check configured emergency recovery key (must be non-trivial, >= 8 chars)
+        if not is_valid:
+            env_master = os.environ.get("EMERGENCY_RECOVERY_KEY") or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+            if env_master and len(env_master.strip()) >= 8:
+                clean_env = env_master.strip()
+                if clean_env.lower() not in TRIVIAL_BLACKLIST and entered == clean_env:
+                    is_valid = True
+
+        if not is_valid:
+            try:
+                from security.otp_service import get_alert_config
+                cfg = get_alert_config()
+                cfg_emergency = cfg.get("security", {}).get("emergency_recovery_key") or cfg.get("security", {}).get("master_bypass_password")
+                if cfg_emergency:
+                    clean_cfg = str(cfg_emergency).strip()
+                    if len(clean_cfg) >= 8 and clean_cfg.lower() not in TRIVIAL_BLACKLIST and entered == clean_cfg:
+                        is_valid = True
+            except Exception:
+                pass
 
         if is_valid:
             self.step_up_failures = 0
@@ -401,6 +427,10 @@ class DynamicRiskOrchestrator:
 __all__ = ["RiskTier", "RiskPolicyAction", "DynamicRiskOrchestrator", "StepUpToastWidget"]
 
 
+# Convenient aliases
+RiskOrchestrator = DynamicRiskOrchestrator
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("3-TIER DYNAMIC RISK POLICY ORCHESTRATOR - TEST HARNESS")
@@ -433,7 +463,12 @@ if __name__ == "__main__":
     # 4. Step-up Challenge Verification
     print("\n4. Testing Step-Up Verification...")
     orchestrator.current_tier = RiskTier.TIER_2_MEDIUM
-    success, msg = orchestrator.verify_step_up("admin")
+    # Trivial password rejection check
+    fail_res, fail_msg = orchestrator.verify_step_up("admin")
+    assert not fail_res, "Trivial admin password must be rejected"
+    
+    # Active OTP verification check
+    success, msg = orchestrator.verify_step_up("831187", active_otp="831187")
     print(f"   Verify Result: {success} | Message: {msg} | New Tier: {orchestrator.current_tier.value}")
     assert success
     assert orchestrator.current_tier == RiskTier.TIER_1_LOW

@@ -163,6 +163,20 @@ class DecoyWindowManager(QObject):
         else:
             self.bring_to_front(app_id)
 
+    def cycle_window(self, forward: bool = True) -> Optional[str]:
+        """Alt+Tab style window cycling among open or registered windows."""
+        keys = list(self.windows.keys())
+        if not keys:
+            return None
+        if self.active_app_id in keys:
+            curr_idx = keys.index(self.active_app_id)
+            next_idx = (curr_idx + 1 if forward else curr_idx - 1) % len(keys)
+        else:
+            next_idx = 0
+        next_app = keys[next_idx]
+        self.bring_to_front(next_app)
+        return next_app
+
 
 def get_window_manager() -> DecoyWindowManager:
     return DecoyWindowManager.get_instance()

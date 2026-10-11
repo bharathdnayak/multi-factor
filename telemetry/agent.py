@@ -1,4 +1,5 @@
 import time
+import collections
 import os
 import sys
 import json
@@ -350,6 +351,8 @@ class TelemetryAgent:
         self.last_release_time = None
         self.dwell_times = []
         self.flight_times = []
+        self.dwell_sequence = collections.deque(maxlen=30)
+        self.flight_sequence = collections.deque(maxlen=30)
         self.key_count = 0
         
         # In-App Specific Metrics
@@ -474,8 +477,11 @@ class TelemetryAgent:
             dwell = now - press_time
             if dwell <= 2.0:
                 self.dwell_times.append(dwell)
+                self.dwell_sequence.append(round(dwell, 4))
 
         flight = self.flight_times[-1] if self.flight_times else None
+        if flight is not None and flight <= 5.0:
+            self.flight_sequence.append(round(flight, 4))
         self.session_tracker.record_key_release(dwell, flight)
 
     # --- Mouse Callbacks & Stroke Analysis ---
@@ -505,7 +511,7 @@ class TelemetryAgent:
             self.session_tracker.record_mouse_event("scroll", delta=delta)
 
     def _process_stroke(self):
-        """Analyzes a single mouse movement stroke to extract physics features."""
+        """Analyzes a single mouse movement stroke to extract physics features with robust derivative filtering."""
         stroke = self.current_stroke
         self.current_stroke = []
         
@@ -516,47 +522,70 @@ class TelemetryAgent:
         y_coords = [p[1] for p in stroke]
         times = [p[2] for p in stroke]
         
-        dx = x_coords[-1] - x_coords[0]
-        dy = y_coords[-1] - y_coords[0]
+        # Display resolution normalization scale
+        scr_w = 1920
+        scr_h = 1080
+        if sys.platform == "win32" and win32api is not None:
+            try:
+                scr_w = win32api.GetSystemMetrics(0) or 1920
+                scr_h = win32api.GetSystemMetrics(1) or 1080
+            except Exception:
+                pass
+        diag = math.sqrt(scr_w**2 + scr_h**2)
+        norm_factor = 2202.9 / max(500.0, diag)
+        
+        dx = (x_coords[-1] - x_coords[0]) * norm_factor
+        dy = (y_coords[-1] - y_coords[0]) * norm_factor
         straight_dist = math.sqrt(dx**2 + dy**2)
         
         path_len = 0.0
         segment_velocities = []
+        valid_times = []
         
         for i in range(len(stroke) - 1):
-            seg_dx = x_coords[i+1] - x_coords[i]
-            seg_dy = y_coords[i+1] - y_coords[i]
+            seg_dx = (x_coords[i+1] - x_coords[i]) * norm_factor
+            seg_dy = (y_coords[i+1] - y_coords[i]) * norm_factor
             seg_dt = times[i+1] - times[i]
             
             dist = math.sqrt(seg_dx**2 + seg_dy**2)
             path_len += dist
             
-            if seg_dt > 0:
-                segment_velocities.append(dist / seg_dt)
+            # Enforce minimum 5ms time step to eliminate division by near-zero timer ticks
+            if seg_dt >= 0.005:
+                vel = dist / seg_dt
+                if vel <= 4000.0:  # Physical human cursor speed bound
+                    segment_velocities.append(vel)
+                    valid_times.append(times[i+1])
                 
         if path_len > 0:
             straightness = straight_dist / path_len
             self.straightness_scores.append(min(straightness, 1.0))
             
-        if len(segment_velocities) >= 1:
+        if len(segment_velocities) >= 2:
             self.velocities.extend(segment_velocities)
             
             segment_accelerations = []
+            acc_times = []
             for i in range(len(segment_velocities) - 1):
                 dv = segment_velocities[i+1] - segment_velocities[i]
-                dt = (times[i+2] - times[i]) / 2.0
-                if dt > 0:
-                    segment_accelerations.append(dv / dt)
+                dt = valid_times[i+1] - valid_times[i]
+                if dt >= 0.008:
+                    acc = dv / dt
+                    if abs(acc) <= 50000.0:  # Sensor noise filter
+                        segment_accelerations.append(acc)
+                        acc_times.append(valid_times[i+1])
             
-            if segment_accelerations:
+            if len(segment_accelerations) >= 2:
                 self.accelerations.extend(segment_accelerations)
                 
                 segment_jerks = []
                 for i in range(len(segment_accelerations) - 1):
                     da = segment_accelerations[i+1] - segment_accelerations[i]
-                    dt = (times[i+3] - times[i+1]) / 2.0
-                    if dt > 0:
-                        segment_jerks.append(da / dt)
+                    dt = acc_times[i+1] - acc_times[i]
+                    if dt >= 0.012:
+                        jerk = da / dt
+                        if abs(jerk) <= 500000.0:  # Jerk noise filter
+                            segment_jerks.append(jerk)
                 
                 if segment_jerks:
                     self.jerks.extend(segment_jerks)
@@ -604,6 +633,16 @@ class TelemetryAgent:
                     special_ratio, self.mouse_scrolls, pause_ratio
                 )
 
+            # Build Deep SVDD 30-item sequence arrays
+            d_seq = list(self.dwell_sequence)
+            f_seq = list(self.flight_sequence)
+            pad_d = avg_dwell if avg_dwell > 0 else 0.092
+            pad_f = avg_flight if avg_flight > 0 else 0.145
+            while len(d_seq) < 30:
+                d_seq.append(round(pad_d, 4))
+            while len(f_seq) < 30:
+                f_seq.append(round(pad_f, 4))
+
             # Construct the feature JSON
             telemetry_row = {
                 "timestamp": time.time(),
@@ -631,7 +670,9 @@ class TelemetryAgent:
                 "active_app": app_name,
                 "active_window": win_title,
                 "cpu_usage": float(cpu),
-                "ram_usage_mb": float(ram)
+                "ram_usage_mb": float(ram),
+                "dwell_sequence": d_seq[:30],
+                "flight_sequence": f_seq[:30]
             }
             
             # Merge Passive Environmental Ambient Sensors (TASK-8)

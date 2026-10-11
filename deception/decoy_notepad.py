@@ -1,7 +1,8 @@
 import os
 import sys
 import time
-from typing import Optional
+import re
+from typing import Optional, List
 
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
@@ -12,6 +13,9 @@ from PyQt6.QtGui import QFont, QColor, QCursor, QTextCursor
 
 from deception.virtual_fs import get_vfs, PathUtils
 from deception.forensic_tracker import get_tracker
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class FindReplaceDialog(QDialog):
     """Windows Notepad Find and Replace Dialog."""
@@ -140,10 +144,11 @@ class DecoyNotepad(QFrame):
     - Undo / Redo
     - Forensic telemetry recording
     """
-    def __init__(self, sandbox_dir: str, log_dir: str, parent=None, initial_file: Optional[str] = None):
+    def __init__(self, sandbox_dir: Optional[str] = None, log_dir: Optional[str] = None, parent=None, initial_file: Optional[str] = None):
         super().__init__(parent)
-        self.sandbox_dir = sandbox_dir
-        self.log_path = os.path.join(log_dir, "honeypot_commands.log")
+        self.sandbox_dir = sandbox_dir or os.path.join(PROJECT_ROOT, "data", "sandbox")
+        log_directory = log_dir or os.path.join(PROJECT_ROOT, "data", "forensics")
+        self.log_path = os.path.join(log_directory, "honeypot_commands.log")
         self.tracker = get_tracker()
         self.vfs = get_vfs()
 
@@ -155,6 +160,7 @@ class DecoyNotepad(QFrame):
         self.current_vfs_path: Optional[str] = initial_file or "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt"
         self.is_dirty: bool = False
         self.word_wrap_enabled: bool = True
+        self.recent_files: List[str] = []
 
         self.init_ui()
         self.load_initial_file()
@@ -325,6 +331,7 @@ class DecoyNotepad(QFrame):
 
         # 3. Main Text Editor
         self.editor = QTextEdit()
+        self.text_area = self.editor
         self.editor.cursorPositionChanged.connect(self.update_status_bar)
         self.editor.textChanged.connect(self.on_content_changed)
         layout.addWidget(self.editor, 1)
@@ -392,6 +399,9 @@ class DecoyNotepad(QFrame):
         try:
             content = self.vfs.read_file(norm)
             self.current_vfs_path = norm
+            if norm not in self.recent_files:
+                self.recent_files.insert(0, norm)
+                self.recent_files = self.recent_files[:10]
             self.editor.blockSignals(True)
             self.editor.setPlainText(content)
             self.editor.blockSignals(False)
@@ -423,6 +433,23 @@ class DecoyNotepad(QFrame):
         except Exception:
             pass
 
+    def _detect_sensitive_patterns(self, text: str):
+        """Scans editor text for patterns like AWS keys, private keys, database passwords."""
+        patterns = {
+            "AWS_ACCESS_KEY": r"\bAKIA[0-9A-Z]{16}\b",
+            "PRIVATE_KEY_HEADER": r"-----BEGIN (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY-----",
+            "PASSWORD_ASSIGNMENT": r"(?i)(?:password|passwd|pwd|secret|api_key|token)\s*[:=]\s*['\"]?([^'\"\s\n]{4,})['\"]?",
+            "GENERIC_SECRET_TOKEN": r"\b(?:ghp_[A-Za-z0-9_]{36}|xox[baprs]-[A-Za-z0-9-]{10,})\b"
+        }
+        for name, pattern in patterns.items():
+            if re.search(pattern, text):
+                self.tracker.record_action(
+                    action_type="SENSITIVE_DATA_DETECTED",
+                    target=self.current_vfs_path or "Untitled",
+                    details={"pattern_type": name, "file": self.current_vfs_path}
+                )
+                break
+
     def save_file(self) -> bool:
         """Saves current content back into the VirtualFileSystem."""
         if not self.current_vfs_path:
@@ -431,6 +458,7 @@ class DecoyNotepad(QFrame):
         content = self.editor.toPlainText()
         try:
             self.vfs.write_file(self.current_vfs_path, content, append=False)
+            self._detect_sensitive_patterns(content)
             self.is_dirty = False
             self.update_title()
             self.tracker.record_file_access(self.current_vfs_path, action="SAVE")

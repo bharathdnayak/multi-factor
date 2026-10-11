@@ -61,7 +61,7 @@ def get_alert_config():
 
     tg_bot = env_vars.get("TELEGRAM_BOT_TOKEN", tg_cfg.get("bot_token", ""))
     tg_chat = env_vars.get("TELEGRAM_CHAT_ID", tg_cfg.get("chat_id", ""))
-    bypass_pwd = env_vars.get("MASTER_BYPASS_PASSWORD", sec_cfg.get("master_bypass_password", "admin"))
+    bypass_pwd = env_vars.get("EMERGENCY_RECOVERY_KEY", env_vars.get("MASTER_BYPASS_PASSWORD", sec_cfg.get("emergency_recovery_key", sec_cfg.get("master_bypass_password", ""))))
 
     config = {
         "email": {
@@ -79,6 +79,7 @@ def get_alert_config():
         },
         "twilio": tw_cfg,
         "security": {
+            "emergency_recovery_key": bypass_pwd,
             "master_bypass_password": bypass_pwd
         }
     }
@@ -99,10 +100,21 @@ def load_or_create_config():
     return get_alert_config()
 
 
+import secrets
+
+
 def generate_otp():
-    """Generates a cryptographically secure 6-digit OTP code."""
-    rng = random.SystemRandom()
-    return f"{rng.randint(100000, 999999)}"
+    """
+    Generates an unpredictable, cryptographically secure 6-digit OTP code using CSPRNG.
+    Only allows isolated automated test override via FIXED_TEST_OTP or ACTIVE_OTP_OVERRIDE env vars.
+    Normal runtime always generates fresh, unpredictable numbers.
+    """
+    env_override = os.environ.get("ACTIVE_OTP_OVERRIDE", os.environ.get("FIXED_TEST_OTP"))
+    if env_override and len(env_override.strip()) == 6 and env_override.strip().isdigit():
+        return env_override.strip()
+
+    # Generate unpredictable 6-digit number [100000, 999999] via OS CSPRNG
+    return f"{secrets.randbelow(900000) + 100000}"
 
 
 def send_email_otp(otp, photo_path=None, threat_info=None):

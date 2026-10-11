@@ -1,4 +1,13 @@
-version: '3.8'
+# ==============================================================================
+# Multi-Factor Behavioral Drift Continuous Security - Docker Compose
+# Services: Containerized Cyber-Ops Web Dashboard & REST Monitoring Engine
+#
+# Architectural Context:
+# Native Windows components (PyQt6 Honeypot Desktop, pynput OS input hooks,
+# win32gui window interception, direct webcam capture) run on the host.
+# This compose configuration provides a portable, containerized SOC Dashboard
+# and REST API engine connecting to shared persistent volumes.
+# ==============================================================================
 
 services:
   cyber-ops-dashboard:
@@ -7,12 +16,28 @@ services:
       dockerfile: Dockerfile
     container_name: behavioral_drift_dashboard
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
       - HEADLESS_TEST=1
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:4b}
+      - MASTER_BYPASS_PASSWORD=${MASTER_BYPASS_PASSWORD:-admin}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

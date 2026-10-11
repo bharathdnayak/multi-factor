@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QColor, QCursor, QIcon, QAction
 
 from deception.virtual_fs import get_vfs, PathUtils, VirtualNode
 from deception.forensic_tracker import get_tracker
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class ItemPropertiesDialog(QDialog):
@@ -121,10 +122,10 @@ class DecoyExplorer(QFrame):
     - Search field querying the virtual filesystem
     - Real-time synchronization with PowerShell and Notepad via change listeners
     """
-    def __init__(self, sandbox_dir: str, log_dir: str, parent=None):
+    def __init__(self, sandbox_dir: Optional[str] = None, log_dir: Optional[str] = None, parent=None):
         super().__init__(parent)
-        self.sandbox_dir = sandbox_dir
-        self.log_dir = log_dir
+        self.sandbox_dir = sandbox_dir or os.path.join(PROJECT_ROOT, "data", "sandbox")
+        self.log_dir = log_dir or os.path.join(PROJECT_ROOT, "data", "forensics")
         self.tracker = get_tracker()
         self.vfs = get_vfs()
 
@@ -508,6 +509,19 @@ class DecoyExplorer(QFrame):
         splitter.setSizes([190, 670])
         layout.addWidget(splitter, 1)
 
+        # 4. Status Bar
+        self.status_bar = QFrame()
+        self.status_bar.setFixedHeight(22)
+        self.status_bar.setStyleSheet("background-color: #1f1f1f; border-top: 1px solid #2d2d2d; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;")
+        sb_lay = QHBoxLayout()
+        sb_lay.setContentsMargins(10, 0, 10, 0)
+        self.status_lbl = QLabel("0 items")
+        self.status_lbl.setStyleSheet("color: #888888; font-family: 'Segoe UI', sans-serif; font-size: 11px;")
+        sb_lay.addWidget(self.status_lbl)
+        sb_lay.addStretch()
+        self.status_bar.setLayout(sb_lay)
+        layout.addWidget(self.status_bar)
+
         self.setLayout(layout)
 
     def populate_sidebar_tree(self):
@@ -688,10 +702,24 @@ class DecoyExplorer(QFrame):
         self.render_items_list(results)
 
     def render_current_folder(self):
+        if PathUtils.path_equal(self.current_path, "C:\\$Recycle.Bin"):
+            rb_entries = self.vfs.get_recycle_bin_items()
+            items = []
+            for entry in rb_entries:
+                node = entry.node
+                setattr(node, "_recycle_entry_id", entry.entry_id)
+                setattr(node, "_recycle_original_path", entry.original_path)
+                items.append(node)
+            self.render_items_list(items)
+            return
+
         items = self.vfs.list_dir(self.current_path, include_hidden=False)
         self.render_items_list(items)
 
     def render_items_list(self, items: List[VirtualNode]):
+        if hasattr(self, 'status_lbl'):
+            self.status_lbl.setText(f"{len(items)} items")
+
         if not items:
             self.empty_lbl.show()
             self.details_table.setRowCount(0)
@@ -789,9 +817,20 @@ class DecoyExplorer(QFrame):
         full_path = PathUtils.join(self.current_path, file_name)
         self.tracker.record_file_access(full_path, action="OPEN")
 
+        # 1. Web links / HTML documents -> Decoy Chrome
+        web_exts = [".html", ".htm", ".url"]
+        if any(file_name.lower().endswith(ext) for ext in web_exts):
+            parent = self.parent()
+            if parent and hasattr(parent, 'open_chrome'):
+                parent.open_chrome()
+            elif parent and hasattr(parent, 'decoy_chrome'):
+                parent.decoy_chrome.show()
+                parent.decoy_chrome.raise_()
+            return
+
+        # 2. Text / Source / Secrets -> Decoy Notepad
         text_exts = [".txt", ".env", ".ini", ".json", ".log", ".py", ".md", ".sql", ".csv"]
         if any(file_name.lower().endswith(ext) for ext in text_exts) or "password" in file_name.lower():
-            # Open via DecoyNotepad
             parent = self.parent()
             if parent and hasattr(parent, 'open_notepad'):
                 parent.open_notepad(file_path=full_path)
@@ -868,6 +907,25 @@ class DecoyExplorer(QFrame):
             row = selected_item.row()
             node = self.details_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
 
+        # Special Context Menu when navigating C:\$Recycle.Bin
+        if PathUtils.path_equal(self.current_path, "C:\\$Recycle.Bin"):
+            if node:
+                restore_act = menu.addAction("Restore")
+                restore_act.triggered.connect(lambda: self.restore_recycle_bin_node(node))
+                del_act = menu.addAction("Delete Permanently")
+                del_act.triggered.connect(lambda: self.permanently_delete_node(node))
+                menu.addSeparator()
+                prop_act = menu.addAction("Properties")
+                prop_act.triggered.connect(lambda: self.show_properties(node))
+            else:
+                empty_act = menu.addAction("Empty Recycle Bin")
+                empty_act.triggered.connect(self.empty_recycle_bin)
+                ref_act = menu.addAction("Refresh")
+                ref_act.triggered.connect(self.refresh_current_folder)
+            widget = self.details_table if self.view_mode == "details" else self.icons_area
+            menu.exec(widget.mapToGlobal(pos))
+            return
+
         if node:
             # Context menu for clicked item
             open_act = menu.addAction(f"Open")
@@ -920,6 +978,26 @@ class DecoyExplorer(QFrame):
 
         widget = self.details_table if self.view_mode == "details" else self.icons_area
         menu.exec(widget.mapToGlobal(pos))
+
+    def restore_recycle_bin_node(self, node: VirtualNode):
+        entry_id = getattr(node, "_recycle_entry_id", node.name)
+        orig = getattr(node, "_recycle_original_path", node.path)
+        self.vfs.restore_from_recycle_bin(entry_id)
+        self.tracker.record_file_access(orig, action="RESTORE_FILE")
+        self.refresh_current_folder()
+
+    def empty_recycle_bin(self):
+        self.vfs.empty_recycle_bin()
+        self.tracker.record_action("EMPTY_RECYCLE_BIN", target="C:\\$Recycle.Bin", application="FILE_EXPLORER")
+        self.refresh_current_folder()
+
+    def permanently_delete_node(self, node: VirtualNode):
+        entry_id = getattr(node, "_recycle_entry_id", node.name)
+        with self.vfs._lock:
+            if entry_id in self.vfs.recycle_bin:
+                del self.vfs.recycle_bin[entry_id]
+        self.tracker.record_file_access(node.name, action="DELETE_PERMANENT")
+        self.refresh_current_folder()
 
     def set_view_mode(self, mode: str):
         if self.view_mode != mode:

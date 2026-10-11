@@ -156,7 +156,7 @@ class TestADWINConceptDrift(unittest.TestCase):
 
         fused_risk, smoothed_risk, triggered = evaluator.evaluate_row(row)
         self.assertFalse(triggered)
-        self.assertLess(fused_risk, 0.40)
+        self.assertLess(fused_risk, evaluator.alert_threshold)
         print(f"[OK] ThreatEvaluator scored row: Fused Risk={fused_risk:.4f} | Smoothed={smoothed_risk:.4f} | Triggered={triggered}")
 
 

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-setlocal
+setlocal enabledelayedexpansion
 title Continuous Behavioral Data Collector - Multi-Application
 
 echo =====================================================================
@@ -40,7 +40,7 @@ if not defined PYTHON_EXE (
 if not defined PYTHON_EXE (
     echo [ERROR] Python was not found in PATH or in a venv!
     echo Please ensure Python is installed and added to PATH.
-    pause
+    if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 
@@ -50,8 +50,26 @@ echo [INFO] Data Storage      : "%PROJECT_DIR%\data\sessions"
 echo [INFO] Starting Live Telemetry and Micro-Session Profiling...
 echo.
 
-"%PYTHON_EXE%" "%PROJECT_DIR%\telemetry\agent.py" --friendly %*
+:: Parse arguments to isolate --no-pause and pass other parameters to Python
+set "PY_ARGS="
+set "NO_PAUSE_FLAG="
+if "%NO_PAUSE%"=="1" set "NO_PAUSE_FLAG=1"
+
+:parse_args
+if "%~1"=="" goto end_parse
+if /i "%~1"=="--no-pause" (
+    set "NO_PAUSE_FLAG=1"
+) else (
+    set PY_ARGS=!PY_ARGS! "%~1"
+)
+shift
+goto parse_args
+:end_parse
+
+"%PYTHON_EXE%" "%PROJECT_DIR%\telemetry\agent.py" --friendly %PY_ARGS%
+set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
 echo [INFO] Collector stopped. All micro-sessions have been safely saved.
-pause
+if not defined NO_PAUSE_FLAG pause
+exit /b %EXIT_CODE%

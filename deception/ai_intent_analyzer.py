@@ -80,6 +80,10 @@ def sanitize_narrative(text) -> str:
     return val.strip()
 
 
+# Module-level cache of models that timed out or failed in the current session
+_FAILED_OLLAMA_MODELS = set()
+
+
 class IntruderIntentAnalyzer:
     """
     Offline AI / LLM Threat Intelligence Engine for Deception Environments.
@@ -98,10 +102,16 @@ class IntruderIntentAnalyzer:
     with seamless multi-model fallback and an authoritative rule-based forensic
     engine to guarantee zero downgrading of critical threat activities.
     """
-    def __init__(self, ollama_url="http://localhost:11434", model_name=None, timeout=45):
-        self.ollama_url = ollama_url.rstrip("/")
+    def __init__(self, ollama_url="http://localhost:11434", model_name=None, timeout=None):
+        self.ollama_url = (os.environ.get("OLLAMA_URL") or ollama_url).rstrip("/")
         self.model_name = model_name or os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
-        self.timeout = timeout
+        if timeout is not None:
+            self.timeout = timeout
+        else:
+            try:
+                self.timeout = int(os.environ.get("OLLAMA_TIMEOUT", "15"))
+            except ValueError:
+                self.timeout = 15
         self.tracker = get_tracker()
 
     def check_ollama_available(self):
@@ -301,6 +311,145 @@ class IntruderIntentAnalyzer:
             "delete_count": len(delete_events)
         }
 
+    def extract_behavioral_indicators(self, timeline=None):
+        """
+        Derives structured, explainable behavioral indicators from recorded forensic events.
+        Every indicator cites the specific supporting event_id references.
+        Returns:
+            dict containing:
+            - distinct_applications: list of apps with event_ids
+            - virtual_directories_visited: list of directories with event_ids
+            - sensitive_files_targeted: list of sensitive files with access counts and event_ids
+            - file_operations_summary: completed vs failed operations with event_ids
+            - rapid_navigation_bursts: list of burst clusters (>=3 actions in <=5s) with event_ids
+            - recon_to_exfil_latency: latency seconds between first recon and first sensitive exfil/access
+            - behavioral_indicator_score: composite risk score (0.0 to 1.0)
+        """
+        if timeline is None:
+            timeline = self.tracker.get_timeline()
+
+        apps_map = {}
+        dirs_map = {}
+        sensitive_map = {}
+        completed_ops = []
+        failed_ops = []
+        recon_times = []
+        sensitive_times = []
+        timestamps = []
+
+        sensitive_keywords = [
+            "password", "secret", "credential", "recovery_keys", "vault",
+            "database_backup", "key", "token", "salary", "financial", "tax", "banking"
+        ]
+        recon_keywords = [
+            "whoami", "ipconfig", "netstat", "arp", "route", "ping",
+            "net user", "nmap", "systeminfo", "tasklist"
+        ]
+
+        for idx, ev in enumerate(timeline):
+            eid = ev.get("event_id", f"EVT-{idx+1:04d}")
+            app = ev.get("application", "")
+            action = str(ev.get("action", ev.get("action_type", ""))).upper()
+            target = str(ev.get("target", ev.get("target_virtual_path", "")))
+            outcome = str(ev.get("result", ev.get("outcome", "SUCCESS"))).upper()
+            elapsed = ev.get("elapsed_seconds", 0)
+            if not elapsed and "elapsed_ms" in ev:
+                elapsed = ev["elapsed_ms"] / 1000.0
+
+            timestamps.append((elapsed, eid))
+
+            if app:
+                apps_map.setdefault(app, []).append(eid)
+
+            if "FOLDER" in action or action == "FOLDER_NAVIGATED":
+                if target:
+                    dirs_map.setdefault(target, []).append(eid)
+
+            target_lower = target.lower()
+            if any(sk in target_lower for sk in sensitive_keywords) or action in ("CREDENTIAL_TRAP", "SENSITIVE_DATA_DETECTED"):
+                entry = sensitive_map.setdefault(target or "sensitive_asset", {"access_count": 0, "event_ids": []})
+                entry["access_count"] += 1
+                entry["event_ids"].append(eid)
+                sensitive_times.append((elapsed, eid))
+
+            if any(rk in target_lower for rk in recon_keywords) or action in ("SHELL_COMMAND", "RECON"):
+                recon_times.append((elapsed, eid))
+
+            if outcome in ("SUCCESS", "OK"):
+                if action in ("FILE_VIEW", "FILE_MODIFY", "FILE_SAVE", "FILE_DELETE", "RESTORE_FILE", "CREATE_FILE", "CREATE_FOLDER", "DOWNLOAD", "FILE_VIEWED", "FILE_OPENED"):
+                    completed_ops.append(eid)
+            else:
+                failed_ops.append(eid)
+
+        # Detect rapid navigation bursts: >= 3 events within a 5.0-second window
+        bursts = []
+        if len(timestamps) >= 3:
+            for i in range(len(timestamps)):
+                burst_group = [timestamps[i]]
+                for j in range(i + 1, len(timestamps)):
+                    if timestamps[j][0] - timestamps[i][0] <= 5.0:
+                        burst_group.append(timestamps[j])
+                    else:
+                        break
+                if len(burst_group) >= 3:
+                    burst_eids = [b[1] for b in burst_group]
+                    if not any(set(burst_eids).issubset(set(b["event_ids"])) for b in bursts):
+                        bursts.append({
+                            "duration_seconds": round(burst_group[-1][0] - burst_group[0][0], 2),
+                            "event_count": len(burst_group),
+                            "event_ids": burst_eids
+                        })
+
+        # Recon-to-exfiltration latency
+        latency = None
+        recon_eid = None
+        sensitive_eid = None
+        if recon_times and sensitive_times:
+            first_recon = recon_times[0]
+            first_sens_after = next((s for s in sensitive_times if s[0] >= first_recon[0]), None)
+            if first_sens_after:
+                latency = round(first_sens_after[0] - first_recon[0], 2)
+                recon_eid = first_recon[1]
+                sensitive_eid = first_sens_after[1]
+            else:
+                latency = round(abs(sensitive_times[0][0] - first_recon[0]), 2)
+                recon_eid = first_recon[1]
+                sensitive_eid = sensitive_times[0][1]
+
+        indicator_score = 0.05
+        if sensitive_map:
+            indicator_score += min(0.40, len(sensitive_map) * 0.15)
+        if bursts:
+            indicator_score += min(0.20, len(bursts) * 0.10)
+        if failed_ops:
+            indicator_score += min(0.15, len(failed_ops) * 0.05)
+        if latency is not None and latency < 30.0:
+            indicator_score += 0.20
+        indicator_score = min(1.0, round(indicator_score, 2))
+
+        return {
+            "distinct_applications": [{"application": app, "event_ids": eids, "action_count": len(eids)} for app, eids in apps_map.items()],
+            "virtual_directories_visited": [{"directory": d, "event_ids": eids, "visit_count": len(eids), "event_id": eids[0] if eids else ""} for d, eids in dirs_map.items()],
+            "sensitive_files_targeted": [
+                {"file": f, "access_count": data["access_count"], "revisited": data["access_count"] > 1, "event_ids": data["event_ids"], "event_id": data["event_ids"][0] if data["event_ids"] else "", "access_mode": "SENSITIVE_ACCESS"}
+                for f, data in sensitive_map.items()
+            ],
+            "file_operations_summary": {
+                "completed_count": len(completed_ops),
+                "completed_event_ids": completed_ops,
+                "failed_count": len(failed_ops),
+                "failed_event_ids": failed_ops,
+                "total_operations": len(completed_ops) + len(failed_ops)
+            },
+            "rapid_navigation_bursts": bursts,
+            "recon_to_exfil_latency": {
+                "latency_seconds": latency,
+                "initial_recon_event_id": recon_eid,
+                "first_sensitive_event_id": sensitive_eid
+            },
+            "behavioral_indicator_score": indicator_score
+        }
+
     def analyze_session(self, timeline=None, stats=None):
         """
         Main entry point: Generates comprehensive cybersecurity intent assessment.
@@ -315,8 +464,9 @@ class IntruderIntentAnalyzer:
         if not timeline or len(timeline) == 0:
             return self._build_empty_session_report()
 
-        # Compute deterministic baseline analysis
+        # Compute deterministic baseline analysis and explainable behavioral indicators
         det_eval = self.evaluate_deterministic_threat(timeline, stats)
+        det_eval["behavioral_indicators"] = self.extract_behavioral_indicators(timeline)
 
         # Attempt to run via local Ollama LLM
         is_ollama_up, installed_models = self.check_ollama_available()
@@ -333,6 +483,9 @@ class IntruderIntentAnalyzer:
                 if avail not in models_to_try:
                     models_to_try.append(avail)
 
+            # Filter out models that already timed out or failed in this session
+            models_to_try = [m for m in models_to_try if m not in _FAILED_OLLAMA_MODELS]
+
             for chosen_model in models_to_try:
                 try:
                     print(f"[AI INTENT] Querying local offline Ollama model '{chosen_model}' (DFIR Cyber Investigation Team role)...", flush=True)
@@ -340,6 +493,7 @@ class IntruderIntentAnalyzer:
                     if llm_result:
                         return self._parse_llm_response(llm_result, chosen_model, stats, raw_prompt, timeline, det_eval)
                 except Exception as e:
+                    _FAILED_OLLAMA_MODELS.add(chosen_model)
                     print(f"[AI INTENT] [WARNING] Ollama model '{chosen_model}' issue: {e}. Trying next option...", file=sys.stderr, flush=True)
 
         # Fallback: Authoritative Expert Forensic Rule-Based Engine
@@ -457,7 +611,7 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "options": {
                 "temperature": 0.15,
                 "top_p": 0.9,
-                "num_predict": 1200
+                "num_predict": 500
             }
         }
         
@@ -725,7 +879,8 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "recommended_actions": recommendations,
             "recommendations": recommendations,
             "mitre_tactics": mitre_tactics,
-            "stats_summary": stats
+            "stats_summary": stats,
+            "behavioral_indicators": det_eval.get("behavioral_indicators", {})
         }
 
         self._record_audit_log({
@@ -836,7 +991,8 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "recommended_actions": recommendations,
             "recommendations": recommendations,
             "mitre_tactics": mitre_tactics,
-            "stats_summary": stats
+            "stats_summary": stats,
+            "behavioral_indicators": det_eval.get("behavioral_indicators", {}) if det_eval else self.extract_behavioral_indicators(timeline)
         }
 
     def _build_empty_session_report(self):
@@ -865,8 +1021,15 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
                 {"priority": 1, "action": "No immediate containment required. Maintain continuous biometric monitoring.", "timeframe": "Ongoing"}
             ],
             "mitre_tactics": ["T1082 - System Information Discovery"],
-            "stats_summary": {"total_actions": 0}
+            "stats_summary": {"total_actions": 0},
+            "behavioral_indicators": self.extract_behavioral_indicators([])
         }
+
+
+def extract_behavioral_indicators(timeline=None):
+    """Module-level convenience function for extracting explainable behavioral indicators."""
+    analyzer = IntruderIntentAnalyzer()
+    return analyzer.extract_behavioral_indicators(timeline)
 
 
 if __name__ == "__main__":

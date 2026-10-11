@@ -1140,6 +1140,37 @@ class DecoyChrome(QFrame):
     def on_drive_file_clicked(self, filename):
         self.tracker.record_file_access(f"CloudDrive: {filename}", action="DOWNLOAD_ATTEMPT")
         print(f"[DECEPTION CHROME] Intruder clicked sensitive cloud file: '{filename}'", flush=True)
+        try:
+            from deception.virtual_fs import get_vfs
+            vfs = get_vfs()
+            current_user = os.environ.get("USERNAME", "Dell")
+            user_downloads = f"C:\\Users\\{current_user}\\Downloads"
+            dest_dir = user_downloads if vfs.exists(user_downloads) else "C:\\Users\\Dell\\Downloads"
+            if not vfs.exists(dest_dir):
+                vfs.mkdir(dest_dir, parents=True)
+            vfs_download_path = f"{dest_dir}\\{filename}"
+            synthetic_content = (
+                f"# ============================================================\n"
+                f"# [DECOY CORPORATE CLOUD VAULT DOWNLOAD]\n"
+                f"# Asset Name: {filename}\n"
+                f"# Download Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"# Classification: Internal Confidential\n"
+                f"# ============================================================\n\n"
+                f"[Decoy Payload Data for {filename}]\n"
+                f"Status: Synchronized via Decoy Chrome sandboxed gateway.\n"
+            )
+            vfs.create_file(vfs_download_path, content=synthetic_content, overwrite=True, notify=True)
+            self.tracker.record_event(
+                "BROWSER_DOWNLOAD_COMPLETED",
+                vfs_download_path,
+                {"filename": filename, "destination": vfs_download_path, "source": "CloudDrive"},
+                severity="SUSPICIOUS",
+                application="CHROME",
+                outcome="SUCCESS"
+            )
+            print(f"[DECEPTION CHROME] Download synchronized to VFS: '{vfs_download_path}'", flush=True)
+        except Exception as e:
+            print(f"[DECEPTION CHROME] Error synchronizing download to VFS: {e}", flush=True)
 
     def on_omnibox_enter(self):
         raw_url = self.omnibox.text().strip()

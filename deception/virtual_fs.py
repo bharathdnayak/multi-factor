@@ -2,8 +2,11 @@ import os
 import sys
 import time
 import copy
+import json
 import threading
 from typing import Optional, List, Dict, Tuple, Any, Callable
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class PathUtils:
     """Windows-specific path manipulation and normalization utilities."""
@@ -334,15 +337,24 @@ class VirtualFileSystem:
                 cls._instance = VirtualFileSystem()
             return cls._instance
 
-    def __init__(self):
+    def __init__(self, state_file_path: Optional[str] = None, seed_standard_dirs: bool = True):
         self._lock = threading.RLock()
         self.clipboard = VirtualClipboard()
         self.recycle_bin: Dict[str, VirtualRecycleBinEntry] = {}
         self.listeners: List[Callable[[str, str], None]] = []
+        self.state_file_path = state_file_path or os.path.join(PROJECT_ROOT, "data", "sandbox", "virtual_fs_state.json")
 
         # Root directory
         self.root = VirtualDirectory(name="C:", path="C:\\", icon="💾")
-        self._seed_filesystem()
+        
+        # Load persisted virtual state if present on disk, otherwise seed fresh Windows environment
+        loaded = False
+        if os.path.exists(self.state_file_path) and os.path.getsize(self.state_file_path) > 0 and seed_standard_dirs:
+            loaded = self.load_state(self.state_file_path)
+            
+        if not loaded and seed_standard_dirs:
+            self._seed_filesystem()
+            self.save_state(self.state_file_path)
 
     def register_change_listener(self, callback: Callable[[str, str], None]):
         """Registers a callback(action, path) invoked whenever VFS changes."""
@@ -361,6 +373,128 @@ class VirtualFileSystem:
                 listener(action, path)
             except Exception:
                 pass
+        # Auto-persist state changes to disk
+        try:
+            self.save_state()
+        except Exception:
+            pass
+
+    def _serialize_node(self, node: VirtualNode) -> Dict[str, Any]:
+        """Serializes a virtual node into a dictionary representation."""
+        data: Dict[str, Any] = {
+            "name": node.name,
+            "path": node.path,
+            "is_dir": node.is_dir,
+            "size": node.size,
+            "attributes": dict(node.attributes),
+            "created_time": node.created_time,
+            "modified_time": node.modified_time,
+            "icon": node.icon,
+        }
+        if node.is_dir and isinstance(node, VirtualDirectory):
+            data["children"] = [self._serialize_node(c) for c in node.children.values()]
+        elif isinstance(node, VirtualFile):
+            data["content"] = node.content
+        return data
+
+    def _deserialize_node(self, data: Dict[str, Any]) -> VirtualNode:
+        """Reconstructs a virtual node hierarchy from a serialized dictionary."""
+        is_dir = data.get("is_dir", False)
+        if is_dir:
+            dir_node = VirtualDirectory(
+                name=data.get("name", "New Folder"),
+                path=data.get("path", "C:\\"),
+                attributes=data.get("attributes", {"hidden": False, "readonly": False, "system": False}),
+                created_time=data.get("created_time", time.time()),
+                modified_time=data.get("modified_time", time.time()),
+                icon=data.get("icon", "📁")
+            )
+            for child_data in data.get("children", []):
+                child_node = self._deserialize_node(child_data)
+                dir_node.add_child(child_node)
+            return dir_node
+        else:
+            return VirtualFile(
+                name=data.get("name", "New File.txt"),
+                path=data.get("path", "C:\\New File.txt"),
+                content=data.get("content", ""),
+                size=data.get("size", None),
+                attributes=data.get("attributes", {"hidden": False, "readonly": False, "system": False}),
+                created_time=data.get("created_time", time.time()),
+                modified_time=data.get("modified_time", time.time()),
+                icon=data.get("icon", "📄")
+            )
+
+    def save_state(self, filepath: Optional[str] = None) -> bool:
+        """Persists the full VirtualFileSystem hierarchy and Recycle Bin to JSON."""
+        target_path = filepath or self.state_file_path
+        with self._lock:
+            try:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                recycle_data = {}
+                for k, entry in self.recycle_bin.items():
+                    recycle_data[k] = {
+                        "entry_id": entry.entry_id,
+                        "original_path": entry.original_path,
+                        "deleted_time": entry.deleted_time,
+                        "node": self._serialize_node(entry.node)
+                    }
+
+                payload = {
+                    "version": "2.0",
+                    "saved_at": time.time(),
+                    "root": self._serialize_node(self.root),
+                    "recycle_bin": recycle_data
+                }
+                temp_path = f"{target_path}.tmp"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2, ensure_ascii=False)
+                if os.path.exists(target_path):
+                    os.replace(temp_path, target_path)
+                else:
+                    os.rename(temp_path, target_path)
+                return True
+            except Exception as e:
+                print(f"[VFS] [WARNING] Failed to persist state to '{target_path}': {e}", file=sys.stderr)
+                return False
+
+    def load_state(self, filepath: Optional[str] = None) -> bool:
+        """Reconstructs the virtual filesystem state from persisted JSON."""
+        target_path = filepath or self.state_file_path
+        if not os.path.exists(target_path):
+            return False
+        with self._lock:
+            try:
+                with open(target_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                root_data = payload.get("root")
+                if not root_data:
+                    return False
+                self.root = self._deserialize_node(root_data)
+
+                self.recycle_bin.clear()
+                recycle_data = payload.get("recycle_bin", {})
+                for k, r_item in recycle_data.items():
+                    node = self._deserialize_node(r_item["node"])
+                    entry = VirtualRecycleBinEntry(r_item["original_path"], node)
+                    entry.entry_id = r_item.get("entry_id", k)
+                    entry.deleted_time = r_item.get("deleted_time", time.time())
+                    self.recycle_bin[entry.entry_id] = entry
+                return True
+            except Exception as e:
+                print(f"[VFS] [WARNING] Failed to load state from '{target_path}': {e}", file=sys.stderr)
+                return False
+
+    def reset_filesystem(self, clean_seed: bool = True):
+        """Cleans virtual state, re-seeds default enterprise Windows environment, and updates persistent storage."""
+        with self._lock:
+            self.recycle_bin.clear()
+            self.clipboard.clear()
+            self.root = VirtualDirectory(name="C:", path="C:\\", icon="💾")
+            if clean_seed:
+                self._seed_filesystem()
+            self.save_state()
+            self._notify_change("reset", "C:\\")
 
     def _seed_filesystem(self):
         """Populates authentic Windows 11 directory hierarchy and realistic honeytokens."""
@@ -378,6 +512,13 @@ class VirtualFileSystem:
             "C:\\ProgramData",
             "C:\\Users",
             "C:\\Users\\Public",
+            "C:\\Users\\Public\\Desktop",
+            "C:\\Users\\Public\\Documents",
+            "C:\\Users\\Public\\Downloads",
+            "C:\\Users\\Public\\Pictures",
+            "C:\\Users\\Public\\Music",
+            "C:\\Users\\Public\\Videos",
+            "C:\\Users\\Public\\AppData",
             "C:\\Users\\Administrator",
             "C:\\Users\\Dell",
             "C:\\Users\\Dell\\Desktop",
@@ -410,6 +551,22 @@ class VirtualFileSystem:
 
         for d in standard_dirs:
             self._mkdir_internal(d)
+
+        # Also seed current host machine username for authentic local desktop emulation
+        current_user = os.environ.get("USERNAME", "").strip()
+        if current_user and current_user.lower() not in ["dell", "administrator", "public", "system"]:
+            user_dirs = [
+                f"C:\\Users\\{current_user}",
+                f"C:\\Users\\{current_user}\\Desktop",
+                f"C:\\Users\\{current_user}\\Documents",
+                f"C:\\Users\\{current_user}\\Downloads",
+                f"C:\\Users\\{current_user}\\Pictures",
+                f"C:\\Users\\{current_user}\\AppData",
+                f"C:\\Users\\{current_user}\\AppData\\Local",
+                f"C:\\Users\\{current_user}\\AppData\\Roaming",
+            ]
+            for ud in user_dirs:
+                self._mkdir_internal(ud)
 
         # Mark hidden folders
         appdata_node = self.get_node("C:\\Users\\Dell\\AppData")
@@ -593,6 +750,53 @@ class VirtualFileSystem:
                 "C:\\Users\\Dell\\user_profile.ini",
                 "[User]\nUsername=Dell\nRole=Administrator\nTheme=Dark\nDomain=WORKGROUP\n",
                 None, "📄"
+            ),
+            (
+                "C:\\Users\\Public\\Documents\\Corporate_Acceptable_Use_Policy.txt",
+                (
+                    "CORPORATE ACCEPTABLE USE POLICY & DATA HANDLING DIRECTIVE\n\n"
+                    "1. Workstations are continuously monitored by endpoint behavioral drift sensors.\n"
+                    "2. Unauthorized access to corporate vaults, databases, or cloud infrastructure keys is strictly prohibited.\n"
+                    "3. Any elevated authentication prompt must be fulfilled via verified MFA token.\n"
+                    "4. Data exfiltration or copying of .env credentials constitutes a critical incident.\n"
+                ),
+                None, "📄"
+            ),
+            (
+                "C:\\Users\\Public\\Documents\\Shared_Printer_Configuration.pdf",
+                "%PDF-1.5 Corporate Network Printer Directives & IP Pool",
+                84000, "📄"
+            ),
+            (
+                "C:\\Users\\Dell\\Downloads\\vpn_client_installer_v4.2.exe",
+                "# Sandboxed VPN client executable binary stub",
+                2450000, "⚡"
+            ),
+            (
+                "C:\\Users\\Dell\\Downloads\\vendor_nda_agreement_template.docx",
+                "DOCX Corporate Mutual Confidentiality and Non-Disclosure Agreement",
+                142000, "📄"
+            ),
+            (
+                "C:\\Users\\Dell\\Pictures\\corporate_network_diagram_2026.png",
+                "# PNG Network Architecture Topology Schema",
+                520000, "🖼️"
+            ),
+            (
+                "C:\\Users\\Dell\\Documents\\Department_Staff_Roster_2026.csv",
+                "EmployeeID,FullName,Department,Email,Role\nE1001,Chirag R,Information Science,chirag.ise@nmamit.in,Project Lead\nE1002,Akash S,Information Science,akash.ise@nmamit.in,SecOps Analyst\nE1003,Pratheek K,Information Science,pratheek.ise@nmamit.in,DFIR Specialist\n",
+                None, "📊"
+            ),
+            (
+                "C:\\Users\\Dell\\Documents\\Project_Architecture_Notes.txt",
+                (
+                    "BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION & HONEYPOT ARCHITECTURE\n\n"
+                    "- Telemetry: Keystroke dynamics (Dwell/Flight), Mouse kinematics (Jerk/Straightness)\n"
+                    "- Fusion Engine: Modality-Aware Dynamic Weight Allocation\n"
+                    "- Deception Subsystem: Stateful Virtual Desktop with Sandboxed Decoy Apps\n"
+                    "- Incident Response: Offline Ollama Threat Intent Synthesis & Sealed PDF Forensics\n"
+                ),
+                None, "📝"
             )
         ]
 

@@ -1,0 +1,17 @@
+model_name,modality,operating_threshold,eer_threshold,eer_pct,far_pct,frr_pct,roc_auc,auc_ci_lower,auc_ci_upper,pr_auc,accuracy_pct,precision_pct,recall_pct,f1_score,genuine_samples,imposter_samples,latency_ms
+Scaled Manhattan Distance,Keystroke,0.2364,0.2364,9.32,1.5,17.14,0.9009,0.8489,0.9434,0.9496,94.44,94.26,98.5,0.9633,70,200,0.001
+Regularized Mahalanobis,Keystroke,0.0011,0.0017,4.68,0.0,20.0,0.9926,0.9872,0.9969,0.9957,94.81,93.46,100.0,0.9662,70,200,0.022
+One-Class SVM (RBF),Keystroke,0.0,0.0,4.68,0.0,20.0,0.9926,0.9872,0.9969,0.9957,94.81,93.46,100.0,0.9662,70,200,0.008
+Isolation Forest,Keystroke,0.3435,0.5,13.82,4.5,18.57,0.9736,0.9588,0.9868,0.9888,91.85,93.63,95.5,0.9455,70,200,0.558
+Deep SVDD 1D-CNN,Keystroke,0.1463,0.7294,41.96,4.5,95.71,0.6594,0.5873,0.7203,0.8804,71.85,74.03,95.5,0.8341,70,200,0.678
+Random Forest Classifier,Keystroke,0.6001,0.6375,5.0,3.5,17.14,0.9871,0.977,0.9929,0.9937,92.96,94.15,96.5,0.9531,70,200,
+Robust Kinematics Distance,Mouse,0.2381,0.3303,12.57,4.0,20.0,0.9048,0.8537,0.9477,0.9536,91.85,93.2,96.0,0.9458,70,200,0.002
+One-Class SVM (Mouse),Mouse,0.3777,0.4825,8.29,4.5,34.29,0.9525,0.9277,0.9739,0.9857,87.78,88.84,95.5,0.9205,70,200,
+Isolation Forest (Mouse),Mouse,0.1996,0.3347,10.5,3.5,18.57,0.9468,0.8939,0.9792,0.9674,92.59,93.69,96.5,0.9507,70,200,
+Context Isolation Forest,Context,0.083,0.255,39.54,4.5,94.29,0.6748,0.5907,0.7453,0.8569,72.22,74.32,95.5,0.8359,70,200,
+Markov Process Transitions,Context,0.0479,0.0484,42.89,0.0,100.0,0.405,0.3266,0.4782,0.7256,74.07,74.07,100.0,0.8511,70,200,
+Robust Cognitive Controller,Cognitive,0.05,0.1043,14.14,1.0,68.57,0.9314,0.9063,0.9568,0.9774,81.48,80.49,99.0,0.8879,70,200,
+Baseline Fixed Weight Fusion,Multimodal Fusion,0.3134,0.3626,5.39,4.5,32.86,0.9622,0.9367,0.9804,0.9889,88.15,89.25,95.5,0.9227,70,200,
+Calibrated 5-Factor Weighted Fusion,Multimodal Fusion,0.3552,0.3971,8.29,4.5,12.86,0.972,0.9516,0.9872,0.9912,93.33,95.5,95.5,0.955,70,200,
+Dynamic Modality-Aware Fusion (Adaptive),Multimodal Fusion,0.3234,0.5886,17.32,4.5,17.14,0.9403,0.9115,0.9698,0.9779,92.22,94.09,95.5,0.9479,70,200,
+Supervised Logistic Stacking Fusion,Multimodal Fusion,0.4277,0.7751,13.18,3.5,18.57,0.9629,0.9378,0.9808,0.9877,92.59,93.69,96.5,0.9507,70,200,

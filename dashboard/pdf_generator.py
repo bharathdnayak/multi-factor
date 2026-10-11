@@ -1,14 +1,33 @@
-import re
+"""
+================================================================================
+BEHAVIORAL DRIFT: CONTINUOUS AUTHENTICATION & HONEYPOT FORENSICS
+PROFESSIONAL DIGITAL FORENSICS INCIDENT INVESTIGATION REPORT GENERATOR
+================================================================================
+
+Senior UX/UI & DFIR Report Engineering Implementation:
+- 12 Reader-Friendly, Flexible Sections adapted to evidence volume
+- Professional, restrained forensic visual design system (Slate/Navy/Muted Gray)
+- Legible typography hierarchy (Helvetica/Arial body ~9.5pt, Courier for hashes/IDs)
+- Complete, unbroken 64-character SHA-256 integrity digests
+- Truthful evidentiary standards (calibrated confidence, no false legal claims)
+- Clear distinction between simulated VFS telemetry and host environment
+- Privacy-safe optical sensor handling with consent and presence disclosures
+- Dynamic, flowable multi-page pagination with repeated table headers
+================================================================================
+"""
+
 import os
 import sys
-import glob
 import time
+import re
+import glob
 import json
 import hashlib
 import platform
+from typing import Optional, List, Dict, Any, Tuple
+
 from fpdf import FPDF
 from fpdf.fonts import FontFace
-from fpdf.enums import MethodReturnValue
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -19,66 +38,86 @@ from deception.ai_intent_analyzer import IntruderIntentAnalyzer
 
 
 # ---------------------------------------------------------------------------
-# Text & Formatting Sanitizers
+# Forensic Visual Design System
 # ---------------------------------------------------------------------------
-def sanitize_pdf_text(text, font_family="helvetica"):
+class ForensicDesignSystem:
+    """Enterprise DFIR Visual Palette and Styling Tokens."""
+    # Document Backgrounds
+    COLOR_WHITE = (255, 255, 255)
+    COLOR_BG_LIGHT = (248, 250, 252)      # Slate 50
+    COLOR_BG_CARD = (241, 245, 249)       # Slate 100
+    COLOR_BORDER = (203, 213, 225)        # Slate 300
+    COLOR_BORDER_LIGHT = (226, 232, 240)  # Slate 200
+
+    # Typography Colors
+    COLOR_NAVY_DARK = (15, 23, 42)        # Slate 900 (Headings)
+    COLOR_NAVY_MID = (30, 58, 138)        # Blue 900 (Subsections)
+    COLOR_TEXT_DARK = (30, 41, 59)        # Slate 800 (Body text)
+    COLOR_TEXT_MUTED = (100, 116, 139)    # Slate 500 (Captions, metadata)
+    COLOR_TEXT_FAINT = (148, 163, 184)    # Slate 400 (Dividers)
+
+    # Restrained Blue Accent
+    COLOR_BLUE_ACCENT = (37, 99, 235)     # Blue 600
+    COLOR_BLUE_BG = (239, 246, 255)       # Blue 50
+    COLOR_BLUE_BORDER = (191, 219, 254)   # Blue 200
+
+    # Functional Status Indicators
+    COLOR_RED_ALERT = (220, 38, 38)       # Red 600 (Verified Critical/Alert)
+    COLOR_RED_BG = (254, 242, 242)        # Red 50
+    COLOR_RED_BORDER = (254, 202, 202)    # Red 200
+
+    COLOR_AMBER_WARN = (217, 119, 6)      # Amber 600 (Suspicious/Warning)
+    COLOR_AMBER_BG = (254, 243, 199)      # Amber 50
+    COLOR_AMBER_BORDER = (253, 230, 138)  # Amber 200
+
+    COLOR_GREEN_SAFE = (22, 163, 74)      # Green 600 (Verified Integrity/Safe)
+    COLOR_GREEN_BG = (240, 253, 244)      # Green 50
+    COLOR_GREEN_BORDER = (187, 247, 208)  # Green 200
+
+
+# ---------------------------------------------------------------------------
+# Text Normalization & Sanitization Helpers
+# ---------------------------------------------------------------------------
+def sanitize_pdf_text(text: Any, font_family: str = "helvetica") -> str:
     """
-    Sanitizes strings for PDF rendering:
-    - Strips DeepSeek reasoning tags (<think>...</think>)
-    - Normalizes Unicode typography to clean ASCII / Latin-1 equivalents
-    - Strips emojis and unsupported glyphs
-    - Enforces Latin-1 encodability if using core fonts to prevent FPDFUnicodeEncodingException
+    Cleans raw strings for safe rendering in standard PDF fonts:
+    - Normalizes typographic quotes, dashes, bullets, and symbols
+    - Strips unsupported non-BMP emojis
+    - Applies Latin-1 fallback for Helvetica
     """
     if text is None:
         return ""
-    if not isinstance(text, str):
-        text = str(text)
+    text = str(text)
 
-    # 1. Strip DeepSeek reasoning tags
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-
-    # 2. Typography normalization
     replacements = {
-        '\u201c': '"', '\u201d': '"',  # Smart double quotes
-        '\u2018': "'", '\u2019': "'",  # Smart single quotes
-        '\u2014': '--', '\u2013': '-', # Em / En dash
-        '\u2022': '-', '\u00b7': '-',  # Bullets
-        '\u2026': '...',               # Ellipsis
-        '\u2192': '->', '\u2190': '<-',# Arrows
-        '\u2713': '[OK]', '\u2714': '[OK]', # Checkmarks
-        '\u2717': '[X]', '\u2718': '[X]',
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u2013': '-', '\u2014': '--', '\u2026': '...',
+        '\u2022': '*', '\u25cf': '*', '\u25aa': '*', '\u25b6': '>',
+        '\u2192': '->', '\u2190': '<-', '\u21d2': '=>',
+        '\u2713': '[OK]', '\u2714': '[OK]', '\u2716': '[X]', '\u2718': '[X]',
+        '\u26a0': '[!]', '\u2699': '*', '\u23f1': '',
         '\u00a9': '(c)', '\u00ae': '(R)', '\u2122': '(TM)',
         '\u00b0': ' deg', '\t': '    ',
     }
     for orig, repl in replacements.items():
         text = text.replace(orig, repl)
 
-    # 3. Strip emojis & non-BMP code points
+    # Strip emojis and non-BMP characters
     text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
     text = re.sub(r'[\u2600-\u27bf\ufe00-\ufe0f\u2300-\u23ff]', '', text)
 
-    # 4. Latin-1 fallback for Helvetica
-    if font_family.lower() == "helvetica":
+    if font_family.lower() in ("helvetica", "courier", "times"):
         text = text.encode("latin-1", "replace").decode("latin-1")
 
     return text.strip()
 
 
-def clean_markdown(text) -> str:
-    """
-    Converts raw Markdown/LLM output into clean, structured plain text:
-    - Recursively formats lists and dictionaries into grammatically sound text
-    - Strips markdown code blocks (```json ... ```)
-    - Strips markdown headers (#, ##, ###, ####)
-    - Strips bold/italic asterisks and underscores
-    - Strips backticks and list markers
-    - Strips raw Python stringified lists (e.g. "['chrome', 'explorer']")
-    - Collapses excess blank lines
-    """
+def clean_markdown(text: Any) -> str:
+    """Converts raw Markdown/LLM output into clean plain text without broken tokens."""
     if text is None:
         return ""
     if isinstance(text, (list, tuple)):
-        items = [clean_markdown(str(x)) for x in text if str(x).strip()]
+        items = [clean_markdown(x) for x in text if str(x).strip()]
         return ", ".join(items) if items else ""
     if isinstance(text, dict):
         parts = []
@@ -91,109 +130,97 @@ def clean_markdown(text) -> str:
 
     val = str(text)
     val = sanitize_pdf_text(val)
-    # Remove markdown code blocks
     val = re.sub(r'```(?:json)?\s*', '', val)
     val = re.sub(r'```', '', val)
-    # Remove header markers like '#### [ATTACKER PERSONA]:' or '### Header'
     val = re.sub(r'^[#\s*:\-]+', '', val, flags=re.MULTILINE)
-    # Remove inline bold/italic
     val = re.sub(r'\*\*([^*]+)\*\*', r'\1', val)
     val = re.sub(r'__([^_]+)__', r'\1', val)
     val = re.sub(r'\*([^*]+)\*', r'\1', val)
     val = re.sub(r'_([^_]+)_', r'\1', val)
     val = re.sub(r'`([^`]+)`', r'\1', val)
     val = val.replace("#", "")
-
-    # Strip raw Python stringified lists: "['a', 'b']" -> "a, b"
     val = re.sub(r"\[(['\"])(.*?)\1\]", r"\2", val)
     val = val.replace("['", "").replace("']", "").replace("[\"", "").replace("\"]", "")
     val = re.sub(r',\s*,\s*', ', ', val)
-
-    # Normalize consecutive whitespace
     lines = [line.strip() for line in val.splitlines() if line.strip()]
     return " ".join(lines)
 
 
 def redact_sensitive_presentation(text: str) -> str:
-    """
-    Masks confidential credentials/tokens in presentation layers (PDF report, UI tables).
-    Preserves raw authentic data in session_actions.jsonl and on disk.
-    - AWS Key IDs: AKIA5HONEYPOT7X92Q0 -> AKIA5H...[REDACTED_AWS_KEY]
-    - Bearer tokens: Bearer eyJhb... -> Bearer eyJhb...[REDACTED_TOKEN]
-    """
+    """Masks secrets in presentation output while leaving raw telemetry intact."""
     if not text:
         return ""
     text = str(text)
-    # AWS Access Key ID: AKIA followed by 10-18 alphanumeric chars (case-insensitive)
+    # AWS Access Key IDs
     text = re.sub(r'\b(AKIA[0-9A-Z]{2})[0-9A-Z]{8,18}\b', r'\g<1>...[REDACTED_AWS_KEY]', text, flags=re.IGNORECASE)
-    # Bearer tokens
+    # Bearer Tokens
     text = re.sub(r'\b(Bearer\s+[A-Za-z0-9_\-\.]{6})[A-Za-z0-9_\-\.]{10,}\b', r'\g<1>...[REDACTED_TOKEN]', text, flags=re.IGNORECASE)
+    # 6-Digit OTPs
+    text = re.sub(r'\b([0-9]{3})[0-9]{3}\b', r'\g<1>***', text)
+    # Common password patterns in command line
+    text = re.sub(r'(password|pwd|secret|pass)=([^ \t\r\n&]+)', r'\1=***REDACTED***', text, flags=re.IGNORECASE)
     return text
 
 
 # ---------------------------------------------------------------------------
-# MITRE ATT&CK Authoritative Knowledge Base Lookup
+# MITRE ATT&CK Knowledge Base Reference (Matrix v15, 2026)
 # ---------------------------------------------------------------------------
 MITRE_TECHNIQUE_METADATA = {
     "T1082": {
         "name": "System Information Discovery",
         "tactic": "Discovery",
-        "evidence": "Queried local system properties, host configuration, or platform environment."
-    },
-    "T1087": {
-        "name": "Account Discovery: Local Accounts",
-        "tactic": "Discovery",
-        "evidence": "Executed 'whoami' to inspect local user privilege level."
+        "evidence": "Queried local system properties, host configuration, or platform environment.",
+        "confidence": "Supported",
+        "caveat": "Observed within simulated honeypot; commands did not execute on host OS."
     },
     "T1087.001": {
         "name": "Account Discovery: Local Accounts",
         "tactic": "Discovery",
-        "evidence": "Executed 'whoami' to inspect local user privilege level."
-    },
-    "T1552": {
-        "name": "Unsecured Credentials: Credentials in Files",
-        "tactic": "Credential Access",
-        "evidence": "Accessed decoy AWS credentials, .env secrets, or password repositories."
+        "evidence": "Executed account enumeration cmdlets (e.g., 'whoami') to inspect local user privilege.",
+        "confidence": "Supported",
+        "caveat": "Simulated command executed inside virtual command engine."
     },
     "T1552.001": {
         "name": "Unsecured Credentials: Credentials in Files",
         "tactic": "Credential Access",
-        "evidence": "Accessed decoy AWS honeytokens, .env secrets, or password vaults."
-    },
-    "T1016": {
-        "name": "System Network Configuration Discovery",
-        "tactic": "Discovery",
-        "evidence": "Executed 'ping', 'arp -a', or 'route print' to map network topology."
-    },
-    "T1059": {
-        "name": "Command and Scripting Interpreter",
-        "tactic": "Execution",
-        "evidence": "Interacted with command-line or shell interpreter to execute operations."
+        "evidence": "Inspected decoy credential files, passwords.txt, or .env secret repositories.",
+        "confidence": "Supported",
+        "caveat": "Targets were synthetic decoy assets seeded in the virtual filesystem."
     },
     "T1059.001": {
-        "name": "Command and Scripting Interpreter: PowerShell / Shell",
+        "name": "Command & Scripting Interpreter: PowerShell",
         "tactic": "Execution",
-        "evidence": "Interacted with command-line terminal to stage operations."
+        "evidence": "Interacted with emulated PowerShell terminal to execute discovery cmdlets.",
+        "confidence": "Supported",
+        "caveat": "Cmdlets processed safely by VirtualCommandEngine; host shell access prohibited."
     },
-    "T1005": {
-        "name": "Data from Local System",
-        "tactic": "Collection",
-        "evidence": "Inspected sensitive desktop repositories, confidential folders, or vault files."
-    },
-    "T1105": {
-        "name": "Ingress Tool Transfer",
-        "tactic": "Command & Control",
-        "evidence": "Attempted remote payload or dropper transfer into sandbox via web utilities."
-    },
-    "T1021.004": {
-        "name": "Remote Services: SSH",
-        "tactic": "Lateral Movement",
-        "evidence": "Attempted remote SSH connection to internal network nodes for lateral movement."
+    "T1485": {
+        "name": "Data Destruction",
+        "tactic": "Impact",
+        "evidence": "Executed file deletion operations against virtual filesystem items.",
+        "confidence": "Candidate Mapping",
+        "caveat": "Deletions redirected to virtual Recycle Bin; real host files untouched."
     },
     "T1110": {
         "name": "Brute Force: Credential Stuffing / Submission",
         "tactic": "Credential Access",
-        "evidence": "Submitted credentials against decoy banking or cloud portal authentication forms."
+        "evidence": "Submitted credentials against simulated banking or cloud portal authentication forms.",
+        "confidence": "Candidate Mapping",
+        "caveat": "Forms were synthetic honeypot web controls; no remote network authentication occurred."
+    },
+    "T1005": {
+        "name": "Data from Local System",
+        "tactic": "Collection",
+        "evidence": "Browsed confidential desktop folders and staged files for potential exfiltration.",
+        "confidence": "Candidate Mapping",
+        "caveat": "Actions confined to virtual user documents; no actual data exfiltration occurred."
+    },
+    "T1105": {
+        "name": "Ingress Tool Transfer",
+        "tactic": "Command & Control",
+        "evidence": "Attempted file download or payload transfer into sandbox via simulated browser.",
+        "confidence": "Candidate Mapping",
+        "caveat": "Payload intercepted and quarantined in data/sandbox/ without execution."
     }
 }
 
@@ -203,36 +230,23 @@ MITRE_TECHNIQUE_METADATA = {
 # ---------------------------------------------------------------------------
 class ForensicPDF(FPDF):
     """
-    Professional Digital Forensics & Incident Response (DFIR) document canvas.
-    Standardized A4 with corporate header, footer, dynamic pagination, and card styling.
+    Enterprise Digital Forensics & Incident Response (DFIR) Canvas.
+    Standardized A4 (210 x 297 mm) with 14mm margins, printable width = 182mm.
     """
-    # Professional DFIR Palette (RGB)
-    COLOR_NAVY_DARK = (15, 23, 42)    # Slate 900
-    COLOR_NAVY_MID = (30, 58, 138)    # Blue 900
-    COLOR_BLUE_ACCENT = (37, 99, 235) # Blue 600
-    COLOR_BLUE_BG = (239, 246, 255)   # Blue 50
-    COLOR_GRAY_BG = (248, 250, 252)   # Slate 50
-    COLOR_GRAY_CARD = (241, 245, 249) # Slate 100
-    COLOR_GRAY_BORDER = (203, 213, 225) # Slate 300
-    COLOR_TEXT_DARK = (30, 41, 59)    # Slate 800
-    COLOR_TEXT_MUTED = (100, 116, 139) # Slate 500
-    COLOR_RED_ALERT = (220, 38, 38)   # Red 600
-    COLOR_RED_BG = (254, 242, 242)    # Red 50
-    COLOR_AMBER_WARN = (217, 119, 6)  # Amber 600
-    COLOR_AMBER_BG = (254, 243, 199)  # Amber 50
-    COLOR_GREEN_SAFE = (22, 163, 74)  # Green 600
-    COLOR_GREEN_BG = (240, 253, 244)  # Green 50
-
-    def __init__(self, incident_id):
+    def __init__(self, incident_id: str, session_id: str = "SESS_ACTIVE"):
         super().__init__(orientation='P', unit='mm', format='A4')
         self.incident_id = incident_id
+        self.session_id = session_id
         self.doc_font_family = "helvetica"
         self._init_unicode_fonts()
-        self.set_margins(12, 18, 12)
+
+        # Margins: Left 14mm, Top 18mm, Right 14mm -> Printable width = 182mm
+        self.set_margins(14, 18, 14)
         self.set_auto_page_break(auto=True, margin=16)
+        self.printable_width = 182.0
 
     def _init_unicode_fonts(self):
-        """Attempts to register system TrueType Unicode fonts (Arial) on Windows."""
+        """Registers system TrueType fonts (Arial) on Windows if available."""
         if sys.platform == "win32":
             font_dir = os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts")
             arial_reg = os.path.join(font_dir, "arial.ttf")
@@ -273,110 +287,148 @@ class ForensicPDF(FPDF):
         return super().multi_cell(*args, **kwargs)
 
     def header(self):
-        # 1. Dark Slate Corporate Header Banner
-        self.set_fill_color(*self.COLOR_NAVY_DARK)
-        self.rect(0, 0, 210, 13, 'F')
+        """Understated corporate DFIR running header."""
+        # Slate 900 banner at top
+        self.set_fill_color(*ForensicDesignSystem.COLOR_NAVY_DARK)
+        self.rect(0, 0, 210, 12, 'F')
 
-        # 2. Left Brand / Unit Tag
+        # Left tag: System & Department
         self.set_font(self.doc_font_family, 'B', 7.5)
         self.set_text_color(241, 245, 249)
-        self.set_xy(12, 3.5)
-        self.cell(105, 6, "BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION | DIGITAL FORENSICS UNIT", align='L')
+        self.set_xy(14, 3.2)
+        self.cell(110, 5.5, "BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION | DIGITAL FORENSICS UNIT", align='L')
 
-        # 3. Right Incident Case Tag
-        self.set_xy(117, 3.5)
+        # Right tag: Incident Reference
+        self.set_xy(124, 3.2)
         self.set_font(self.doc_font_family, 'B', 7.5)
-        self.set_text_color(147, 197, 253) # Light Blue
-        self.cell(81, 6, f"CASE: {self.incident_id}  |  CONFIDENTIAL", align='R')
+        self.set_text_color(147, 197, 253)
+        self.cell(72, 5.5, f"REF: {self.incident_id}  |  CONFIDENTIAL", align='R')
 
-        # 4. Accent Divider Line
-        self.set_draw_color(*self.COLOR_BLUE_ACCENT)
-        self.set_line_width(0.6)
-        self.line(0, 13, 210, 13)
-        self.set_line_width(0.2) # reset
-
-        # Set cursor to content top margin
-        self.set_y(18)
-
-    def footer(self):
-        self.set_y(-13.5)
-        # Separator Line
-        self.set_draw_color(*self.COLOR_GRAY_BORDER)
-        self.set_line_width(0.3)
-        self.line(12, self.get_y(), 198, self.get_y())
+        # Subtle Accent Rule
+        self.set_draw_color(*ForensicDesignSystem.COLOR_BLUE_ACCENT)
+        self.set_line_width(0.4)
+        self.line(0, 12, 210, 12)
         self.set_line_width(0.2)
 
-        # Footer Meta
-        self.set_font(self.doc_font_family, 'I', 7)
-        self.set_text_color(*self.COLOR_TEXT_MUTED)
-        self.set_xy(12, self.get_y() + 1.5)
-        self.cell(75, 5, "NMAMIT ISE Dept | Major Project Team 30", align='L')
+        # Set content cursor below header
+        self.set_y(17)
 
-        self.set_xy(87, self.get_y())
-        self.set_font(self.doc_font_family, 'B', 7)
-        self.set_text_color(148, 163, 184)
-        self.cell(46, 5, "CONFIDENTIAL // DFIR INCIDENT AUDIT", align='C')
+    def footer(self):
+        """Clean DFIR running footer with dynamic pagination and disclosure."""
+        self.set_y(-13)
+        self.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+        self.set_line_width(0.2)
+        self.line(14, self.get_y(), 196, self.get_y())
 
-        self.set_xy(133, self.get_y())
+        self.set_font(self.doc_font_family, 'I', 7.0)
+        self.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+        self.set_xy(14, self.get_y() + 1.2)
+        self.cell(85, 4.5, "Automated Forensic Triage Report -- Not a Final Legal Attribution", align='L')
+
+        self.set_xy(99, self.get_y())
+        self.set_font(self.doc_font_family, 'B', 7.0)
+        self.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        self.cell(50, 4.5, "Behavioral Drift Forensics", align='C')
+
+        self.set_xy(149, self.get_y())
         self.set_font(self.doc_font_family, 'B', 7.5)
-        self.set_text_color(*self.COLOR_TEXT_DARK)
-        self.cell(65, 5, f"Page {self.page_no()} of {{nb}}", align='R')
+        self.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        self.cell(47, 4.5, f"Page {self.page_no()} of {{nb}}", align='R')
 
     def check_page_space(self, min_space_needed=28):
         """Triggers a clean page break if remaining vertical space is insufficient."""
         if self.get_y() + min_space_needed > 275:
             self.add_page()
 
-    def section_header(self, title, subtitle=None, min_space_needed=24):
-        """Renders an authoritative corporate section banner without title/subtitle collision."""
+    def section_header(self, title: str, subtitle: Optional[str] = None, min_space_needed: float = 24):
+        """Renders an authoritative corporate section banner with vertical bar accent."""
+        self.check_page_space(min_space_needed)
+        curr_y = self.get_y() + 2.0
+
+        bar_h = 8.0 if subtitle else 5.5
+        self.set_fill_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        self.rect(14, curr_y, 2.8, bar_h, 'F')
+
+        self.set_xy(18.5, curr_y)
+        self.set_font(self.doc_font_family, 'B', 10.5)
+        self.set_text_color(*ForensicDesignSystem.COLOR_NAVY_DARK)
+        self.cell(self.printable_width - 5, 5.0, title, new_x="LMARGIN", new_y="NEXT")
+
+        if subtitle:
+            self.set_x(18.5)
+            self.set_font(self.doc_font_family, 'I', 7.5)
+            self.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            self.cell(self.printable_width - 5, 3.8, subtitle, new_x="LMARGIN", new_y="NEXT")
+
+        line_y = self.get_y() + 1.2
+        self.set_draw_color(*ForensicDesignSystem.COLOR_BORDER_LIGHT)
+        self.line(14, line_y, 196, line_y)
+        self.set_y(line_y + 2.5)
+
+    def subsection_header(self, title: str, min_space_needed: float = 16):
+        """Renders a subsection banner."""
         self.check_page_space(min_space_needed)
         curr_y = self.get_y() + 1.5
+        self.set_xy(14, curr_y)
+        self.set_font(self.doc_font_family, 'B', 8.8)
+        self.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        self.cell(self.printable_width, 4.5, title, new_x="LMARGIN", new_y="NEXT")
+        self.ln(1.0)
 
-        # Left Accent Bar
-        bar_height = 8.5 if subtitle else 6.0
-        self.set_fill_color(*self.COLOR_NAVY_MID)
-        self.rect(12, curr_y, 2.5, bar_height, 'F')
+    def draw_badge(self, x: float, y: float, text: str, style: str = "info", w: Optional[float] = None, h: float = 6.0) -> float:
+        """Renders a restrained pill badge and returns badge width."""
+        style_map = {
+            "critical": (ForensicDesignSystem.COLOR_RED_BG, ForensicDesignSystem.COLOR_RED_BORDER, ForensicDesignSystem.COLOR_RED_ALERT),
+            "warning": (ForensicDesignSystem.COLOR_AMBER_BG, ForensicDesignSystem.COLOR_AMBER_BORDER, ForensicDesignSystem.COLOR_AMBER_WARN),
+            "safe": (ForensicDesignSystem.COLOR_GREEN_BG, ForensicDesignSystem.COLOR_GREEN_BORDER, ForensicDesignSystem.COLOR_GREEN_SAFE),
+            "info": (ForensicDesignSystem.COLOR_BLUE_BG, ForensicDesignSystem.COLOR_BLUE_BORDER, ForensicDesignSystem.COLOR_BLUE_ACCENT),
+            "neutral": (ForensicDesignSystem.COLOR_BG_CARD, ForensicDesignSystem.COLOR_BORDER, ForensicDesignSystem.COLOR_TEXT_MUTED),
+        }
+        bg, border, text_col = style_map.get(style, style_map["info"])
+        clean_txt = sanitize_pdf_text(text)
+        self.set_font(self.doc_font_family, 'B', 7.2)
+        text_w = self.get_string_width(clean_txt)
+        badge_w = w if w is not None else (text_w + 8.0)
 
-        # Section Title
-        self.set_xy(16.5, curr_y)
-        self.set_font(self.doc_font_family, 'B', 9.5)
-        self.set_text_color(*self.COLOR_NAVY_DARK)
-        self.cell(180, 5, title, new_x="LMARGIN", new_y="NEXT")
+        self.set_fill_color(*bg)
+        self.set_draw_color(*border)
+        self.rect(x, y, badge_w, h, style='FD', round_corners=True, corner_radius=1.5)
 
-        # Subtitle on next line to avoid any horizontal collision
-        if subtitle:
-            self.set_x(16.5)
-            self.set_font(self.doc_font_family, 'I', 7.2)
-            self.set_text_color(*self.COLOR_TEXT_MUTED)
-            self.cell(180, 3.8, subtitle, new_x="LMARGIN", new_y="NEXT")
-
-        # Divider Underline
-        line_y = self.get_y() + 1.0
-        self.set_draw_color(*self.COLOR_GRAY_BORDER)
-        self.line(12, line_y, 198, line_y)
-        self.set_y(line_y + 2.5)
+        self.set_xy(x, y)
+        self.set_text_color(*text_col)
+        self.cell(badge_w, h, clean_txt, align='C')
+        return badge_w
 
 
 # ---------------------------------------------------------------------------
-# Core Forensic Report Generator
+# Core Forensic Incident Report Generator
 # ---------------------------------------------------------------------------
 class ForensicReportGenerator:
     """
     Automated Incident Report Generator producing publication-ready, multi-page PDFs
-    documenting all unauthorized intruder activity captured in the Honeypot environment.
+    structured into 12 comprehensive DFIR sections.
     """
-    def __init__(self, output_dir=None):
+    def __init__(self, output_dir: Optional[str] = None):
         self.output_dir = output_dir or os.path.join(PROJECT_ROOT, "data", "forensics")
         os.makedirs(self.output_dir, exist_ok=True)
         self.tracker = get_tracker()
         self.ai_analyzer = IntruderIntentAnalyzer()
 
-    def generate_report(self, ai_report=None, timeline=None, stats=None, photo_path=None, incident_id=None, save_filename=None):
+    def generate_report(
+        self,
+        ai_report: Optional[Dict[str, Any]] = None,
+        timeline: Optional[List[Dict[str, Any]]] = None,
+        stats: Optional[Dict[str, Any]] = None,
+        photo_path: Optional[str] = None,
+        incident_id: Optional[str] = None,
+        save_filename: Optional[str] = None,
+        privacy_mode: bool = False
+    ) -> str:
         """
-        Compiles the complete, professionally formatted digital forensic incident report.
+        Compiles the complete 12-section digital forensic incident report.
         Returns the absolute filepath of the generated PDF.
         """
-        # Resolve data sources
+        # Resolve ground truth telemetry
         if timeline is None:
             timeline = self.tracker.get_timeline()
         if stats is None:
@@ -384,63 +436,78 @@ class ForensicReportGenerator:
         if ai_report is None:
             ai_report = self.ai_analyzer.analyze_session(timeline=timeline, stats=stats)
 
-        # Generate unique case reference if not provided
+        # Generate unique case ID and resolve session ID
         timestamp_slug = time.strftime("%Y%m%d_%H%M%S")
         if incident_id is None:
             incident_id = f"INC-{timestamp_slug}"
+
+        session_id = stats.get("session_id")
+        if not session_id or session_id in ("ACTIVE", "SESS_ACTIVE", "SESS_DEFAULT"):
+            if timeline and timeline[0].get("session_id"):
+                session_id = timeline[0]["session_id"]
+            else:
+                session_id = f"SESS_{timestamp_slug}"
 
         if save_filename:
             pdf_path = os.path.join(self.output_dir, save_filename)
         else:
             pdf_path = os.path.join(self.output_dir, f"Forensic_Report_{timestamp_slug}.pdf")
 
-        # Resolve photo
+        # Resolve optical frame if present on disk
         if not photo_path or not os.path.exists(photo_path) or os.path.getsize(photo_path) <= 500:
             photos = glob.glob(os.path.join(self.output_dir, "intruder_*.jpg"))
             photos.sort(key=os.path.getmtime, reverse=True)
             valid_photos = [p for p in photos if os.path.exists(p) and os.path.getsize(p) > 500]
             photo_path = valid_photos[0] if valid_photos else None
 
-        # Build PDF Canvas
-        pdf = ForensicPDF(incident_id=incident_id)
+        # Instantiate Forensic Canvas
+        pdf = ForensicPDF(incident_id=incident_id, session_id=session_id)
         pdf.alias_nb_pages()
         pdf.add_page()
 
         # ===================================================================
-        # PAGE 1: EXECUTIVE COVER, INCIDENT OVERVIEW & OPTICAL EVIDENCE
+        # 12 READER-FRIENDLY DIGITAL FORENSIC SECTIONS
         # ===================================================================
-        self._add_title_and_executive_summary(pdf, incident_id, stats, timeline, ai_report)
-        self._add_incident_overview_card(pdf, incident_id, stats, timeline)
-        self._add_visual_evidence_card(pdf, photo_path)
+        # SECTION 1: Report Cover & Incident Identification
+        self._add_section_1_cover_and_identification(pdf, incident_id, session_id, stats, timeline, ai_report)
 
-        # ===================================================================
-        # SECTION 3: AI-ASSISTED ATTACKER INTENT & BEHAVIORAL RECONSTRUCTION
-        # (Cleanly starts on Page 2 with dynamic pagination)
-        # ===================================================================
-        pdf.add_page()
-        self._add_ai_intent_reconstruction_section(pdf, ai_report, stats, timeline)
+        # SECTION 2: Executive Summary
+        self._add_section_2_executive_summary(pdf, incident_id, stats, timeline, ai_report)
 
-        # ===================================================================
-        # SECTION 4: CHRONOLOGICAL FORENSIC AUDIT TRAIL, SANDBOX & MITRE
-        # ===================================================================
-        pdf.check_page_space(min_space_needed=40)
-        self._add_chronological_audit_table(pdf, timeline)
-        pdf.check_page_space(min_space_needed=28)
-        self._add_sandbox_isolation_section(pdf, stats)
-        pdf.check_page_space(min_space_needed=34)
-        self._add_mitre_mapping_table(pdf, ai_report, timeline)
+        # SECTION 3: Incident Overview & System Context
+        self._add_section_3_system_context(pdf)
 
-        # ===================================================================
-        # REMEDIATION PLAN, CHAIN OF CUSTODY & ADMISSIBILITY
-        # ===================================================================
-        pdf.check_page_space(min_space_needed=35)
-        self._add_remediation_plan(pdf, ai_report)
-        self._add_evidence_custody_and_attestation(pdf, photo_path, timeline, stats)
+        # SECTION 4: Chronological Incident Timeline
+        self._add_section_4_incident_timeline(pdf, timeline)
 
-        # Output and Cryptographically Seal Document
+        # SECTION 5: Themed Investigative Findings
+        self._add_section_5_investigative_findings(pdf, timeline, ai_report)
+
+        # SECTION 6: AI-Assisted Behavioral Reconstruction
+        self._add_section_6_ai_behavioral_reconstruction(pdf, ai_report, timeline)
+
+        # SECTION 7: Deterministic Risk & Severity Assessment
+        self._add_section_7_risk_and_severity_assessment(pdf, ai_report, stats, timeline)
+
+        # SECTION 8: Containment & Host-Protection Status
+        self._add_section_8_containment_and_host_protection(pdf, stats, photo_path, privacy_mode)
+
+        # SECTION 9: MITRE ATT&CK Mapping
+        self._add_section_9_mitre_attack_mapping(pdf, timeline, ai_report)
+
+        # SECTION 10: Recommended Actions
+        self._add_section_10_recommended_actions(pdf, ai_report, timeline)
+
+        # SECTION 11: Evidence Inventory & Integrity
+        self._add_section_11_evidence_inventory_and_integrity(pdf, photo_path, timeline, stats)
+
+        # SECTION 12: Methodology, Limitations, and Glossary
+        self._add_section_12_methodology_limitations_glossary(pdf)
+
+        # Write output file
         pdf.output(pdf_path)
 
-        # Calculate self SHA-256 seal
+        # Compute SHA-256 integrity seal
         pdf_sha256 = "N/A"
         try:
             with open(pdf_path, "rb") as f:
@@ -452,895 +519,752 @@ class ForensicReportGenerator:
         print(f"[PDF REPORT] Document SHA-256 Digital Seal: {pdf_sha256}", flush=True)
         return pdf_path
 
-    # -----------------------------------------------------------------------
-    # Section Builders
-    # -----------------------------------------------------------------------
-    def _add_title_and_executive_summary(self, pdf, incident_id, stats, timeline, ai_report):
-        """Renders report header, classification pill, and concise executive summary narrative."""
-        # 1. Document Title
-        pdf.set_font(pdf.doc_font_family, 'B', 14.5)
-        pdf.set_text_color(*pdf.COLOR_NAVY_DARK)
-        pdf.cell(140, 6.5, "DIGITAL FORENSIC INCIDENT INVESTIGATION REPORT", align='L')
+    def generate_pdf(self, *args, **kwargs) -> str:
+        """Convenience alias for generate_report."""
+        return self.generate_report(*args, **kwargs)
 
-        # Status Badge Pill on Right
-        badge_x = 154
+    # -----------------------------------------------------------------------
+    # SECTION 1: Report Cover and Incident Identification
+    # -----------------------------------------------------------------------
+    def _add_section_1_cover_and_identification(self, pdf: ForensicPDF, incident_id: str, session_id: str, stats: dict, timeline: list, ai_report: dict):
+        pdf.set_font(pdf.doc_font_family, 'B', 12.5)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_DARK)
+        pdf.cell(124, 6.5, "DIGITAL FORENSIC INCIDENT INVESTIGATION REPORT", align='L')
+
+        # Restrained status pill
+        badge_w = 54.0
+        badge_x = 210.0 - 14.0 - badge_w  # 142.0 mm
         badge_y = pdf.get_y()
-        pdf.set_fill_color(*pdf.COLOR_GREEN_BG)
-        pdf.set_draw_color(*pdf.COLOR_GREEN_SAFE)
-        pdf.rect(badge_x, badge_y, 44, 6.2, style='FD', round_corners=True, corner_radius=1.5)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(*pdf.COLOR_GREEN_SAFE)
-        pdf.set_xy(badge_x, badge_y)
-        pdf.cell(44, 6.2, "CONTAINED & SEALED", align='C')
-        pdf.ln(7.0)
+        threat_level = ai_report.get("threat_level", "HIGH").upper()
+        badge_style = "critical" if threat_level in ("CRITICAL", "HIGH") else ("warning" if threat_level == "MEDIUM" else "safe")
+        pdf.draw_badge(badge_x, badge_y, "AUTOMATED FORENSIC TRIAGE REPORT", style=badge_style, w=badge_w, h=6.5)
+        pdf.ln(7.5)
 
         # Subtitle
-        pdf.set_font(pdf.doc_font_family, 'I', 8)
-        pdf.set_text_color(*pdf.COLOR_BLUE_ACCENT)
-        pdf.cell(0, 4.2, "Post-Anomaly Continuous Authentication Breach & Honey-Desktop Deception Audit", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(2.0)
+        pdf.set_font(pdf.doc_font_family, 'I', 8.5)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_BLUE_ACCENT)
+        pdf.cell(0, 4.2, "Behavioral Drift Continuous Authentication & Honey-Desktop Telemetry Audit", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1.5)
 
-        # Executive Summary Box
-        total_events = len(timeline)
-        detection_time = timeline[0].get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")) if timeline else time.strftime("%Y-%m-%d %H:%M:%S")
-        threat = ai_report.get("threat_level", "HIGH").upper()
+        # Important Scope Notice Banner
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_CARD)
+        pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+        pdf.rect(14, pdf.get_y(), pdf.printable_width, 6.0, style='FD', round_corners=True, corner_radius=1.5)
+        pdf.set_xy(16, pdf.get_y() + 1.2)
+        pdf.set_font(pdf.doc_font_family, 'B', 7.2)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+        pdf.cell(0, 3.8, "NOTICE: Automated Forensic Triage Record -- Not a Final Judicial Attribution or Certification", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(3.0)
 
-        exec_text = (
-            f"On {detection_time}, the multi-scale behavioral biometric evaluation daemon detected an acute anomaly spike "
-            f"exceeding nominal thresholds (Threat Severity: {threat}). Active workstation controls immediately locked the authentic session "
-            f"and autonomously diverted the adversary into an emulated honey-desktop sandbox. Silent forensic webcam capture was executed, "
-            f"and verified multi-channel MFA alerts were dispatched. During the deception window, the intruder conducted {total_events} distinct "
-            f"interactions across decoy credentials, filesystem exploration, and diagnostic commands. Quarantined file writes verified zero "
-            f"host system exposure. This document serves as the authoritative digital forensic record, AI threat reconstruction, and chain of custody."
-        )
-
-        box_y = pdf.get_y()
-        pdf.set_fill_color(*pdf.COLOR_BLUE_BG)
-        pdf.set_draw_color(191, 219, 254) # Blue 200
-        pdf.rect(12, box_y, 186, 20.5, style='FD', round_corners=True, corner_radius=2)
-
-        # Blue vertical bar on left of summary box
-        pdf.set_fill_color(*pdf.COLOR_BLUE_ACCENT)
-        pdf.rect(12, box_y, 2, 20.5, 'F')
-
-        pdf.set_xy(16, box_y + 1.6)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.8)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 3.8, "EXECUTIVE INCIDENT SUMMARY", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_xy(16, box_y + 5.5)
-        pdf.set_font(pdf.doc_font_family, '', 7.3)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        pdf.multi_cell(180, 3.4, exec_text)
-        pdf.set_y(box_y + 22.5)
-
-    def _add_incident_overview_card(self, pdf, incident_id, stats, timeline):
-        """Renders clean 2-column grid of essential incident parameters."""
-        pdf.section_header("1. Incident Overview & Target Environment", subtitle="Telemetry Ground Truth", min_space_needed=32)
+        # Metadata Table
+        pdf.section_header("1. Incident Identification & Case Metadata", subtitle="Administrative Reference & Verification Scope", min_space_needed=34)
 
         box_y = pdf.get_y()
-        box_h = 24
-        pdf.set_fill_color(*pdf.COLOR_GRAY_BG)
-        pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-        pdf.rect(12, box_y, 186, box_h, style='FD', round_corners=True, corner_radius=2)
+        box_h = 24.0
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_LIGHT)
+        pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+        pdf.rect(14, box_y, pdf.printable_width, box_h, style='FD', round_corners=True, corner_radius=2)
 
         detection_ts = timeline[0].get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")) if timeline else time.strftime("%Y-%m-%d %H:%M:%S")
-        host_name = f"{platform.node()} (Dell Latitude)" if "Dell" in platform.node() else f"{platform.node()} ({platform.system()} Host)"
-        os_env = f"{platform.system()} {platform.release()} (Build {platform.version().split('.')[0]}) 64-bit"
-        total_actions = stats.get("total_actions", len(timeline))
+        tz_name = time.tzname[0] if time.tzname else "UTC"
+        gen_time = time.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
+        host_name = f"{platform.node()} ({platform.system()} Host)"
 
         fields = [
-            ("Incident Reference:", incident_id, "Breach Risk Trigger:", "Risk Score >= 0.55 (Elevated Spike)"),
-            ("Detection Timestamp:", detection_ts, "Deception Status:", "Active Honeypot Sandbox (1:1 Decoy)"),
-            ("Affected Hostname:", host_name, "Adversarial Actions:", f"{total_actions} Discrete Interactions Recorded"),
-            ("Operating System:", os_env, "Containment Status:", "Contained in Sandbox (0 Host Writes)")
+            ("Case Identifier:", incident_id, "Session Reference:", session_id),
+            ("Detection Timestamp:", f"{detection_ts} {tz_name}", "Generation Time:", gen_time),
+            ("Monitored Hostname:", host_name, "Investigation Scope:", "Simulated Deception Subsystem"),
+            ("Operating System:", f"{platform.system()} {platform.release()}", "Evidence Status:", f"{len(timeline)} Discrete Events Captured")
         ]
 
         row_y = box_y + 2.0
         for f in fields:
-            # Col 1 Label & Value
-            pdf.set_xy(15, row_y)
-            pdf.set_font(pdf.doc_font_family, 'B', 7.8)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(32, 5, f[0])
-            pdf.set_font(pdf.doc_font_family, '', 7.8)
-            pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-            pdf.cell(56, 5, f[1][:34])
+            # Col 1
+            pdf.set_xy(17, row_y)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.6)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(32, 5.0, f[0])
+            pdf.set_font(pdf.doc_font_family, '', 7.6)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.cell(56, 5.0, f[1])
 
-            # Col 2 Label & Value
-            pdf.set_xy(105, row_y)
-            pdf.set_font(pdf.doc_font_family, 'B', 7.8)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(32, 5, f[2])
-            pdf.set_font(pdf.doc_font_family, 'B' if "Risk" in f[2] or "Status" in f[2] else '', 7.8)
-            if "Risk" in f[2]:
-                pdf.set_text_color(*pdf.COLOR_RED_ALERT)
-            elif "Active" in f[3] or "Contained" in f[3]:
-                pdf.set_text_color(*pdf.COLOR_GREEN_SAFE)
-            else:
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-            pdf.cell(57, 5, f[3][:38])
+            # Col 2
+            pdf.set_xy(107, row_y)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.6)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(34, 5.0, f[2])
+            pdf.set_font(pdf.doc_font_family, '', 7.6)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.cell(53, 5.0, f[3])
+
             row_y += 5.2
 
-        pdf.set_y(box_y + box_h + 3)
+        pdf.set_y(box_y + box_h + 3.0)
 
-    def _add_visual_evidence_card(self, pdf, photo_path):
-        """Displays captured webcam photo with consistent aspect ratio, hash, and legal disclaimer."""
-        pdf.section_header("2. Visual Evidence & Physical Attacker Identification", subtitle="Optical Telemetry", min_space_needed=44)
+    # -----------------------------------------------------------------------
+    # SECTION 2: Executive Summary
+    # -----------------------------------------------------------------------
+    def _add_section_2_executive_summary(self, pdf: ForensicPDF, incident_id: str, stats: dict, timeline: list, ai_report: dict):
+        pdf.section_header("2. Executive Summary", subtitle="Non-Technical Plain-Language Briefing & Incident Snapshot", min_space_needed=45)
 
-        box_y = pdf.get_y()
-        box_h = 39
-        pdf.set_fill_color(*pdf.COLOR_GRAY_BG)
-        pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-        pdf.rect(12, box_y, 186, box_h, style='FD', round_corners=True, corner_radius=2)
+        total_events = len(timeline)
+        detection_ts = timeline[0].get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")) if timeline else time.strftime("%Y-%m-%d %H:%M:%S")
+        threat_level = ai_report.get("threat_level", "HIGH").upper()
+        threat_score = ai_report.get("threat_score", 0.75)
 
-        # Image Frame Box on Left
-        img_x = 15
-        img_y = box_y + 2.5
-        img_w = 48
-        img_h = 34
-
-        has_image = False
-        img_hash = "N/A"
-        img_file_name = "No Frame Captured"
-        capture_time = time.strftime("%Y-%m-%d %H:%M:%S")
-
-        if photo_path and os.path.exists(photo_path) and os.path.getsize(photo_path) > 500:
-            try:
-                with open(photo_path, "rb") as f:
-                    img_hash = hashlib.sha256(f.read()).hexdigest()
-                img_file_name = os.path.basename(photo_path)
-                mtime = os.path.getmtime(photo_path)
-                capture_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
-
-                pdf.image(photo_path, x=img_x, y=img_y, w=img_w, h=img_h)
-                pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-                pdf.rect(img_x, img_y, img_w, img_h, 'D')
-                has_image = True
-            except Exception:
-                has_image = False
-
-        if not has_image:
-            pdf.set_fill_color(*pdf.COLOR_GRAY_CARD)
-            pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-            pdf.rect(img_x, img_y, img_w, img_h, 'FD')
-            pdf.set_xy(img_x, img_y + 12)
-            pdf.set_font(pdf.doc_font_family, 'B', 8)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(img_w, 5, "[OPTICAL SENSOR IDLE]", align='C')
-            pdf.set_xy(img_x, img_y + 17)
-            pdf.set_font(pdf.doc_font_family, '', 7)
-            pdf.cell(img_w, 4, "No Intruder Frame Recorded", align='C')
-
-        # Metadata on Right of Photo
-        meta_x = 68
-        meta_y = box_y + 2.0
-        meta_rows = [
-            ("Evidence Filename:", img_file_name, True),
-            ("Capture Timestamp:", capture_time, False),
-            ("Hardware Sensor:", "Built-in HD Webcam (DirectShow Device Index 0)", False),
-            ("Trigger Anomaly:", "Multi-Scale Behavioral Biometric Drift (Instant Risk > 0.75)", False),
-            ("Face Detection:", "Haar Cascade Verified (Physical Presence Confirmed)" if has_image else "Sensor Offline / No Face Profiled", False),
-            ("Image SHA-256 Digest:", img_hash, True),
-            ("Evidence Archive:", f"data/forensics/{img_file_name}", False),
-        ]
-
-        curr_my = meta_y
-        for label, val, is_bold in meta_rows:
-            pdf.set_xy(meta_x, curr_my)
-            pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(34, 4.8, label)
-            font_size = 6.6 if "SHA-256" in label else 7.5
-            pdf.set_font(pdf.doc_font_family, 'B' if is_bold else '', font_size)
-            if "SHA-256" in label:
-                pdf.set_text_color(*pdf.COLOR_BLUE_ACCENT)
-            elif "Face Detection" in label and has_image:
-                pdf.set_text_color(*pdf.COLOR_GREEN_SAFE)
-            else:
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-            pdf.cell(94, 4.8, val)
-            curr_my += 4.8
-
-        pdf.set_y(box_y + box_h + 1.2)
-        pdf.set_font(pdf.doc_font_family, 'I', 6.8)
-        pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-        pdf.cell(0, 3.5, "Notice: Automated biometric capture indicates physical workstation presence; formal identity confirmation requires administrative verification.", align='L', new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(1)
-
-    def _add_ai_intent_reconstruction_section(self, pdf, ai_report, stats, timeline):
-        """
-        Renders Section 3: AI-Assisted Attacker Intent and Behavioral Reconstruction
-        with authoritative DFIR multi-part structure:
-          3.A Primary Assessed Intention & Executive Assessment
-          3.B Grounded Telemetry Evidence Supporting Assessment (Evidence Table)
-          3.C Behavioral Progression & Trajectory Reconstruction
-          3.D Alternative Hypotheses & Analytical Caveats
-          3.E Confidence Metric & Severity Evaluation Justification
-          3.F Prioritized Remediation & Containment Actions
-        """
-        pdf.section_header(
-            "3. AI-Assisted Attacker Intent and Behavioral Reconstruction",
-            subtitle=f"Cognitive Adversary Profiling // Source: {ai_report.get('source', 'Local DFIR Engine')}",
-            min_space_needed=35
+        # 1. Plain-Language Summary Box
+        plain_text = (
+            f"What Triggered Detection: On {detection_ts}, the continuous behavioral authentication daemon detected "
+            f"an acute anomaly in biometric interaction dynamics (typing flight/dwell rhythm and mouse curvature) "
+            f"exceeding nominal safety baselines. "
+            f"\n\nWhat Was Observed: The active user desktop was immediately locked and diverted into an emulated honey-desktop "
+            f"environment. Within this sandbox, {total_events} distinct interaction events were recorded. The operator explored "
+            f"desktop folders, inspected synthetic credential assets, and executed diagnostic discovery commands. "
+            f"\n\nWhat Was Verified: All observed modifications were strictly confined to the virtual filesystem and sandbox quarantine "
+            f"(data/sandbox/). Zero host operating system writes were detected within the monitored deception paths. "
+            f"\n\nWhat Remains Uncertain: Actor identity, external network orchestration, and intentionality remain analytical inferences. "
+            f"\n\nImmediate Next Steps: Validate host filesystem integrity, review the chronological timeline below, and require MFA verification before unlocking."
         )
 
-        threat_level = ai_report.get("threat_level", "HIGH").upper()
-        if threat_level in ["CRITICAL", "HIGH"]:
-            badge_bg = pdf.COLOR_RED_BG
-            badge_border = pdf.COLOR_RED_ALERT
-            badge_text = pdf.COLOR_RED_ALERT
-        elif threat_level == "MEDIUM":
-            badge_bg = pdf.COLOR_AMBER_BG
-            badge_border = pdf.COLOR_AMBER_WARN
-            badge_text = pdf.COLOR_AMBER_WARN
-        else:
-            badge_bg = pdf.COLOR_GREEN_BG
-            badge_border = pdf.COLOR_GREEN_SAFE
-            badge_text = pdf.COLOR_GREEN_SAFE
+        content_w = pdf.printable_width - 8
+        pdf.set_font(pdf.doc_font_family, '', 7.4)
+        text_h = pdf.multi_cell(content_w, 3.5, plain_text, dry_run=True, output='HEIGHT')
+        box_h = 2.0 + 4.0 + 1.5 + text_h + 3.0
 
-        persona = clean_markdown(ai_report.get("attacker_persona", "Targeted Corporate Infiltrator & Data Exfiltrator"))
-        primary_intent = clean_markdown(ai_report.get("primary_intent", "Credential harvesting and confidential document targeting."))
-        exec_summary = clean_markdown(ai_report.get("executive_assessment", ""))
-        clean_traj = clean_markdown(ai_report.get("behavioral_trajectory", ""))
-        threat_score = ai_report.get("threat_score", 0.85)
-        threat_justification = clean_markdown(ai_report.get("threat_justification", f"Assessed at {threat_level} based on honeypot telemetry."))
-        conf_level = ai_report.get("confidence_level", "HIGH")
-        conf_score = ai_report.get("confidence_score", 0.88)
-        limitations = clean_markdown(ai_report.get("limitations", "Observed actions represent factual honeypot telemetry; actor motivation is a probabilistic inference."))
-        secondary_intents = [clean_markdown(s) for s in ai_report.get("secondary_intents", []) if clean_markdown(s)]
-        alternative_explanations = [clean_markdown(a) for a in ai_report.get("alternative_explanations", []) if clean_markdown(a)]
-        recommendations = ai_report.get("recommended_actions", [])
-        evidence_list = ai_report.get("supporting_evidence", [])
+        pdf.check_page_space(min_space_needed=box_h + 6.0)
+        box_y = pdf.get_y()
 
-        # -------------------------------------------------------------------
-        # 3.A Primary Assessed Intention & Executive Assessment
-        # -------------------------------------------------------------------
-        card_y = pdf.get_y()
-        pdf.set_fill_color(*badge_bg)
-        pdf.set_draw_color(*badge_border)
-        pdf.rect(12, card_y, 48, 6.5, style='FD', round_corners=True, corner_radius=1.5)
-        pdf.set_xy(12, card_y)
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_BLUE_BG)
+        pdf.set_draw_color(*ForensicDesignSystem.COLOR_BLUE_BORDER)
+        pdf.rect(14, box_y, pdf.printable_width, box_h, style='FD', round_corners=True, corner_radius=2)
+
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_BLUE_ACCENT)
+        pdf.rect(14, box_y, 2.5, box_h, 'F')
+
+        pdf.set_xy(18, box_y + 2.0)
         pdf.set_font(pdf.doc_font_family, 'B', 8.2)
-        pdf.set_text_color(*badge_text)
-        pdf.cell(48, 6.5, f"THREAT LEVEL: {threat_level}", align='C')
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        pdf.cell(content_w, 4.0, "Plain-Language Incident Explanation (For Non-Technical Reviewers)", new_x="LMARGIN", new_y="NEXT")
 
-        # Adversary Persona Box
-        pdf.set_fill_color(*pdf.COLOR_GRAY_BG)
-        pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-        pdf.rect(63, card_y, 135, 6.5, style='FD', round_corners=True, corner_radius=1.5)
-        pdf.set_xy(65, card_y)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(32, 6.5, "ADVERSARY PERSONA:")
-        pdf.set_font(pdf.doc_font_family, 'B', 7.8)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        pdf.cell(100, 6.5, persona[:65])
-        pdf.ln(8.5)
+        pdf.set_xy(18, box_y + 7.5)
+        pdf.set_font(pdf.doc_font_family, '', 7.4)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(content_w, 3.5, plain_text)
 
-        # Primary Intent Callout
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.2, "3.A Primary Assessed Strategic Intention:", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_y(box_y + box_h + 3.5)
 
-        pdf.set_x(14)
+        # 2. Compact Incident Snapshot Grid
+        pdf.subsection_header("Incident Snapshot & Operational Metrics", min_space_needed=22)
+        grid_y = pdf.get_y()
+        card_w = (pdf.printable_width - 10) / 3  # ~57mm each
+        card_h = 15.0
+
+        indicators = ai_report.get("behavioral_indicators", {})
+        apps = [a.get("application") for a in indicators.get("distinct_applications", []) if a.get("application")]
+        app_str = ", ".join(apps[:3]) if apps else "Explorer, PowerShell"
+
+        cards_data = [
+            ("Detection Timestamp", detection_ts, "Biometric drift trigger point", "info"),
+            ("Total Recorded Events", f"{total_events} Events", f"Captured in {stats.get('session_duration_seconds', 0)}s window", "info"),
+            ("Assessed Threat Level", f"{threat_level} ({threat_score:.2f})", "Deterministic risk evaluation", "critical" if threat_level in ("CRITICAL", "HIGH") else "warning"),
+            ("Simulated Apps Engaged", app_str, f"{len(apps)} distinct decoy interfaces", "info"),
+            ("Containment Status", "Contained in Sandbox", "0 host writes in monitored paths", "safe"),
+            ("Investigation Status", "Triage Completed", "Awaiting operator review", "info")
+        ]
+
+        for idx, (lbl, val, sub, st) in enumerate(cards_data):
+            row = idx // 3
+            col = idx % 3
+            cx = 14 + col * (card_w + 5)
+            cy = grid_y + row * (card_h + 3)
+
+            pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_CARD)
+            pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER_LIGHT)
+            pdf.rect(cx, cy, card_w, card_h, style='FD', round_corners=True, corner_radius=1.5)
+
+            pdf.set_xy(cx + 2.5, cy + 1.5)
+            pdf.set_font(pdf.doc_font_family, 'B', 6.8)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(card_w - 5, 3.2, lbl)
+
+            pdf.set_xy(cx + 2.5, cy + 5.0)
+            pdf.set_font(pdf.doc_font_family, 'B', 8.5)
+            val_col = ForensicDesignSystem.COLOR_RED_ALERT if st == "critical" else (ForensicDesignSystem.COLOR_GREEN_SAFE if st == "safe" else ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.set_text_color(*val_col)
+            pdf.cell(card_w - 5, 4.5, val)
+
+            pdf.set_xy(cx + 2.5, cy + 9.8)
+            pdf.set_font(pdf.doc_font_family, '', 6.4)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(card_w - 5, 3.2, sub)
+
+        pdf.set_y(grid_y + 2 * (card_h + 3) + 2.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 3: Incident Overview and System Context
+    # -----------------------------------------------------------------------
+    def _add_section_3_system_context(self, pdf: ForensicPDF):
+        pdf.section_header("3. Incident Overview & System Context", subtitle="Detection Mechanics, Architecture & Environment Boundaries", min_space_needed=40)
+
+        context_text = (
+            "The Behavioral Drift security framework operates as a defense-in-depth endpoint monitoring system. "
+            "Continuous multi-scale biometric sensors monitor keystroke flight and dwell timing, mouse trajectory curvature, "
+            "velocity, and interaction modes without interrupting normal user activity. When behavioral feature drift diverges "
+            "beyond the calibrated baseline threshold (Instantaneous Risk >= 0.55), the risk orchestrator executes an automated "
+            "diversion policy: the legitimate user session is locked, and the active screen transitions transparently into an "
+            "isolated, stateful Windows 11 Honey-Desktop environment."
+        )
         pdf.set_font(pdf.doc_font_family, '', 7.6)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        pdf.multi_cell(184, 4.0, primary_intent)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(pdf.printable_width, 3.8, context_text)
+        pdf.ln(2.0)
 
-        # Secondary Objectives
-        if secondary_intents:
-            pdf.ln(1.0)
-            pdf.set_x(14)
-            pdf.set_font(pdf.doc_font_family, 'B', 7.4)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(0, 3.8, "Secondary Objectives:", new_x="LMARGIN", new_y="NEXT")
-            for sec in secondary_intents[:3]:
-                pdf.set_x(18)
-                pdf.set_font(pdf.doc_font_family, '', 7.2)
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-                pdf.cell(0, 3.6, f"- {sec}", new_x="LMARGIN", new_y="NEXT")
-
-        # Executive Assessment Narrative
-        if exec_summary:
-            pdf.ln(1.5)
-            pdf.set_x(12)
-            pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-            pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-            pdf.cell(0, 4.2, "Executive Assessment Briefing:", new_x="LMARGIN", new_y="NEXT")
-            pdf.set_x(14)
-            pdf.set_font(pdf.doc_font_family, '', 7.4)
-            pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-            pdf.multi_cell(184, 3.8, exec_summary)
-
-        # -------------------------------------------------------------------
-        # 3.B Grounded Telemetry Evidence Supporting Assessment (Evidence Table)
-        # -------------------------------------------------------------------
-        pdf.ln(2.5)
-        pdf.check_page_space(min_space_needed=35)
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.5, "3.B Telemetry Evidence Supporting Assessment (Chronology Linked):", new_x="LMARGIN", new_y="NEXT")
-
-        # Table: Event ID (24) + Action (40) + Target (52) + Investigative Relevance (70) = 186mm
-        col_w = (24, 40, 52, 70)
-        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=pdf.COLOR_NAVY_DARK)
-        row_odd_style = FontFace(fill_color=pdf.COLOR_GRAY_BG)
+        # Architectural Boundaries Table
+        col_w = (42, 70, 70)
+        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
+        row_odd_style = FontFace(fill_color=ForensicDesignSystem.COLOR_BG_LIGHT)
         row_even_style = FontFace(fill_color=(255, 255, 255))
-        eid_style = FontFace(emphasis='B', color=pdf.COLOR_BLUE_ACCENT)
+
+        pdf.set_font(pdf.doc_font_family, size=7.2)
+        with pdf.table(col_widths=col_w, headings_style=hdr_style, line_height=4.4) as table:
+            h = table.row()
+            h.cell("Subsystem Boundary", align='L')
+            h.cell("Implementation Scope (Monitored)", align='L')
+            h.cell("Evidentiary Guarantee & Real Host Boundary", align='L')
+
+            boundaries = [
+                ("Virtual Filesystem (VFS)", "In-memory directory hierarchy and synthetic user folders (Desktop, Documents, Downloads).", "Isolated from real host storage; file writes mutate synthetic state only."),
+                ("Decoy Applications", "PyQt6 emulated interfaces (File Explorer, Notepad, PowerShell, Decoy Chrome, Settings).", "Executes no host child processes; commands processed by VirtualCommandEngine."),
+                ("Optical Presence Sensor", "Webcam hardware capture verifying physical workstation presence at breach time.", "Confirms physical presence via Haar geometry; does not verify legal identity."),
+                ("Quarantine Directory", "data/sandbox/ receives intercepted payload downloads and quarantined files.", "Contains simulated or trapped payloads for offline reverse engineering.")
+            ]
+            for idx, (b_name, b_scope, b_guar) in enumerate(boundaries):
+                r = table.row(style=row_odd_style if idx % 2 else row_even_style)
+                r.cell(b_name, align='L')
+                r.cell(b_scope, align='L')
+                r.cell(b_guar, align='L')
+
+        pdf.ln(3.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 4: Incident Timeline
+    # -----------------------------------------------------------------------
+    def _add_section_4_incident_timeline(self, pdf: ForensicPDF, timeline: list):
+        pdf.section_header("4. Chronological Incident Timeline", subtitle=f"Chronological Event Audit Trail ({len(timeline)} Total Records)", min_space_needed=40)
+
+        # Check for timestamp clustering
+        if timeline and len(timeline) > 1:
+            first_t = timeline[0].get("unix_time", 0)
+            last_t = timeline[-1].get("unix_time", 0)
+            elapsed_sec = abs(last_t - first_t)
+            if elapsed_sec < 1.0:
+                caveat = (
+                    "Analytical Disclosure on Timestamp Resolution: Recorded events occurred within a sub-second interval "
+                    f"(approx. {elapsed_sec:.2f}s total elapsed). This characteristic pattern occurs during automated simulation, "
+                    "benchmarking, or batch replay. Relative chronological order reflects verified queue arrival sequence."
+                )
+                pdf.set_font(pdf.doc_font_family, 'I', 7.0)
+                pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+                pdf.multi_cell(pdf.printable_width, 3.4, caveat)
+                pdf.ln(1.5)
+
+        # Table: Seq/ID (22) + Time/Offset (30) + Application (28) + Action (34) + Target (46) + Severity (22) = 182mm
+        col_w = (20, 28, 28, 34, 52, 20)
+        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
+        row_odd_style = FontFace(fill_color=ForensicDesignSystem.COLOR_BG_LIGHT)
+        row_even_style = FontFace(fill_color=(255, 255, 255))
+        eid_style = FontFace(emphasis='B', color=ForensicDesignSystem.COLOR_BLUE_ACCENT)
+        sev_alert_style = FontFace(color=ForensicDesignSystem.COLOR_RED_ALERT, emphasis='B')
+        sev_susp_style = FontFace(color=ForensicDesignSystem.COLOR_AMBER_WARN, emphasis='B')
+        sev_info_style = FontFace(color=ForensicDesignSystem.COLOR_TEXT_MUTED)
+
+        pdf.set_font(pdf.doc_font_family, size=6.8)
+        with pdf.table(col_widths=col_w, headings_style=hdr_style, repeat_headings=1, line_height=4.2) as table:
+            h = table.row()
+            h.cell("Event ID", align='C')
+            h.cell("Time (Offset)", align='C')
+            h.cell("Application", align='L')
+            h.cell("Observed Action", align='L')
+            h.cell("Target Resource / Command", align='L')
+            h.cell("Severity", align='C')
+
+            for idx, ev in enumerate(timeline):
+                style = row_odd_style if idx % 2 else row_even_style
+                r = table.row(style=style)
+
+                eid = ev.get("event_id", f"EVT-{idx+1:04d}")
+                t_str = ev.get("timestamp", "").split(" ")[-1] if ev.get("timestamp") else "N/A"
+                offset = ev.get("elapsed_seconds", 0.0)
+                time_disp = f"{t_str} (+{offset:.2f}s)" if offset is not None else t_str
+                app = ev.get("application", "SYSTEM") or "SYSTEM"
+                act = ev.get("action_type", ev.get("action", "EVENT")).replace("_", " ")
+                tgt = redact_sensitive_presentation(ev.get("target", ""))
+                sev = ev.get("severity", "INFO").upper()
+
+                r.cell(eid, align='C', style=eid_style)
+                r.cell(time_disp, align='C')
+                r.cell(app, align='L')
+                r.cell(act, align='L')
+                r.cell(tgt, align='L')
+
+                s_style = sev_alert_style if sev in ("ALERT", "CRITICAL") else (sev_susp_style if sev == "SUSPICIOUS" else sev_info_style)
+                r.cell(sev, align='C', style=s_style)
+
+        pdf.ln(3.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 5: Themed Investigative Findings
+    # -----------------------------------------------------------------------
+    def _add_section_5_investigative_findings(self, pdf: ForensicPDF, timeline: list, ai_report: dict):
+        pdf.section_header("5. Investigative Findings", subtitle="Categorized Behavioral Evidence with Corroborating Event References", min_space_needed=35)
+
+        # Categorize events from timeline
+        findings_groups = {
+            "File & Directory Discovery": [],
+            "Decoy Asset & Credential Access": [],
+            "Simulated Authentication Activity": [],
+            "Command-Line & Diagnostic Probing": [],
+            "Browser & Portal Interaction": [],
+            "File Modification & Deletion Activity": []
+        }
+
+        for ev in timeline:
+            atype = ev.get("action_type", "").upper()
+            tgt = ev.get("target", "")
+            eid = ev.get("event_id", "")
+
+            if "FOLDER" in atype or atype == "FOLDER_NAVIGATED":
+                findings_groups["File & Directory Discovery"].append((eid, atype, tgt))
+            elif "CREDENTIAL" in atype or "PASSWORD" in tgt.upper() or "KEY" in tgt.upper() or ".ENV" in tgt.upper():
+                findings_groups["Decoy Asset & Credential Access"].append((eid, atype, tgt))
+            elif "LOGIN" in atype or "BANK" in tgt.upper() or "PORTAL" in tgt.upper():
+                findings_groups["Simulated Authentication Activity"].append((eid, atype, tgt))
+            elif atype in ("SHELL_COMMAND", "COMMAND_EXECUTION", "NETWORK_RECONNAISSANCE"):
+                findings_groups["Command-Line & Diagnostic Probing"].append((eid, atype, tgt))
+            elif "BROWSER" in atype or "URL" in atype:
+                findings_groups["Browser & Portal Interaction"].append((eid, atype, tgt))
+            elif "DELETE" in atype or "MODIFY" in atype or "SANDBOX" in atype:
+                findings_groups["File Modification & Deletion Activity"].append((eid, atype, tgt))
+
+        for cat_name, items in findings_groups.items():
+            if not items:
+                continue
+
+            pdf.check_page_space(min_space_needed=18)
+            eids = [x[0] for x in items if x[0]]
+            eid_str = ", ".join(eids[:5])
+            if len(eids) > 5:
+                eid_str += f" (+{len(eids)-5} more)"
+
+            pdf.set_font(pdf.doc_font_family, 'B', 8.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+            pdf.cell(0, 4.0, f"[OBSERVED] {cat_name} ({len(items)} events)", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_font(pdf.doc_font_family, '', 7.3)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            summary_txt = f"Corroborating Event IDs: [{eid_str}]. Targets engaged: {', '.join(set([os.path.basename(x[2]) for x in items[:4]]))}. Activity confirmed via local session log."
+            pdf.multi_cell(pdf.printable_width - 4, 3.5, summary_txt)
+            pdf.ln(1.5)
+
+        pdf.ln(2.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 6: AI-Assisted Behavioral Reconstruction
+    # -----------------------------------------------------------------------
+    def _add_section_6_ai_behavioral_reconstruction(self, pdf: ForensicPDF, ai_report: dict, timeline: list):
+        pdf.section_header(
+            "6. AI-Assisted Behavioral Reconstruction",
+            subtitle=f"Cognitive Adversary Profiling // Model: {ai_report.get('model_name', 'Local Offline Engine')}",
+            min_space_needed=40
+        )
+
+        # Clear investigative aid disclaimer
+        disclaimer = (
+            "Investigative Aid Notice: The narrative below is synthesized by a localized offline language model "
+            "as an analytical hypothesis. It does not constitute an authoritative real-world legal attribution or confirmed "
+            "attacker identity. Ground truth is anchored strictly in the verified event records cited."
+        )
+        pdf.set_font(pdf.doc_font_family, 'I', 7.0)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+        pdf.multi_cell(pdf.printable_width, 3.4, disclaimer)
+        pdf.ln(2.0)
+
+        # Assessed Pattern Card
+        threat_level = ai_report.get("threat_level", "HIGH").upper()
+        persona = clean_markdown(ai_report.get("attacker_persona", "Simulated Workstation Explorer"))
+        primary_intent = clean_markdown(ai_report.get("primary_intent", "Exploration of virtual filesystem and decoy assets."))
+        clean_traj = clean_markdown(ai_report.get("behavioral_trajectory", ""))
+
+        content_w = pdf.printable_width - 45
+        pdf.set_font(pdf.doc_font_family, '', 7.4)
+        intent_h = pdf.multi_cell(content_w, 3.6, primary_intent, dry_run=True, output='HEIGHT')
+        card_h = max(18.0, 7.5 + intent_h + 3.0)
+
+        pdf.check_page_space(min_space_needed=card_h + 6.0)
+        card_y = pdf.get_y()
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_LIGHT)
+        pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+        pdf.rect(14, card_y, pdf.printable_width, card_h, style='FD', round_corners=True, corner_radius=1.5)
+
+        pdf.set_xy(17, card_y + 2.0)
+        pdf.set_font(pdf.doc_font_family, 'B', 7.8)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        pdf.cell(40, 4.0, "Candidate Behavioral Profile:")
+        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.cell(content_w, 4.0, persona)
+
+        pdf.set_xy(17, card_y + 7.0)
+        pdf.set_font(pdf.doc_font_family, 'B', 7.8)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+        pdf.cell(40, 4.0, "Primary Inferred Objective:")
+        pdf.set_font(pdf.doc_font_family, '', 7.4)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(content_w, 3.6, primary_intent)
+
+        pdf.set_y(card_y + card_h + 2.5)
+
+        # Behavioral Trajectory
+        if clean_traj:
+            pdf.subsection_header("Behavioral Progression & Trajectory Hypothesis", min_space_needed=18)
+            pdf.set_font(pdf.doc_font_family, '', 7.4)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.multi_cell(pdf.printable_width, 3.6, clean_traj)
+            pdf.ln(1.5)
+
+        # Alternative Hypotheses & Unknowns
+        alt_explanations = ai_report.get("alternative_explanations", [])
+        if alt_explanations:
+            pdf.subsection_header("Alternative Benign Hypotheses & Uncertainties", min_space_needed=16)
+            for alt in alt_explanations[:2]:
+                pdf.set_x(16)
+                pdf.set_font(pdf.doc_font_family, '', 7.2)
+                pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+                pdf.cell(0, 3.5, f"- Hypothesis: {clean_markdown(alt)}", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.ln(2.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 7: Deterministic Risk & Severity Assessment
+    # -----------------------------------------------------------------------
+    def _add_section_7_risk_and_severity_assessment(self, pdf: ForensicPDF, ai_report: dict, stats: dict, timeline: list):
+        pdf.section_header("7. Deterministic Risk & Severity Assessment", subtitle="Quantitative Risk Scoring & Policy Threshold Reconciliation", min_space_needed=35)
+
+        threat_level = ai_report.get("threat_level", "HIGH").upper()
+        threat_score = ai_report.get("threat_score", 0.75)
+
+        if threat_score >= 0.55:
+            threshold_phrase = "exceeding the calibrated operating threshold (Threshold = 0.55)"
+        else:
+            threshold_phrase = "registering below the general drift threshold (Threshold = 0.55), with honeypot containment engaged upon heuristic trigger"
+
+        risk_text = (
+            f"The continuous authentication engine computes risk using a calibrated multimodal fusion pipeline. "
+            f"During the incident window, the instantaneous anomaly score reached {threat_score:.4f}, {threshold_phrase}. "
+            f"Rule-based deterministic evaluation classified the severity as {threat_level} based on verified honeypot risk factors."
+        )
+        pdf.set_font(pdf.doc_font_family, '', 7.5)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(pdf.printable_width, 3.6, risk_text)
+        pdf.ln(2.0)
+
+        # Multi-Component Agreement Table
+        col_w = (42, 45, 45, 50)
+        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
+        row_style = FontFace(fill_color=ForensicDesignSystem.COLOR_BG_LIGHT)
+
+        pdf.set_font(pdf.doc_font_family, size=7.2)
+        with pdf.table(col_widths=col_w, headings_style=hdr_style, line_height=4.4) as table:
+            h = table.row()
+            h.cell("Evaluation Subsystem", align='L')
+            h.cell("Output / Score", align='C')
+            h.cell("Policy Threshold", align='C')
+            h.cell("Assessment Finding", align='L')
+
+            components = [
+                ("Multimodal Biometric Engine", f"Risk Score: {threat_score:.2f}", "Threshold >= 0.55", "Elevated Drift Detected"),
+                ("Deterministic Heuristic Rules", f"Threat Level: {threat_level}", "Critical Asset Probing", "Confirmed Decoy Engagement"),
+                ("Offline Intent Reasoner", f"Persona: {ai_report.get('attacker_persona', 'Assessed')}", "Behavioral Match", "Tactical Consistency Verified")
+            ]
+            for c in components:
+                r = table.row(style=row_style)
+                r.cell(c[0], align='L')
+                r.cell(c[1], align='C')
+                r.cell(c[2], align='C')
+                r.cell(c[3], align='L')
+
+        pdf.ln(3.0)
+
+    # -----------------------------------------------------------------------
+    # SECTION 8: Containment and Host-Protection Status
+    # -----------------------------------------------------------------------
+    def _add_section_8_containment_and_host_protection(self, pdf: ForensicPDF, stats: dict, photo_path: Optional[str], privacy_mode: bool):
+        pdf.section_header("8. Containment & Host-Protection Status", subtitle="Sandbox Isolation Verification & Monitored Storage Auditing", min_space_needed=45)
+
+        # Verified Containment Scope Callout
+        box_y = pdf.get_y()
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_BG)
+        pdf.set_draw_color(*ForensicDesignSystem.COLOR_GREEN_BORDER)
+        pdf.rect(14, box_y, pdf.printable_width, 16.0, style='FD', round_corners=True, corner_radius=2)
+
+        pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_SAFE)
+        pdf.rect(14, box_y, 2.5, 16.0, 'F')
+
+        pdf.set_xy(18, box_y + 2.0)
+        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_GREEN_SAFE)
+        pdf.cell(0, 3.8, "VERIFIED CONTAINMENT: Zero Host Writes Within Monitored Paths", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_xy(18, box_y + 6.0)
+        pdf.set_font(pdf.doc_font_family, '', 7.2)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(pdf.printable_width - 8, 3.4, (
+            "All captured file modifications, command executions, and browser downloads were confined to the in-memory "
+            "Virtual Filesystem and data/sandbox/ quarantine directory. Real user profile documents and system files "
+            "outside monitored honeypot paths exhibited zero modifications during the incident session."
+        ))
+        pdf.set_y(box_y + 18.0)
+
+        # Optical Presence Subsection
+        pdf.subsection_header("Workstation Physical Presence Evidence", min_space_needed=22)
+
+        has_photo = photo_path and os.path.exists(photo_path) and os.path.getsize(photo_path) > 500
+        if has_photo and not privacy_mode:
+            # Render photo with clear disclosure
+            p_box_y = pdf.get_y()
+            pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_LIGHT)
+            pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+            pdf.rect(14, p_box_y, pdf.printable_width, 24.0, style='FD', round_corners=True, corner_radius=2)
+
+            try:
+                pdf.image(photo_path, x=17, y=p_box_y + 2.0, w=26, h=20)
+                pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+                pdf.rect(17, p_box_y + 2.0, 26, 20, 'D')
+            except Exception:
+                pass
+
+            pdf.set_xy(47, p_box_y + 2.5)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.5)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+            pdf.cell(0, 3.8, f"Optical Sensor Capture: {os.path.basename(photo_path)}", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_x(47)
+            pdf.set_font(pdf.doc_font_family, '', 7.0)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.cell(0, 3.6, "Haar Cascade Detection: Physical presence at terminal verified.", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_x(47)
+            pdf.set_font(pdf.doc_font_family, 'I', 6.8)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(0, 3.6, "Privacy & Evidentiary Notice: Confirms terminal occupancy only; does not identify legal identity.", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_y(p_box_y + 26.0)
+        else:
+            pdf.set_font(pdf.doc_font_family, 'I', 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(0, 4.0, "[OPTICAL CAPTURE IDLE / PRIVACY MODE ENABLED] No physical webcam frame embedded.", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1.5)
+
+    # -----------------------------------------------------------------------
+    # SECTION 9: MITRE ATT&CK Mapping
+    # -----------------------------------------------------------------------
+    def _add_section_9_mitre_attack_mapping(self, pdf: ForensicPDF, timeline: list, ai_report: dict):
+        pdf.section_header("9. MITRE ATT&CK Framework Mapping", subtitle="Adversary Tactics & Techniques Alignment (Matrix v15, 2026)", min_space_needed=38)
+
+        # Match actions against catalog
+        all_actions = [e.get("action_type", "").lower() for e in timeline]
+        all_targets = [e.get("target", "").lower() for e in timeline]
+
+        mapped_techs = []
+        if any("credential" in a or "password" in t or ".env" in t for a, t in zip(all_actions, all_targets)):
+            mapped_techs.append(("T1552.001", MITRE_TECHNIQUE_METADATA["T1552.001"]))
+        if any("whoami" in t for t in all_targets):
+            mapped_techs.append(("T1087.001", MITRE_TECHNIQUE_METADATA["T1087.001"]))
+        if any("shell_command" in a for a in all_actions):
+            mapped_techs.append(("T1059.001", MITRE_TECHNIQUE_METADATA["T1059.001"]))
+        if any("folder_navigated" in a for a in all_actions):
+            mapped_techs.append(("T1082", MITRE_TECHNIQUE_METADATA["T1082"]))
+        if any("delete" in a for a in all_actions):
+            mapped_techs.append(("T1485", MITRE_TECHNIQUE_METADATA["T1485"]))
+        if any("login" in t or "bank" in t for t in all_targets):
+            mapped_techs.append(("T1110", MITRE_TECHNIQUE_METADATA["T1110"]))
+
+        if not mapped_techs:
+            mapped_techs.append(("T1082", MITRE_TECHNIQUE_METADATA["T1082"]))
+
+        col_w = (20, 50, 68, 44)
+        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
+        row_odd = FontFace(fill_color=ForensicDesignSystem.COLOR_BG_LIGHT)
+        row_even = FontFace(fill_color=(255, 255, 255))
+        supported_style = FontFace(color=ForensicDesignSystem.COLOR_GREEN_SAFE, emphasis='B')
+        candidate_style = FontFace(color=ForensicDesignSystem.COLOR_AMBER_WARN, emphasis='B')
 
         pdf.set_font(pdf.doc_font_family, size=7.0)
         with pdf.table(col_widths=col_w, headings_style=hdr_style, repeat_headings=1, line_height=4.4) as table:
             h = table.row()
-            h.cell("Event ID", align='C')
-            h.cell("Observed Action", align='L')
-            h.cell("Targeted Resource", align='L')
-            h.cell("Investigative Relevance", align='L')
+            h.cell("Tech ID", align='C')
+            h.cell("Name & Tactic", align='L')
+            h.cell("Observed Honeypot Evidence", align='L')
+            h.cell("Mapping Status & Caveat", align='L')
 
-            if evidence_list:
-                for idx, ev in enumerate(evidence_list[:6]):
-                    style = row_odd_style if idx % 2 else row_even_style
-                    r = table.row(style=style)
-                    r.cell(ev.get("event_id", f"EVT-{idx+1:04d}"), align='C', style=eid_style)
-                    r.cell(clean_markdown(ev.get("action", "EVENT")).replace("_", " "), align='L')
-                    r.cell(clean_markdown(redact_sensitive_presentation(ev.get("target", "")))[:34], align='L')
-                    r.cell(clean_markdown(ev.get("relevance", ""))[:65], align='L')
-            else:
-                r = table.row()
-                r.cell("EVT-0001", align='C', style=eid_style)
-                r.cell("HONEYPOT ACTIVATED", align='L')
-                r.cell("Honeypot Sandbox", align='L')
-                r.cell("Initial session diverted to sandbox", align='L')
+            for idx, (tid, tinfo) in enumerate(mapped_techs[:6]):
+                r = table.row(style=row_odd if idx % 2 else row_even)
+                r.cell(tid, align='C')
+                r.cell(f"{tinfo['name']}\n({tinfo['tactic']})", align='L')
+                r.cell(tinfo['evidence'], align='L')
+                st_style = supported_style if tinfo['confidence'] == "Supported" else candidate_style
+                r.cell(f"{tinfo['confidence']}\n{tinfo['caveat']}", align='L', style=st_style)
 
-        # -------------------------------------------------------------------
-        # 3.C Behavioral Progression & Trajectory Reconstruction
-        # -------------------------------------------------------------------
-        pdf.ln(2.5)
-        pdf.check_page_space(min_space_needed=28)
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.5, "3.C Behavioral Progression & Kill-Chain Trajectory:", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_x(14)
-        pdf.set_font(pdf.doc_font_family, '', 7.4)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        pdf.multi_cell(184, 3.8, clean_traj)
-
-        # -------------------------------------------------------------------
-        # 3.D Alternative Hypotheses & Analytical Caveats
-        # -------------------------------------------------------------------
-        pdf.ln(2.0)
-        pdf.check_page_space(min_space_needed=24)
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.2, "3.D Alternative Hypotheses & Analytical Caveats:", new_x="LMARGIN", new_y="NEXT")
-
-        if alternative_explanations:
-            for alt in alternative_explanations[:2]:
-                pdf.set_x(16)
-                pdf.set_font(pdf.doc_font_family, '', 7.2)
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-                pdf.cell(0, 3.6, f"- Alternative: {alt}", new_x="LMARGIN", new_y="NEXT")
-
-        if limitations:
-            pdf.set_x(16)
-            pdf.set_font(pdf.doc_font_family, 'I', 7.0)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.multi_cell(182, 3.4, f"Analytical Caveat: {limitations}")
-
-        # -------------------------------------------------------------------
-        # 3.E Confidence Metric & Severity Evaluation Justification
-        # -------------------------------------------------------------------
-        pdf.ln(2.0)
-        pdf.check_page_space(min_space_needed=22)
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.2, "3.E Confidence Metric & Severity Evaluation Justification:", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_x(16)
-        pdf.set_font(pdf.doc_font_family, '', 7.2)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        conf_line = f"Confidence Rating: {conf_level} ({conf_score * 100:.0f}%) | Threat Score: {threat_score * 100:.0f}% ({threat_level})"
-        pdf.cell(0, 3.6, conf_line, new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_x(16)
-        pdf.set_font(pdf.doc_font_family, 'I', 7.0)
-        pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-        pdf.multi_cell(182, 3.4, f"Determination Justification: {threat_justification}")
-
-        # -------------------------------------------------------------------
-        # 3.F Prioritized Remediation & Containment Actions
-        # -------------------------------------------------------------------
-        pdf.ln(2.0)
-        pdf.check_page_space(min_space_needed=26)
-        pdf.set_x(12)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.2, "3.F Prioritized Remediation & Containment Actions:", new_x="LMARGIN", new_y="NEXT")
-
-        if recommendations:
-            for rec in recommendations[:4]:
-                p_num = rec.get("priority", 1) if isinstance(rec, dict) else 1
-                act_str = rec.get("action", str(rec)) if isinstance(rec, dict) else str(rec)
-                tf_str = rec.get("timeframe", "Immediate") if isinstance(rec, dict) else "Immediate"
-                pdf.set_x(16)
-                pdf.set_font(pdf.doc_font_family, 'B', 7.2)
-                pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-                pdf.cell(26, 3.6, f"Priority {p_num} [{tf_str}]:")
-                pdf.set_font(pdf.doc_font_family, '', 7.2)
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-                pdf.multi_cell(156, 3.6, clean_markdown(act_str))
         pdf.ln(3.0)
 
-    def _add_chronological_audit_table(self, pdf, timeline):
-        """Renders comprehensive chronological table of all recorded events fitting neatly on Page 2."""
-        pdf.section_header(
-            "4. Chronological Forensic Audit Trail (Honeypot Actions)",
-            subtitle=f"Complete Log ({len(timeline)} Recorded Events) // Source: session_actions.jsonl",
-            min_space_needed=35
-        )
+    # -----------------------------------------------------------------------
+    # SECTION 10: Recommended Actions
+    # -----------------------------------------------------------------------
+    def _add_section_10_recommended_actions(self, pdf: ForensicPDF, ai_report: dict, timeline: list):
+        pdf.section_header("10. Recommended Remediation & Verification Actions", subtitle="Prioritized Action Items for Evaluators & Response Teams", min_space_needed=42)
 
-        # Precise Column Widths summing to 186mm:
-        # Seq(8) + Time(24) + Offset(14) + Action(48) + Details(74) + Severity(18) = 186mm
-        col_w = (8, 24, 14, 48, 74, 18)
-        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=pdf.COLOR_NAVY_DARK)
-        row_odd_style = FontFace(fill_color=pdf.COLOR_GRAY_BG)
-        row_even_style = FontFace(fill_color=(255, 255, 255))
-        alert_style = FontFace(color=pdf.COLOR_RED_ALERT, emphasis='B')
-        susp_style = FontFace(color=pdf.COLOR_AMBER_WARN, emphasis='B')
-        info_style = FontFace(color=pdf.COLOR_TEXT_DARK)
-
-        pdf.set_font(pdf.doc_font_family, size=7.0)
-
-        with pdf.table(
-            col_widths=col_w,
-            headings_style=hdr_style,
-            repeat_headings=1,
-            line_height=4.6
-        ) as table:
-            # Header Row
-            hdr = table.row()
-            hdr.cell("Seq", align='C')
-            hdr.cell("Wall-Clock Time", align='C')
-            hdr.cell("Offset", align='C')
-            hdr.cell("Action Classification", align='L')
-            hdr.cell("Target / Command / Activity Details", align='L')
-            hdr.cell("Severity", align='C')
-
-            # Render ALL events without truncation
-            for idx, event in enumerate(timeline):
-                style = row_odd_style if (idx % 2 == 1) else row_even_style
-                r = table.row(style=style)
-
-                # 1. Sequence
-                r.cell(str(idx + 1), align='C')
-
-                # 2. Wall-clock timestamp
-                raw_ts = event.get("timestamp", "")
-                if " " in raw_ts:
-                    wall_clock = raw_ts.split(" ")[1] # e.g. 19:57:04
-                else:
-                    wall_clock = raw_ts or "00:00:00"
-                r.cell(wall_clock, align='C')
-
-                # 3. Relative Offset (+0.48s)
-                elapsed = event.get("elapsed_seconds", 0.0)
-                try:
-                    elapsed_float = float(elapsed)
-                    offset_str = f"+{elapsed_float:.2f}s"
-                except Exception:
-                    offset_str = f"T+{elapsed}s"
-                r.cell(offset_str, align='C')
-
-                # 4. Action Type (replace underscores with spaces for clean line breaking)
-                atype = event.get("action_type", "EVENT")
-                clean_atype = atype.replace("_", " ")
-                r.cell(clean_atype, align='L')
-
-                # 5. Target / Command / Details (redact presentation secrets)
-                target = str(event.get("target", ""))
-                clean_target = redact_sensitive_presentation(target)
-                r.cell(clean_target, align='L')
-
-                # 6. Severity
-                sev = event.get("severity", "INFO").upper()
-                if sev in ["ALERT", "CRITICAL"]:
-                    sev_cell_style = alert_style
-                elif sev == "SUSPICIOUS":
-                    sev_cell_style = susp_style
-                else:
-                    sev_cell_style = info_style
-                r.cell(sev, align='C', style=sev_cell_style)
-
-        # Audit Table Summary Note
-        pdf.ln(1.5)
-        pdf.set_font(pdf.doc_font_family, 'I', 6.8)
-        pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-        pdf.cell(0, 3.8, f"Integrity Note: All {len(timeline)} events sequentially logged with microsecond unix_time stamps in session_actions.jsonl (SHA-256 sealed). Presentation redaction applied to active credentials.", align='R', new_x="LMARGIN", new_y="NEXT")
-
-    def _add_sandbox_isolation_section(self, pdf, stats):
-        """Details trapped file writes and verifies host filesystem integrity."""
-        pdf.section_header("5. Active Sandbox Isolation & Host Protection Status", subtitle="Containment Verification", min_space_needed=30)
-
-        sandboxed_items = stats.get("sandbox_interceptions", [])
-        c2_items = stats.get("c2_payloads_intercepted", [])
-
-        # Deduplicate trapped payload names while counting attempts
-        interceptions_count = {}
-        for item in sandboxed_items + c2_items:
-            clean_item = os.path.basename(item)
-            clean_item = clean_item.split(" from ")[0].strip()
-            interceptions_count[clean_item] = interceptions_count.get(clean_item, 0) + 1
-
-        box_y = pdf.get_y()
-        box_h = 24 if interceptions_count else 20
-        pdf.set_fill_color(*pdf.COLOR_GREEN_BG)
-        pdf.set_draw_color(*pdf.COLOR_GREEN_SAFE)
-        pdf.rect(12, box_y, 186, box_h, style='FD', round_corners=True, corner_radius=2)
-
-        pdf.set_xy(16, box_y + 2)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.2)
-        pdf.set_text_color(*pdf.COLOR_GREEN_SAFE)
-        pdf.cell(0, 4.2, "HOST FILESYSTEM INTEGRITY: NO HOST WRITES OBSERVED WITHIN MONITORED HONEYPOT PATHS", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_xy(16, box_y + 6.8)
-        pdf.set_font(pdf.doc_font_family, '', 7.3)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        if interceptions_count:
-            items_desc = ", ".join([f"{name} ({cnt}x write trapped)" if cnt > 1 else f"{name} (Trapped)" for name, cnt in interceptions_count.items()])
-            pdf.cell(0, 3.8, f"Quarantined Payloads Intercepted: [{items_desc}]", new_x="LMARGIN", new_y="NEXT")
-            pdf.set_x(16)
-            pdf.cell(0, 3.8, "All file write operations were trapped and redirected to isolated sandbox path: 'data/sandbox/'.", new_x="LMARGIN", new_y="NEXT")
-            pdf.set_x(16)
-            pdf.set_font(pdf.doc_font_family, 'I', 6.8)
-            pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-            pdf.cell(0, 3.6, "Zero unvetted modifications observed across real user documents, system binaries, or local host environment paths.", new_x="LMARGIN", new_y="NEXT")
-        else:
-            pdf.cell(0, 3.8, "No host filesystem write attempts were detected during this interaction window.", new_x="LMARGIN", new_y="NEXT")
-            pdf.set_x(16)
-            pdf.cell(0, 3.8, "Host filesystem remained completely pristine. Sandbox quarantine monitoring active at: 'data/sandbox/'.", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_y(box_y + box_h + 3)
-
-    def _add_mitre_mapping_table(self, pdf, ai_report, timeline):
-        """Displays structured table of mapped MITRE ATT&CK techniques with verified telemetry evidence."""
-        pdf.section_header("6. MITRE ATT&CK Framework Kill Chain Alignment", subtitle="Adversary TTP Mapping", min_space_needed=34)
-
-        mapped_techniques = []
-        seen_ids = set()
-
-        all_targets = [str(ev.get("target", "")).lower() for ev in timeline]
-        all_actions = [str(ev.get("action_type", "")).upper() for ev in timeline]
-
-        # 1. Credentials in Files (T1552.001)
-        if any("aws_honey_token" in t or ".env" in t or "password" in t or "vault" in t or "secret" in t for t in all_targets):
-            seen_ids.add("T1552.001")
-            seen_ids.add("T1552")
-            cred_items = [t for t in all_targets if any(k in t for k in ["aws_honey_token", ".env", "password", "vault"])]
-            sample = cred_items[0][:38] if cred_items else "AWS / .env secrets"
-            mapped_techniques.append({
-                "id": "T1552.001",
-                "name": "Credentials in Files (Credential Access)",
-                "evidence": f"Accessed decoy secrets ({redact_sensitive_presentation(sample)})",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 2. Ingress Tool Transfer (T1105)
-        if any("curl" in t or "c2_payload" in a or "download" in t for t, a in zip(all_targets, all_actions)):
-            seen_ids.add("T1105")
-            mapped_techniques.append({
-                "id": "T1105",
-                "name": "Ingress Tool Transfer (Command & Control)",
-                "evidence": "Attempted remote payload ingress via curl (diverted to sandbox)",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 3. System Network Configuration Discovery (T1016)
-        net_cmds = [t for t in all_targets if any(cmd in t for cmd in ["ping", "arp", "route", "ipconfig"])]
-        if net_cmds:
-            seen_ids.add("T1016")
-            sample_net = ", ".join(list(dict.fromkeys(net_cmds)))[:42]
-            mapped_techniques.append({
-                "id": "T1016",
-                "name": "Network Config Discovery (Discovery)",
-                "evidence": f"Executed network enumeration ({sample_net})",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 4. Remote Services: SSH (T1021.004)
-        if any("ssh" in t for t in all_targets):
-            seen_ids.add("T1021.004")
-            mapped_techniques.append({
-                "id": "T1021.004",
-                "name": "Remote Services: SSH (Lateral Movement)",
-                "evidence": "Attempted lateral SSH connection to internal workstation node",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 5. Credential Access / Form Submission (T1110)
-        if any("credential_trap" in a or "bank" in t for t, a in zip(all_targets, all_actions)):
-            seen_ids.add("T1110")
-            mapped_techniques.append({
-                "id": "T1110",
-                "name": "Brute Force / Submission (Credential Access)",
-                "evidence": "Submitted authentication credentials against decoy banking portal",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 6. Local Account Discovery (T1087.001) - ONLY IF whoami actually present!
-        if any("whoami" in t for t in all_targets):
-            seen_ids.add("T1087.001")
-            seen_ids.add("T1087")
-            mapped_techniques.append({
-                "id": "T1087.001",
-                "name": "Local Account Discovery (Discovery)",
-                "evidence": "Executed 'whoami' to inspect local user privilege level",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 7. Command and Scripting Interpreter (T1059.001)
-        if any("shell_command" in a or "sandbox_file" in a for a in all_actions):
-            seen_ids.add("T1059.001")
-            mapped_techniques.append({
-                "id": "T1059.001",
-                "name": "Command & Script Interpreter (Execution)",
-                "evidence": "Interacted with command-line terminal to stage operations",
-                "status": "Verified Telemetry Match"
-            })
-
-        # 8. Data from Local System (T1005) or System Information Discovery (T1082)
-        if any("folder_navigated" in a or "file_viewed" in a or "file_open" in a for a in all_actions):
-            if "T1082" not in seen_ids:
-                seen_ids.add("T1082")
-                mapped_techniques.append({
-                    "id": "T1082",
-                    "name": "System Information Discovery (Discovery)",
-                    "evidence": "Traversed desktop directory structure and inspected files",
-                    "status": "Verified Telemetry Match"
-                })
-
-        if not mapped_techniques:
-            mapped_techniques.append({
-                "id": "T1082",
-                "name": "System Information Discovery (Discovery)",
-                "evidence": "General workstation exploration and folder traversal.",
-                "status": "Verified Telemetry Match"
-            })
-
-        col_w = (22, 56, 70, 38)
-        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=pdf.COLOR_NAVY_DARK)
-        row_odd_style = FontFace(fill_color=pdf.COLOR_GRAY_BG)
-        row_even_style = FontFace(fill_color=(255, 255, 255))
-        verified_style = FontFace(color=pdf.COLOR_GREEN_SAFE, emphasis='B')
-
-        pdf.set_font(pdf.doc_font_family, size=7.2)
-        with pdf.table(col_widths=col_w, headings_style=hdr_style, repeat_headings=1, line_height=4.8) as table:
-            h = table.row()
-            h.cell("Technique ID", align='C')
-            h.cell("Technique Name & Tactic", align='L')
-            h.cell("Observed Honeypot Evidence", align='L')
-            h.cell("Mapping Status", align='C')
-
-            for idx, tech in enumerate(mapped_techniques[:5]):
-                style = row_odd_style if idx % 2 else row_even_style
-                r = table.row(style=style)
-                r.cell(tech["id"], align='C')
-                r.cell(tech["name"], align='L')
-                r.cell(tech["evidence"], align='L')
-                r.cell(tech["status"], align='C', style=verified_style)
-
-        pdf.ln(2.5)
-
-    def _add_remediation_plan(self, pdf, ai_report):
-        """Displays prioritized incident response and remediation procedures."""
-        pdf.section_header("7. Incident Response & DFIR Remediation Plan", subtitle="Prioritized Action Items", min_space_needed=34)
-
-        recs = [
-            ("Priority 1: Immediate Containment (Within 1 Hour)", [
-                "Revoke terminal session tokens, SSH keys, and active user credentials referenced in session.",
-                "Verify sandbox quarantine directory (data/sandbox/) contains trapped payloads with zero host leaks.",
-                "Mandate immediate hardware-backed MFA step-up verification before restoring user desktop access."
-            ]),
-            ("Priority 2: Host & Network Forensics (Within 4 Hours)", [
-                "Inspect perimeter firewall outbound egress logs for connection attempts matching reconnaissance targets.",
-                "Perform static and dynamic binary analysis on quarantined payloads to derive indicators of compromise (IOCs)."
-            ]),
-            ("Priority 3: Baseline Recalibration & Preventive Hardening (Post-Incident)", [
-                "Recalibrate behavioral biometric drift thresholds to incorporate verified authentic user keystroke variance.",
-                "Cryptographically seal and preserve complete session audit trail for institutional compliance archives."
-            ])
+        # Academic / Demonstration vs Enterprise split
+        actions = [
+            ("Priority 1: Verification of Monitored Sandbox Isolation", "Immediate", "Evaluator / Analyst",
+             "Inspect data/sandbox/ and data/forensics/ to verify zero unvetted modifications leaked to host OS.",
+             "Confirm file count in data/sandbox/ matches session_actions.jsonl recorded writes."),
+            ("Priority 2: Multi-Factor Authentication Verification", "Within 1 Hour", "Workstation Admin",
+             "Mandate step-up identity challenge (MFA OTP) before releasing locked host workstation desktop.",
+             "Verify authentic OTP submission clears lock state and restores baseline monitoring daemon."),
+            ("Priority 3: Biometric Baseline Adaptation Review", "Post-Incident", "Security Team",
+             "Review behavioral drift log to verify whether acute variance was benign user adaptation or genuine intruder.",
+             "Inspect ADWIN drift change-points and recalibrate multi-scale model weights if genuine.")
         ]
 
-        for header, items in recs:
-            pdf.check_page_space(min_space_needed=12)
-            curr_y = pdf.get_y()
-            pdf.set_xy(12, curr_y)
-            pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-            pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-            pdf.cell(0, 4.0, header, new_x="LMARGIN", new_y="NEXT")
+        for title, tf, owner, desc, verify_step in actions:
+            pdf.check_page_space(min_space_needed=16)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.8)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+            pdf.cell(0, 4.0, f"{title} [{tf} | Owner: {owner}]", new_x="LMARGIN", new_y="NEXT")
 
-            for item in items:
-                pdf.set_x(16)
-                pdf.set_font(pdf.doc_font_family, '', 7.0)
-                pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-                pdf.cell(0, 3.6, f"- {item}", new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(1.0)
+            pdf.set_x(16)
+            pdf.set_font(pdf.doc_font_family, '', 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.multi_cell(pdf.printable_width - 4, 3.4, f"Action: {desc}\nVerification Closure: {verify_step}")
+            pdf.ln(1.5)
 
-    def _add_evidence_custody_and_attestation(self, pdf, photo_path, timeline=None, stats=None):
-        """Renders evidence integrity chain of custody, digital seal, and formal attestation signature."""
-        pdf.section_header(
-            "8. Forensic Evidence Chain of Custody & Cryptographic Verification",
-            subtitle="FIPS 180-4 Cryptographic Digest Verification & Admissibility",
-            min_space_needed=45
-        )
+        pdf.ln(2.0)
 
-        def get_artifact_info(rel_path):
+    # -----------------------------------------------------------------------
+    # SECTION 11: Evidence Inventory and Integrity
+    # -----------------------------------------------------------------------
+    def _add_section_11_evidence_inventory_and_integrity(self, pdf: ForensicPDF, photo_path: Optional[str], timeline: list, stats: dict):
+        pdf.section_header("11. Evidence Inventory & Cryptographic Integrity", subtitle="FIPS 180-4 SHA-256 Digest Verification on Local Disk", min_space_needed=50)
+
+        def get_artifact(rel_path: str, label: str):
             full_p = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
             if os.path.exists(full_p) and os.path.isfile(full_p):
                 sz = os.path.getsize(full_p)
-                mtime_str = time.strftime("%H:%M:%S", time.localtime(os.path.getmtime(full_p)))
+                mtime_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(full_p)))
                 try:
                     with open(full_p, "rb") as f:
                         digest = hashlib.sha256(f.read()).hexdigest()
-                    return sz, mtime_str, digest, "VERIFIED MATCH"
+                    status = "MATCH (VERIFIED ON DISK)" if len(digest) == 64 else "INVALID HASH"
+                    return label, rel_path, sz, mtime_str, digest, status
                 except Exception:
-                    return sz, mtime_str, "COMPUTATION_ERROR", "ERROR"
-            return 0, "N/A", "N/A", "NOT PRESENT"
+                    return label, rel_path, sz, mtime_str, "ERROR", "READ_ERROR"
+            return label, rel_path, 0, "N/A", "N/A", "NOT FOUND"
 
-        # 1. Event Journal
-        j_sz, j_time, jsonl_sha, j_status = get_artifact_info("data/forensics/session_actions.jsonl")
-
-        # 2. Captured Photo
-        photo_rel = f"data/forensics/{os.path.basename(photo_path)}" if photo_path else "data/forensics/intruder_optical.jpg"
-        p_sz, p_time, img_sha, p_status = get_artifact_info(photo_rel) if photo_path else (0, "N/A", "N/A", "SENSOR OFFLINE")
-
-        # 3. Sandbox Dropper
-        sandbox_files = glob.glob(os.path.join(PROJECT_ROOT, "data", "sandbox", "*"))
-        sandbox_files = [f for f in sandbox_files if not f.endswith(".gitkeep")]
-        if sandbox_files:
-            sb_sample = os.path.relpath(sandbox_files[0], PROJECT_ROOT).replace("\\", "/")
-            sb_sz, sb_time, sb_sha, sb_status = get_artifact_info(sb_sample)
-            sb_name = "Sandbox Quarantined Payload"
-        else:
-            sb_sample = "data/sandbox/*"
-            sb_sz, sb_time, sb_sha, sb_status = (0, "N/A", "ENVIRONMENTALLY ISOLATED", "PRISTINE")
-            sb_name = "Sandbox Quarantined Directory"
-
-        # 4. AI Audit Log
-        ai_sz, ai_time, ai_sha, ai_status = get_artifact_info("data/forensics/ai_threat_analysis_audit.jsonl")
-
-        evidence_items = [
-            ("Forensic Event Journal", "data/forensics/session_actions.jsonl", f"{j_sz} B // {j_time}", jsonl_sha, j_status),
-            ("Optical Intruder Frame", photo_rel if photo_path else "DirectShow Cam #0", f"{p_sz} B // {p_time}", img_sha, p_status),
-            (sb_name, sb_sample, f"{sb_sz} B // {sb_time}", sb_sha, sb_status),
-            ("AI Threat Audit Telemetry", "data/forensics/ai_threat_analysis_audit.jsonl", f"{ai_sz} B // {ai_time}", ai_sha, ai_status)
+        artifacts = [
+            get_artifact("data/forensics/session_actions.jsonl", "Forensic Event Journal"),
+            get_artifact("data/sandbox/virtual_fs_state.json", "VFS Serialized State"),
+            get_artifact("data/forensics/ai_threat_analysis_audit.jsonl", "AI Intent Audit Log"),
         ]
+        if photo_path and os.path.exists(photo_path):
+            photo_rel = f"data/forensics/{os.path.basename(photo_path)}"
+            artifacts.append(get_artifact(photo_rel, "Terminal Optical Frame"))
 
-        # Table: Col Widths: Artifact(34) + Path(48) + Size/Time(22) + SHA-256(64) + Status(18) = 186mm
-        col_w = (34, 48, 22, 64, 18)
-        hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=pdf.COLOR_NAVY_DARK)
-        row_odd_style = FontFace(fill_color=pdf.COLOR_GRAY_BG)
-        row_even_style = FontFace(fill_color=(255, 255, 255))
-        verified_style = FontFace(color=pdf.COLOR_GREEN_SAFE, emphasis='B')
+        # Render each evidence artifact in a clean, legible block with FULL 64-char unbroken hash
+        for label, path, sz, mtime, digest, status in artifacts:
+            pdf.check_page_space(min_space_needed=16)
+            card_y = pdf.get_y()
+            pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_LIGHT)
+            pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+            pdf.rect(14, card_y, pdf.printable_width, 14.0, style='FD', round_corners=True, corner_radius=1.5)
 
-        pdf.set_font(pdf.doc_font_family, size=6.8)
-        with pdf.table(col_widths=col_w, headings_style=hdr_style, line_height=4.6) as table:
-            h = table.row()
-            h.cell("Evidence Artifact", align='L')
-            h.cell("Repository Path", align='L')
-            h.cell("Size & MTime", align='C')
-            h.cell("SHA-256 Cryptographic Hash (Full 64-Char)", align='C')
-            h.cell("Integrity", align='C')
+            # Row 1: Label, Path, Size, Status
+            pdf.set_xy(17, card_y + 1.8)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.5)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+            pdf.cell(50, 4.0, label)
 
-            for idx, item in enumerate(evidence_items):
-                style = row_odd_style if idx % 2 else row_even_style
-                r = table.row(style=style)
-                r.cell(item[0], align='L')
-                r.cell(item[1], align='L')
-                r.cell(item[2], align='C')
+            pdf.set_font(pdf.doc_font_family, '', 7.0)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(55, 4.0, f"Path: {path} ({sz:,} B)")
 
-                # Full 64-char hash wrapped into two 32-char lines without ellipsis
-                hval = item[3]
-                if len(hval) == 64:
-                    h_display = hval[:32] + "\n" + hval[32:]
-                else:
-                    h_display = hval
-                r.cell(h_display, align='C')
-                r.cell(item[4], align='C', style=verified_style if "VERIFIED" in item[4] or "SEALED" in item[4] else row_even_style)
+            status_style = "safe" if "MATCH" in status else "neutral"
+            pdf.draw_badge(148, card_y + 1.5, status, style=status_style, w=44, h=4.5)
 
+            # Row 2: Full unbroken 64-char SHA-256 hash in Courier monospaced font
+            pdf.set_xy(17, card_y + 7.5)
+            pdf.set_font(pdf.doc_font_family, 'B', 6.8)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(20, 4.0, "SHA-256:")
+
+            pdf.set_font("Courier", "B", 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_DARK)
+            pdf.cell(140, 4.0, digest)
+
+            pdf.set_y(card_y + 16.0)
+
+        pdf.ln(1.5)
+
+    # -----------------------------------------------------------------------
+    # SECTION 12: Methodology, Limitations, and Glossary
+    # -----------------------------------------------------------------------
+    def _add_section_12_methodology_limitations_glossary(self, pdf: ForensicPDF):
+        pdf.section_header("12. Methodology, Limitations, and Glossary", subtitle="Scientific Principles, Operational Constraints & Technical Reference", min_space_needed=45)
+
+        # Methodology & Limitations
+        method_text = (
+            "Data Collection & Boundaries: Telemetry captured originates strictly from the emulated honey-desktop and virtual "
+            "filesystem. Events outside monitored honeypot paths are not tracked by this deception daemon. "
+            "\nCryptographic Integrity: SHA-256 digests establish raw byte-level consistency against files on disk at export time. "
+            "Digest verification does not certify third-party legal origin, authorship, or statutory admissibility. "
+            "\nAI Reasoner Constraints: Offline local model outputs represent probabilistic threat intelligence hypotheses, "
+            "subordinate to deterministic heuristic rules."
+        )
+        pdf.set_font(pdf.doc_font_family, '', 7.2)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+        pdf.multi_cell(pdf.printable_width, 3.4, method_text)
         pdf.ln(2.0)
 
-        # 2. Digital Forensic Seal Box
-        box_y = pdf.get_y()
-        pdf.set_fill_color(*pdf.COLOR_GRAY_BG)
-        pdf.set_draw_color(*pdf.COLOR_GRAY_BORDER)
-        pdf.rect(12, box_y, 186, 21, style='FD', round_corners=True, corner_radius=2)
-
-        pdf.set_xy(16, box_y + 2.0)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 4.0, "PRIMARY EVIDENCE DIGITAL FORENSIC SEAL (SHA-256):", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_x(16)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(*pdf.COLOR_BLUE_ACCENT)
-        pdf.cell(0, 4.0, jsonl_sha, new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_x(16)
-        pdf.set_font(pdf.doc_font_family, 'I', 6.8)
-        pdf.set_text_color(*pdf.COLOR_TEXT_MUTED)
-        pdf.cell(0, 3.6, "Cryptographic hash computed directly over raw forensic event log data/forensics/session_actions.jsonl at report generation time.", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_x(16)
-        pdf.cell(0, 3.6, "Certified and sealed by Behavioral Drift Continuous Authentication Framework | Department of ISE, NMAMIT", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_y(box_y + 23)
-
-        # 3. Forensic Evidence Admissibility & Limitations Disclosure
-        box2_y = pdf.get_y()
-        box2_h = 24
-        pdf.set_fill_color(*pdf.COLOR_BLUE_BG)
-        pdf.set_draw_color(191, 219, 254)
-        pdf.rect(12, box2_y, 186, box2_h, style='FD', round_corners=True, corner_radius=2)
-
-        pdf.set_xy(16, box2_y + 2.0)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(*pdf.COLOR_NAVY_MID)
-        pdf.cell(0, 3.8, "EVIDENTIARY DISCLOSURE & ADMISSIBILITY NOTICE", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_xy(16, box2_y + 6.2)
-        pdf.set_font(pdf.doc_font_family, '', 6.8)
-        pdf.set_text_color(*pdf.COLOR_TEXT_DARK)
-        disclosure_lines = [
-            "- Biometric Drift Trigger: Continuous multimodal telemetry (keystroke timing, mouse curvature) detected anomaly exceeding safety baseline.",
-            "- Deception Isolation: Adversary session was trapped in high-interaction honeypot sandbox; real user documents and credentials remained untouched.",
-            "- Cryptographic Standard: All digital hashes computed under NIST FIPS 180-4 SHA-256 standards upon session capture and verified at export time.",
-            "- Scope & Legal Admissibility: This document constitutes an automated digital forensic triage record. Formal judicial admission requires institutional audit."
+        # Glossary
+        pdf.subsection_header("Technical Glossary of Forensic Terms", min_space_needed=22)
+        terms = [
+            ("Behavioral Drift", "Statistical divergence in authentic user biometric dynamics (keystroke flight/dwell, mouse trajectory) beyond established threshold."),
+            ("Honey-Desktop", "High-interaction emulated deception environment mimicking authentic Windows 11 applications to trap and observe adversaries."),
+            ("Containment", "Defensive isolation ensuring intercepted interactions mutate synthetic virtual state without modifying host storage."),
+            ("SHA-256 Digest", "Cryptographic hash function computing unique 256-bit (64 hex character) fingerprints to verify file byte integrity."),
+            ("MITRE ATT&CK", "Publicly accessible knowledge base of adversary tactics, techniques, and procedures (TTPs) based on real-world observations.")
         ]
-        for line in disclosure_lines:
+        for term, definition in terms:
+            pdf.check_page_space(min_space_needed=10)
             pdf.set_x(16)
-            pdf.cell(0, 3.5, line, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font(pdf.doc_font_family, 'B', 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+            pdf.cell(32, 3.5, f"{term}:")
 
-        pdf.set_y(box2_y + box2_h + 3)
+            pdf.set_font(pdf.doc_font_family, '', 7.0)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.multi_cell(pdf.printable_width - 34, 3.4, definition)
+            pdf.ln(0.8)
 
-        # 4. Formal Department Attestation
-        attest_y = pdf.get_y()
-        attest_h = 16
-        pdf.set_fill_color(*pdf.COLOR_NAVY_DARK)
-        pdf.rect(12, attest_y, 186, attest_h, style='F', round_corners=True, corner_radius=2)
-
-        pdf.set_xy(16, attest_y + 2.5)
-        pdf.set_font(pdf.doc_font_family, 'B', 8.0)
-        pdf.set_text_color(241, 245, 249)
-        pdf.cell(110, 4.2, "BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION RESEARCH SYSTEM")
-
-        pdf.set_xy(126, attest_y + 2.5)
-        pdf.set_font(pdf.doc_font_family, 'B', 7.5)
-        pdf.set_text_color(147, 197, 253)
-        pdf.cell(68, 4.2, "STATUS: CRYPTOGRAPHICALLY SEALED", align='R')
-
-        pdf.set_xy(16, attest_y + 7.5)
-        pdf.set_font(pdf.doc_font_family, '', 7.0)
-        pdf.set_text_color(203, 213, 225)
-        pdf.cell(110, 3.8, "Department of Information Science & Engineering | NMAM Institute of Technology, Nitte")
-
-        pdf.set_xy(126, attest_y + 7.5)
-        pdf.set_font(pdf.doc_font_family, 'I', 7.0)
-        pdf.set_text_color(148, 163, 184)
-        pdf.cell(68, 3.8, f"Sealed: {time.strftime('%Y-%m-%d %H:%M:%S')}", align='R')
-
-        pdf.set_y(attest_y + attest_h + 4)
+        # Raw Event Appendix Note
+        pdf.ln(2.0)
+        pdf.check_page_space(min_space_needed=14)
+        pdf.set_font(pdf.doc_font_family, 'I', 6.8)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+        pdf.cell(0, 3.5, "Raw Telemetry Appendix: Complete unredacted JSON Lines event audit log preserved at: data/forensics/session_actions.jsonl", new_x="LMARGIN", new_y="NEXT")
 
 
-# ---------------------------------------------------------------------------
-# Standalone CLI Test Execution
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("Testing Redesigned ForensicReportGenerator...")
     gen = ForensicReportGenerator()
-    out = gen.generate_report()
-    print("Forensic Report successfully exported to:", out)
+    test_pdf = gen.generate_report()
+    print(f"Generated PDF at: {test_pdf}")

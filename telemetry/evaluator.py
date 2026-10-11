@@ -50,6 +50,7 @@ class ThreatEvaluator:
         self._load_reference_sequences()
         
         # State management
+        self.alert_threshold = self.threshold
         self.is_breached = False
         self.last_alert_time = 0.0
         self.active_otp = None
@@ -71,6 +72,12 @@ class ThreatEvaluator:
             print(f"[EVALUATOR] [WARNING] DynamicRiskOrchestrator not loaded: {e}", file=sys.stderr)
         
         self.load_models()
+
+    def reset_temporal_state(self):
+        """Resets the sliding temporal smoothing buffer, alert cooldown, and breach state."""
+        self.risk_history.clear()
+        self.last_alert_time = 0.0
+        self.is_breached = False
 
     def _load_reference_sequences(self):
         """Loads reference owner keystroke sequences for active window biometrics alignment."""
@@ -152,13 +159,40 @@ class ThreatEvaluator:
             risk = self.sequence_detector.predict_score(d_seq, f_seq)
             return float(1.0 - risk)
 
-    def evaluate_row(self, telemetry_row, weights=None):
+    def evaluate_mouse_dynamics(self, telemetry_row):
         """
-        Scores a single telemetry JSON row using Quad-Factor Continuous Fusion.
+        Evaluates mouse kinematics (velocity, acceleration, jerk, trajectory straightness).
+        Returns confidence score [0.0 - 1.0] where 1.0 is authentic owner.
+        """
+        mouse_events = telemetry_row.get("mouse_events", 0)
+        vel = float(telemetry_row.get("mouse_velocity_mean", 0.0))
+
+        # Idle mouse check: no mouse events or non-active pointer
+        if mouse_events < 5 and vel <= 0.0:
+            return 0.95  # Neutral non-intrusion state
+
+        acc = float(telemetry_row.get("mouse_acceleration_mean", 0.0))
+        jerk = float(telemetry_row.get("mouse_jerk_mean", 0.0))
+        straight = min(max(float(telemetry_row.get("mouse_straightness_mean", 0.90)), 0.0), 1.0)
+
+        # Calibrated robust kinematics distance from owner baseline
+        # Medians: [271.79, 21.75, 3.26, 0.906], MADs: [31.30, 2.51, 0.38, 0.0292]
+        z_vel = abs(vel - 271.79) / 31.30
+        z_acc = abs(acc - 21.75) / max(2.51, 0.1)
+        z_jerk = abs(jerk - 3.26) / max(0.38, 0.05)
+        z_str = abs(straight - 0.906) / max(0.0292, 0.005)
+
+        z_comp = 0.30 * z_vel + 0.25 * z_acc + 0.20 * z_jerk + 0.25 * z_str
+        anomaly_score = 1.0 / (1.0 + np.exp(-1.5 * (z_comp - 2.8)))
+        return float(1.0 - np.clip(anomaly_score, 0.0, 1.0))
+
+    def evaluate_row(self, telemetry_row, weights=None, dynamic_fusion=True, legacy_mode=False):
+        """
+        Scores a single telemetry JSON row using Quad/Penta-Factor Continuous Fusion.
         
-        Formula:
-            Score = (0.35 * Deep_SVDD_Conf) + (0.35 * OC_SVM_Conf) + (0.15 * IsoForest_Conf) + (0.15 * Cognitive_Conf)
-            Risk  = 1.0 - Score
+        Supports:
+        - Calibrated Dynamic Modality-Aware Fusion (default): adapts weights when typing or mouse is idle.
+        - Legacy Rollback Mode (legacy_mode=True): exact original 4-factor formula (0.35/0.35/0.15/0.15).
             
         Returns:
             fused_risk: Instantaneous raw anomaly risk [0.0 - 1.0].
@@ -187,41 +221,87 @@ class ThreatEvaluator:
                 # 1. Fetch Deep SVDD 1D-CNN Keystroke Biometric Confidence
                 svdd_conf = self.evaluate_keystroke_sequence(telemetry_row)
                 
-                # 2. Fetch Biometric Dynamics (OC-SVM) & Context Dynamics (Isolation Forest) Confidences
+                # 2. Fetch Keystroke Dynamics (OC-SVM) & Context Dynamics (Isolation Forest) Confidences
                 svm_conf, if_conf = self.models.score(telemetry_row)
+
+                # 3. Fetch Dedicated Mouse Kinematics Confidence (Independent Model)
+                mouse_conf = self.evaluate_mouse_dynamics(telemetry_row)
                 
-                # 3. Fetch Cognitive Task Confidence from Behavioral AI Controller
+                # 4. Fetch Cognitive Task Confidence from Behavioral AI Controller
                 try:
                     ctrl_anomaly, _ = self.controller.evaluate_telemetry_row(telemetry_row)
                     ctrl_conf = 1.0 - ctrl_anomaly
                 except Exception:
-                    ctrl_conf = svm_conf
-                    
-                # 4. Quad-Factor Continuous Fusion
-                if weights is not None and len(weights) == 4:
-                    w_svdd, w_svm, w_if, w_ctrl = weights
-                else:
-                    # Standard calibrated Quad-Factor weights
+                    ctrl_conf = 0.90
+
+                # 5. Continuous Multimodal Fusion
+                if legacy_mode:
+                    # Exact Original 4-Factor Baseline Configuration (Rollback Mode)
                     w_svdd = 0.35
                     w_svm = 0.35
                     w_if = 0.15
                     w_ctrl = 0.15
-                    
-                fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                    fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                elif weights is not None and len(weights) in (4, 5):
+                    if len(weights) == 4:
+                        w_svdd, w_svm, w_if, w_ctrl = weights
+                        fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                    else:
+                        w_svdd, w_svm, w_mouse, w_if, w_ctrl = weights
+                        fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_mouse * mouse_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                elif dynamic_fusion:
+                    # Calibrated Dynamic Modality-Aware Fusion
+                    if is_idle_window and mouse_in_window >= 5:
+                        # User is reading/browsing (mouse only, no typing): drop keystroke weight to avoid artificial bias
+                        # Weights strictly sum to 1.0 (60% Mouse, 20% Context, 20% Cognitive)
+                        w_mouse = 0.60
+                        w_if = 0.20
+                        w_ctrl = 0.20
+                        fused_conf = (w_mouse * mouse_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                    elif not is_idle_window and mouse_in_window < 5:
+                        # Burst typing (keyboard only, mouse idle): reweight to keystroke
+                        # Weights strictly sum to 1.0 (35% SVDD, 35% Keystroke SVM, 15% Context, 15% Cognitive)
+                        w_svdd = 0.35
+                        w_svm = 0.35
+                        w_if = 0.15
+                        w_ctrl = 0.15
+                        fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                    else:
+                        # Both modalities active
+                        # Weights strictly sum to 1.0 (25% SVDD, 25% Keystroke SVM, 25% Mouse, 12.5% Context, 12.5% Cognitive)
+                        w_svdd = 0.25
+                        w_svm = 0.25
+                        w_mouse = 0.25
+                        w_if = 0.125
+                        w_ctrl = 0.125
+                        fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_mouse * mouse_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+                else:
+                    # Calibrated 5-Factor static fusion
+                    w_svdd = 0.25
+                    w_svm = 0.25
+                    w_mouse = 0.25
+                    w_if = 0.125
+                    w_ctrl = 0.125
+                    fused_conf = (w_svdd * svdd_conf) + (w_svm * svm_conf) + (w_mouse * mouse_conf) + (w_if * if_conf) + (w_ctrl * ctrl_conf)
+
                 fused_risk = 1.0 - fused_conf
                 
-                # Strict Idle Window Neutrality (Risk <= 0.05 when no typing occurs)
+                # Strict Idle Window Neutrality (Risk <= 0.05 when no interaction occurs)
                 if is_idle_window and mouse_in_window < 5:
                     fused_risk = min(0.05, fused_risk)
                 else:
                     # 5. Environmental Ambient Context Modulation (TASK-8)
                     env_penalty = 0.0
-                    is_phone_absent = (not telemetry_row.get("owner_phone_present", True)) or (telemetry_row.get("ble_proximity_state") == "OUT_OF_RANGE")
-                    if is_phone_absent:
-                        # Physical Walk-Away Imposter Takeover: active input while owner's phone is absent
-                        env_penalty += 0.25
-                    elif telemetry_row.get("ble_proximity_state") == "FAR":
-                        env_penalty += 0.10
+                    ble_state = telemetry_row.get("ble_proximity_state", "IMMEDIATE")
+                    phone_present = telemetry_row.get("owner_phone_present", True)
+                    
+                    # Distinguish missing/disabled sensor from genuinely confirmed walk-away
+                    if ble_state not in ("OFFLINE", "DISABLED", "UNKNOWN", "NOT_CONFIGURED"):
+                        if (not phone_present) or (ble_state == "OUT_OF_RANGE"):
+                            # Physical Walk-Away Takeover: active physical input while owner is out of range
+                            env_penalty += 0.25
+                        elif ble_state == "FAR":
+                            env_penalty += 0.10
 
                     if telemetry_row.get("is_untrusted_network", False):
                         env_penalty += 0.15
@@ -283,8 +363,8 @@ class ThreatEvaluator:
                 trigger_reason = "ADWIN ABRUPT SHIFT" if is_adwin_abrupt else ("ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT"))
                 print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! ({trigger_reason})", flush=True)
                 print(f"[ALERT] Instant Risk: {fused_risk:.4f} | Smoothed (30s): {smoothed_risk:.4f} (Threshold: {self.threshold:.2f})", flush=True)
-                print(f"[OTP] Generated Session OTP: >>> {self.active_otp} <<< (saved to models/.active_otp)", flush=True)
-                print(f"[OTP] Master Bypass Password: >>> admin <<< (or admin123 / 123456)", flush=True)
+                print(f"[OTP] Cryptographic 6-digit Session OTP generated and dispatched via alert channels (valid for 5 min).", flush=True)
+                print(f"[OTP] Security Challenge Issued: Enter verified 6-digit OTP or configured Emergency Recovery Key.", flush=True)
                 
                 # Active Security Responses
                 captured_photo = capture_intruder()
@@ -301,45 +381,89 @@ class ThreatEvaluator:
 
     def verify_otp_and_reset(self, entered_otp):
         """
-        Verifies the user's OTP code or Master Bypass Password.
+        Verifies the user's OTP code or an explicitly configured Emergency Recovery Key.
         If correct, restores normal session state and triggers behavior adaptation retraining.
+        Hardcoded default passwords ('admin', 'admin123', '123456') are strictly blocked.
         """
-        entered = str(entered_otp).strip()
-        stored_otp = self._load_active_otp()
-        
-        # Load configured master bypass password
-        configured_bypass = "admin"
+        entered = str(entered_otp).strip() if entered_otp is not None else ""
+        if not entered:
+            print("[SECURITY] [REJECTED] Empty verification credential submitted.", flush=True)
+            return False
+
+        # 0. Enforce rate limiting: lockout if too many failed attempts
+        if not hasattr(self, "_failed_verification_attempts"):
+            self._failed_verification_attempts = 0
+            self._verification_lockout_until = 0.0
+
+        now = time.time()
+        if now < self._verification_lockout_until:
+            rem = int(self._verification_lockout_until - now)
+            print(f"[SECURITY] [RATE-LIMITED] Too many failed verification attempts. Please wait {rem}s before retrying.", flush=True)
+            return False
+
+        # 1. Load active OTP record and check expiration
+        otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
+        stored_otp = None
+        is_expired = False
+
+        if os.path.exists(otp_file):
+            try:
+                with open(otp_file, "r", encoding="utf-8") as f:
+                    raw = f.read().strip()
+                if raw.startswith("{"):
+                    data = json.loads(raw)
+                    stored_otp = data.get("otp")
+                    if time.time() > float(data.get("expires_at", 0)):
+                        is_expired = True
+                else:
+                    # Legacy plain text token
+                    stored_otp = raw
+            except Exception:
+                stored_otp = self.active_otp
+        else:
+            stored_otp = self.active_otp
+
+        if is_expired:
+            print("[SECURITY] [EXPIRED] Active OTP expired (TTL 300s exceeded). Re-challenge required.", flush=True)
+            self._clear_active_otp()
+            return False
+
+        # 2. Match against active 6-digit session OTP
+        is_valid_otp = bool(stored_otp and entered == stored_otp.strip())
+
+        # 3. Trivial password blacklist: NEVER allow trivial default passwords as a bypass
+        TRIVIAL_BLACKLIST = {"admin", "admin123", "123456", "password", "root", "guest", "default", "qwerty"}
+        if not is_valid_otp and entered.lower() in TRIVIAL_BLACKLIST:
+            print(f"[SECURITY] [BLOCKED] Hardcoded / trivial recovery credential '{entered}' rejected. Workstation remains locked.", flush=True)
+            return False
+
+        # 4. Explicit non-trivial Emergency Recovery Key
+        is_valid_emergency = False
+        env_master = os.environ.get("EMERGENCY_RECOVERY_KEY") or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+        if env_master and len(env_master.strip()) >= 8:
+            clean_env = env_master.strip()
+            if clean_env.lower() not in TRIVIAL_BLACKLIST and entered == clean_env:
+                is_valid_emergency = True
+
+        # Check configured emergency key from alert config
         try:
-            from security.otp_service import load_or_create_config
-            cfg = load_or_create_config()
-            configured_bypass = cfg.get("security", {}).get("master_bypass_password", "admin")
+            from security.otp_service import get_alert_config
+            cfg = get_alert_config()
+            cfg_emergency = cfg.get("security", {}).get("emergency_recovery_key") or cfg.get("security", {}).get("master_bypass_password")
+            if cfg_emergency:
+                clean_cfg = str(cfg_emergency).strip()
+                if clean_cfg.lower() not in TRIVIAL_BLACKLIST and len(clean_cfg) >= 8 and entered == clean_cfg:
+                    is_valid_emergency = True
         except Exception:
             pass
 
-        # Environment-based explicit recovery password
-        env_master = os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD") or os.environ.get("EMERGENCY_RECOVERY_KEY")
-        strict_recovery = os.environ.get("STRICT_SECURITY_RECOVERY", "false").lower() in ("true", "1", "yes") or os.environ.get("ENVIRONMENT") == "production"
-
-        if strict_recovery:
-            # Production Mode: Hardcoded passwords (admin, admin123, 123456) are disabled
-            master_passwords = set()
-            if env_master:
-                master_passwords.add(env_master.strip())
-            if configured_bypass and configured_bypass not in ("admin", "admin123", "123456"):
-                master_passwords.add(str(configured_bypass).strip())
-        else:
-            # Dev / Testing Mode: Backwards-compatible fallback
-            master_passwords = {"admin", "admin123", "123456", str(configured_bypass)}
-            if env_master:
-                master_passwords.add(env_master.strip())
-
-        is_valid_otp = bool(stored_otp and entered == stored_otp.strip())
-        is_valid_bypass = entered in master_passwords
-        
-        if is_valid_otp or is_valid_bypass:
-            method = "OTP" if is_valid_otp else "Master Bypass Password"
+        if is_valid_otp or is_valid_emergency:
+            self._failed_verification_attempts = 0
+            self._verification_lockout_until = 0.0
+            method = "Session OTP" if is_valid_otp else "Configured Emergency Recovery Key"
             print(f"\n[SECURITY] Identity Verified via {method}! Restoring session...", flush=True)
             self.is_breached = False
+            self.risk_history.clear()
             self.active_otp = None
             self._clear_active_otp()
             if self.orchestrator is not None:
@@ -362,9 +486,18 @@ class ThreatEvaluator:
             except Exception as e:
                 print(f"[EVALUATOR] [WARNING] Adaptation retraining failed: {e}", file=sys.stderr, flush=True)
             return True
-            
-        print("[SECURITY] Invalid OTP code or bypass password entered.", flush=True)
+
+        self._failed_verification_attempts += 1
+        if self._failed_verification_attempts >= 10:
+            self._verification_lockout_until = now + 60.0
+            print("[SECURITY] [RATE-LIMITED] 10 consecutive failed verification attempts. 60s lockout engaged.", flush=True)
+            self._clear_active_otp()
+            self.active_otp = None
+        print("[SECURITY] [DENIED] Invalid verification credential submitted.", flush=True)
         return False
+
+    # Alias for explicit credential verification
+    verify_recovery_code = verify_otp_and_reset
 
     def start_daemon(self, telemetry_file="telemetry_data.jsonl"):
         """
@@ -408,12 +541,19 @@ class ThreatEvaluator:
                     except Exception as e:
                         print(f"[DAEMON] [ERROR] Processing line failed: {e}", file=sys.stderr, flush=True)
 
-    def _save_active_otp(self, otp):
+    def _save_active_otp(self, otp, ttl_seconds=300):
         otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
         os.makedirs(os.path.dirname(otp_file), exist_ok=True)
+        now = time.time()
+        record = {
+            "otp": str(otp).strip(),
+            "created_at": now,
+            "expires_at": now + ttl_seconds,
+            "ttl_seconds": ttl_seconds
+        }
         try:
-            with open(otp_file, "w") as f:
-                f.write(otp)
+            with open(otp_file, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=2)
         except Exception:
             pass
 
@@ -421,8 +561,15 @@ class ThreatEvaluator:
         otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
         if os.path.exists(otp_file):
             try:
-                with open(otp_file, "r") as f:
-                    return f.read().strip()
+                with open(otp_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content.startswith("{"):
+                    data = json.loads(content)
+                    if time.time() > float(data.get("expires_at", float("inf"))):
+                        return None
+                    return str(data.get("otp", "")).strip()
+                else:
+                    return content
             except Exception:
                 pass
         return self.active_otp

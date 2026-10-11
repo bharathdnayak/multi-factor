@@ -1,0 +1,84 @@
+{
+  "model_version": "2.0.0",
+  "pipeline_name": "Behavioral Drift Continuous Authentication Engine",
+  "generated_at": "2026-10-11T11:51:00Z",
+  "description": "Production model metadata and calibrated operating parameters for continuous biometric authentication.",
+  "subsystems": {
+    "biometric_model": {
+      "type": "OneClassSVM",
+      "kernel": "rbf",
+      "gamma": 0.35,
+      "nu": 0.03,
+      "scaler": "StandardScaler",
+      "calibrated_threshold": -0.000418,
+      "features": [
+        "dwell_mean",
+        "dwell_std",
+        "flight_mean",
+        "flight_std",
+        "mouse_velocity_mean",
+        "mouse_acceleration_mean",
+        "mouse_jerk_mean",
+        "mouse_straightness_mean",
+        "app_dwell_mean",
+        "app_flight_mean",
+        "app_backspace_ratio"
+      ]
+    },
+    "context_model": {
+      "type": "IsolationForest",
+      "contamination": 0.02,
+      "random_state": 42,
+      "scaler": "StandardScaler",
+      "calibrated_threshold": 0.004777,
+      "features": [
+        "hour_sin",
+        "hour_cos",
+        "cpu_usage",
+        "ram_usage_mb",
+        "app_hash",
+        "app_special_ratio",
+        "app_pause_ratio",
+        "app_scroll_count"
+      ]
+    },
+    "sequence_model": {
+      "type": "DeepSVDD1DCNN",
+      "weights_path": "models/sequence_model.pt",
+      "metadata_path": "models/sequence_meta.json",
+      "sequence_length": 30,
+      "channels": ["dwell_sequence", "flight_sequence"]
+    },
+    "multimodal_fusion": {
+      "default_weights": {
+        "deep_svdd": 0.35,
+        "oc_svm": 0.35,
+        "isolation_forest": 0.15,
+        "cognitive_controller": 0.15
+      },
+      "active_channel_rebalancing": true,
+      "missing_sensor_tolerance": true,
+      "smoothing_window_seconds": 30,
+      "hysteresis": {
+        "tier_1_threshold": 0.40,
+        "tier_2_threshold": 0.75,
+        "hold_frames": 2
+      }
+    }
+  },
+  "benchmark_summary": {
+    "personalized_authentication_eer_percent": 8.29,
+    "personalized_roc_auc": 0.9720,
+    "cmu_public_benchmark_eer_percent": 11.64,
+    "instantaneous_latency_seconds": 0.7,
+    "hysteresis_stabilized_latency_seconds": 4.3,
+    "false_alarm_rate_genuine_sessions": 0.00
+  },
+  "provenance": {
+    "split_protocol": "Group-aware session-level disjoint splitting (Protocol A)",
+    "training_samples": 240,
+    "validation_samples": 150,
+    "test_samples": 270,
+    "cross_split_leakage_rate": 0.00
+  }
+}

@@ -23,6 +23,7 @@ import os
 import sys
 import time
 import signal
+import socket
 import psutil
 import logging
 import argparse
@@ -147,8 +148,9 @@ class SystemSupervisor:
     Supervises background security micro-services, monitors their health,
     and manages the Windows system tray and browser integration.
     """
-    def __init__(self, port: int = 8000, enable_browser: bool = True, enable_tray: bool = True):
+    def __init__(self, port: int = 8000, host: Optional[str] = None, enable_browser: bool = True, enable_tray: bool = True):
         self.port = port
+        self.host = host or os.environ.get("HOST", "127.0.0.1")
         self.enable_browser = enable_browser
         self.enable_tray = enable_tray and PYQT_AVAILABLE
         self.running = False
@@ -169,7 +171,7 @@ class SystemSupervisor:
             ),
             "web_dashboard": WorkerProcess(
                 name="Cyber-Ops Web Dashboard",
-                cmd=[py, "-u", "-m", "uvicorn", "dashboard.app:app", "--host", "0.0.0.0", "--port", str(self.port)],
+                cmd=[py, "-u", "-m", "uvicorn", "dashboard.app:app", "--host", self.host, "--port", str(self.port)],
                 log_filename="supervisor_dashboard.log"
             )
         }
@@ -179,6 +181,20 @@ class SystemSupervisor:
         print("  BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION - PROCESS SUPERVISOR")
         print("  Department of ISE | Team 30 | Major Project")
         print("=" * 74)
+
+        # Pre-check port availability
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
+        try:
+            in_use = (sock.connect_ex(('127.0.0.1', self.port)) == 0)
+        except Exception:
+            in_use = False
+        finally:
+            sock.close()
+
+        if in_use:
+            print(f"  [!] WARNING: Port {self.port} is already IN USE by another process.")
+            print(f"      Web Dashboard may fail to bind. Terminate previous instances or use --port <N>.\n")
 
         for key, worker in self.workers.items():
             worker.start()
@@ -193,12 +209,25 @@ class SystemSupervisor:
 
         self.running = True
 
-        # Open web dashboard in browser after slight delay to allow uvicorn binding
+        # Open web dashboard in browser with HTTP readiness check
         if self.enable_browser:
             threading.Thread(target=self._launch_browser_delayed, args=(dashboard_url,), daemon=True).start()
 
     def _launch_browser_delayed(self, url: str):
-        time.sleep(1.8)
+        """Polls dashboard /api/status endpoint until ready before launching browser."""
+        start = time.time()
+        ready = False
+        while time.time() - start < 10.0 and self.running:
+            try:
+                import urllib.request
+                req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/status", headers={"User-Agent": "SupervisorHealth/1.0"})
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                    if resp.status == 200:
+                        ready = True
+                        break
+            except Exception:
+                time.sleep(0.5)
+
         if self.running:
             try:
                 webbrowser.open(url)
@@ -206,13 +235,19 @@ class SystemSupervisor:
                 pass
 
     def check_health_and_restart(self):
-        """Monitors child worker process heartbeats and recovers dropped workers."""
+        """Monitors child worker process heartbeats and recovers dropped workers with bounded retries."""
+        MAX_RESTARTS = 5
         for key, worker in self.workers.items():
             if self.running and not worker.is_alive():
-                print(f"[SUPERVISOR] [ALERT] {worker.name} exited unexpectedly. Restarting...", flush=True)
-                worker.restart_count += 1
-                worker.start()
-                print(f"[SUPERVISOR] {worker.name} restarted with PID {worker.pid()}.", flush=True)
+                if worker.restart_count < MAX_RESTARTS:
+                    print(f"[SUPERVISOR] [ALERT] {worker.name} exited unexpectedly. Restarting ({worker.restart_count + 1}/{MAX_RESTARTS})...", flush=True)
+                    worker.restart_count += 1
+                    worker.start()
+                    print(f"[SUPERVISOR] {worker.name} restarted with PID {worker.pid()}.", flush=True)
+                else:
+                    if worker.restart_count == MAX_RESTARTS:
+                        print(f"[SUPERVISOR] [CRITICAL] {worker.name} reached max retry limit ({MAX_RESTARTS}). Halting auto-restart to prevent resource churn.", flush=True)
+                        worker.restart_count += 1
 
     def stop_all_workers(self):
         print("\n[SUPERVISOR] Initiating graceful shutdown of all background services...", flush=True)
