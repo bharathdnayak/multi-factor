@@ -130,13 +130,19 @@ def send_email_otp(otp, photo_path=None, threat_info=None):
         print("[OTP] [INFO] SMTP credentials not fully configured. Skipping email dispatch.", flush=True)
         return False
         
+    # Support comma-separated recipient emails
+    raw_recipient = mail_conf.get("recipient_email", "")
+    recipient_list = [r.strip() for r in str(raw_recipient).split(",") if r.strip()] if raw_recipient else []
+    if not recipient_list:
+        recipient_list = [sender]
+        
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     risk_text = f"{threat_info.get('risk_score', 0.85):.2f}" if threat_info else "0.88 (HIGH ANOMALY)"
     app_text = threat_info.get('active_app', 'Unknown Desktop Session') if threat_info else 'Active Desktop Session'
 
     msg = MIMEMultipart("mixed")
     msg['From'] = f"Behavioral Security <{sender}>"
-    msg['To'] = recipient
+    msg['To'] = ", ".join(recipient_list)
     msg['Subject'] = f"🚨 SECURITY ALERT: Intrusion Detected on Desktop [OTP: {otp}]"
     
     html_body = f"""
@@ -190,9 +196,9 @@ def send_email_otp(otp, photo_path=None, threat_info=None):
             server = smtplib.SMTP(smtp_server, smtp_port, timeout=15)
             server.starttls(context=context)
         server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
+        server.sendmail(sender, recipient_list, msg.as_string())
         server.quit()
-        print(f"[OTP] [SUCCESS] Alert email with OTP {otp} successfully delivered to {recipient}", flush=True)
+        print(f"[OTP] [SUCCESS] Alert email with OTP {otp} successfully delivered to {', '.join(recipient_list)}", flush=True)
         return True
     except Exception as e:
         print(f"[OTP] [ERROR] SMTP delivery error: {e}", flush=True)
@@ -220,23 +226,26 @@ def get_latest_telegram_chat_id(bot_token):
 
 
 def send_telegram_alert(otp, photo_path=None, threat_info=None):
-    """Sends real-time alert message and intruder photo directly to owner's Telegram."""
+    """Sends real-time alert message and intruder photo directly to owner's Telegram (supports multiple chats/groups)."""
     config = get_alert_config()
     tg_conf = config.get("telegram", {})
     
     bot_token = tg_conf.get("bot_token")
-    chat_id = tg_conf.get("chat_id")
+    raw_chat_id = tg_conf.get("chat_id")
     
     if not bot_token:
         return False
 
+    chat_ids = [c.strip() for c in str(raw_chat_id).split(",") if c.strip()] if raw_chat_id else []
     bot_id = bot_token.split(":")[0]
-    if str(chat_id) == str(bot_id) or not chat_id:
+    valid_chat_ids = [cid for cid in chat_ids if cid != bot_id]
+
+    if not valid_chat_ids:
         auto_chat_id = get_latest_telegram_chat_id(bot_token)
         if auto_chat_id:
-            chat_id = auto_chat_id
+            valid_chat_ids = [auto_chat_id]
         else:
-            print(f"[OTP] [NOTICE] Telegram Chat ID '{chat_id}' is the Bot's ID. Message your bot on Telegram to receive alerts there too.", flush=True)
+            print(f"[OTP] [NOTICE] Telegram Chat ID '{raw_chat_id}' is the Bot's ID or empty. Message your bot on Telegram or configure group chat ID.", flush=True)
             return False
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -254,31 +263,35 @@ def send_telegram_alert(otp, photo_path=None, threat_info=None):
         f"<i>Enter the 6-digit OTP on the Desktop Lock Screen to restore access.</i>"
     )
     
-    try:
-        if photo_path and os.path.exists(photo_path):
-            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-            with open(photo_path, "rb") as photo_file:
+    any_success = False
+    for chat_id in valid_chat_ids:
+        try:
+            if photo_path and os.path.exists(photo_path):
+                url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+                with open(photo_path, "rb") as photo_file:
+                    resp = requests.post(
+                        url,
+                        data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
+                        files={"photo": photo_file},
+                        timeout=10
+                    )
+            else:
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 resp = requests.post(
                     url,
-                    data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
-                    files={"photo": photo_file},
+                    json={"chat_id": chat_id, "text": caption, "parse_mode": "HTML"},
                     timeout=10
                 )
-        else:
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            resp = requests.post(
-                url,
-                json={"chat_id": chat_id, "text": caption, "parse_mode": "HTML"},
-                timeout=10
-            )
-            
-        if resp.status_code == 200:
-            print(f"[OTP] [SUCCESS] Live Telegram alert + evidence dispatched to chat ID {chat_id}", flush=True)
-            return True
-        else:
-            return False
-    except Exception as e:
-        return False
+                
+            if resp.status_code == 200:
+                print(f"[OTP] [SUCCESS] Live Telegram alert + evidence dispatched to chat ID {chat_id}", flush=True)
+                any_success = True
+            else:
+                print(f"[OTP] [WARNING] Telegram send to {chat_id} returned status {resp.status_code}: {resp.text}", flush=True)
+        except Exception as e:
+            print(f"[OTP] [WARNING] Telegram send to {chat_id} failed: {e}", flush=True)
+
+    return any_success
 
 
 def dispatch_otp(otp, photo_path=None, threat_info=None):
