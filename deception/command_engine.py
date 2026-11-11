@@ -5,7 +5,14 @@ import psutil
 from typing import Tuple, List, Optional
 from urllib.parse import urlparse
 
-from deception.virtual_fs import get_vfs, PathUtils, VirtualNode
+from deception.virtual_fs import (
+    get_vfs,
+    get_synthetic_username,
+    PathUtils,
+    VirtualNode,
+    safe_sandbox_path,
+    resolve_contained_sandbox_path,
+)
 from deception.forensic_tracker import get_tracker
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -211,9 +218,9 @@ class VirtualCommandEngine:
             content = self.vfs.read_file(resolved)
             return content
         except FileNotFoundError:
-            # Check sandbox fallback
-            chk = os.path.join(self.sandbox_dir, target)
-            if os.path.exists(chk):
+            # Strictly contained sandbox read fallback (prevents host path traversal)
+            chk = resolve_contained_sandbox_path(self.sandbox_dir, target)
+            if chk and os.path.isfile(chk):
                 try:
                     with open(chk, "r", encoding="utf-8") as f:
                         return f.read()
@@ -383,16 +390,18 @@ class VirtualCommandEngine:
             return f"Error writing to virtual file: {e}"
 
         # Divert suspicious attacker file payload safely to isolated Sandbox directory
-        sandbox_path = os.path.join(self.sandbox_dir, PathUtils.split_path(resolved)[1])
-        os.makedirs(self.sandbox_dir, exist_ok=True)
-        try:
-            mode = "a" if append else "w"
-            with open(sandbox_path, mode, encoding="utf-8") as f:
-                f.write(text + "\n")
-        except Exception:
-            pass
+        sandbox_path = safe_sandbox_path(self.sandbox_dir, PathUtils.split_path(resolved)[1], default_name="redirected_output.txt")
+        if sandbox_path:
+            os.makedirs(self.sandbox_dir, exist_ok=True)
+            try:
+                mode = "a" if append else "w"
+                with open(sandbox_path, mode, encoding="utf-8") as f:
+                    f.write(text + "\n")
+            except Exception:
+                pass
 
-        self.tracker.record_sandbox_write(PathUtils.split_path(resolved)[1], len(text.encode("utf-8")))
+        safe_leaf = os.path.basename(sandbox_path) if sandbox_path else PathUtils.split_path(resolved)[1]
+        self.tracker.record_sandbox_write(safe_leaf, len(text.encode("utf-8")))
         return ""
 
     def _cmd_tree(self, args: List[str]) -> str:
@@ -685,14 +694,16 @@ class VirtualCommandEngine:
             f"# ============================================================\n"
         )
 
-        # 1. Isolate in sandbox
-        sandbox_path = os.path.join(self.sandbox_dir, out_filename)
-        os.makedirs(self.sandbox_dir, exist_ok=True)
-        try:
-            with open(sandbox_path, "w", encoding="utf-8") as f:
-                f.write(quarantine_content)
-        except Exception:
-            pass
+        # 1. Isolate strictly inside sandbox directory
+        sandbox_path = safe_sandbox_path(self.sandbox_dir, out_filename, default_name="downloaded_file.bin")
+        if sandbox_path:
+            out_filename = os.path.basename(sandbox_path)
+            os.makedirs(self.sandbox_dir, exist_ok=True)
+            try:
+                with open(sandbox_path, "w", encoding="utf-8") as f:
+                    f.write(quarantine_content)
+            except Exception:
+                pass
 
         # 2. Add to VirtualFileSystem at current directory so 'dir' immediately reflects it
         vfs_path = self.vfs.resolve_path(self.current_dir, out_filename)
@@ -764,12 +775,13 @@ class VirtualCommandEngine:
         )
 
     def _cmd_net(self, args: List[str]) -> str:
+        active_user = get_synthetic_username()
         if args and args[0].lower() == "user":
             return (
                 "\nUser accounts for \\\\DESKTOP-SEC-WIN11\n\n"
                 "-------------------------------------------------------------------------------\n"
                 "Administrator            DefaultAccount           Guest\n"
-                "Dell                     WDAGUtilityAccount\n"
+                f"{active_user:<25}WDAGUtilityAccount\n"
                 "The command completed successfully."
             )
         elif args and args[0].lower() == "localgroup":
@@ -777,7 +789,7 @@ class VirtualCommandEngine:
                 "\nMembers of local group Administrators:\n\n"
                 "-------------------------------------------------------------------------------\n"
                 "Administrator\n"
-                "Dell\n"
+                f"{active_user}\n"
                 "The command completed successfully."
             )
         return "The syntax of this command is: NET [ ACCOUNTS | COMPUTER | CONFIG | GROUP | USER ]"

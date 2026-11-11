@@ -166,6 +166,13 @@ def redact_sensitive_presentation(text: str) -> str:
 # MITRE ATT&CK Knowledge Base Reference (Matrix v15, 2026)
 # ---------------------------------------------------------------------------
 MITRE_TECHNIQUE_METADATA = {
+    "T1083": {
+        "name": "File and Directory Discovery",
+        "tactic": "Discovery",
+        "evidence": "Navigated directory hierarchies and enumerated files in the virtual filesystem.",
+        "confidence": "Supported",
+        "caveat": "Observed within simulated virtual filesystem; real host directories were unexposed."
+    },
     "T1082": {
         "name": "System Information Discovery",
         "tactic": "Discovery",
@@ -872,18 +879,29 @@ class ForensicReportGenerator:
     # SECTION 6: AI-Assisted Behavioral Reconstruction
     # -----------------------------------------------------------------------
     def _add_section_6_ai_behavioral_reconstruction(self, pdf: ForensicPDF, ai_report: dict, timeline: list):
+        is_heuristic = "HEURISTIC" in ai_report.get("status", "") or "Heuristic" in ai_report.get("model_name", "")
+        model_label = ai_report.get('model_name', 'Rule-Based Heuristic Threat Intelligence')
+        mode_badge = "[OFFLINE HEURISTIC FALLBACK]" if is_heuristic else f"[LOCAL ON-DEVICE INFERENCE] (Ollama - {model_label})"
+
         pdf.section_header(
             "6. AI-Assisted Behavioral Reconstruction",
-            subtitle=f"Cognitive Adversary Profiling // Model: {ai_report.get('model_name', 'Local Offline Engine')}",
+            subtitle=f"Cognitive Adversary Profiling // {mode_badge}",
             min_space_needed=40
         )
 
-        # Clear investigative aid disclaimer
-        disclaimer = (
-            "Investigative Aid Notice: The narrative below is synthesized by a localized offline language model "
-            "as an analytical hypothesis. It does not constitute an authoritative real-world legal attribution or confirmed "
-            "attacker identity. Ground truth is anchored strictly in the verified event records cited."
-        )
+        # Clear investigative aid disclaimer distinguishing offline fallback vs local Ollama vs air-gap
+        if is_heuristic:
+            disclaimer = (
+                "Investigative Aid Notice: The narrative below was generated via deterministic, rule-based cybersecurity "
+                "heuristics (offline fallback engine). It does not constitute probabilistic LLM attribution or confirmed "
+                "attacker identity. Ground truth is anchored strictly in the verified event records cited."
+            )
+        else:
+            disclaimer = (
+                f"Investigative Aid Notice: The narrative below is synthesized by a local on-device language model ({model_label}) "
+                "as an analytical hypothesis. Note that on-device local execution differs from a physically air-gapped system. "
+                "It does not constitute confirmed legal attribution. Ground truth is anchored strictly in verified event records."
+            )
         pdf.set_font(pdf.doc_font_family, 'I', 7.0)
         pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
         pdf.multi_cell(pdf.printable_width, 3.4, disclaimer)
@@ -1005,10 +1023,10 @@ class ForensicReportGenerator:
         box_y = pdf.get_y()
         pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_BG)
         pdf.set_draw_color(*ForensicDesignSystem.COLOR_GREEN_BORDER)
-        pdf.rect(14, box_y, pdf.printable_width, 16.0, style='FD', round_corners=True, corner_radius=2)
+        pdf.rect(14, box_y, pdf.printable_width, 18.0, style='FD', round_corners=True, corner_radius=2)
 
         pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_SAFE)
-        pdf.rect(14, box_y, 2.5, 16.0, 'F')
+        pdf.rect(14, box_y, 2.5, 18.0, 'F')
 
         pdf.set_xy(18, box_y + 2.0)
         pdf.set_font(pdf.doc_font_family, 'B', 8.0)
@@ -1020,10 +1038,10 @@ class ForensicReportGenerator:
         pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
         pdf.multi_cell(pdf.printable_width - 8, 3.4, (
             "All captured file modifications, command executions, and browser downloads were confined to the in-memory "
-            "Virtual Filesystem and data/sandbox/ quarantine directory. Real user profile documents and system files "
-            "outside monitored honeypot paths exhibited zero modifications during the incident session."
+            "Virtual Filesystem and data/sandbox/ quarantine directory. Containment boundary: Isolation operates at the "
+            "application deception and user-mode virtual layer, not OS kernel/hypervisor hardware virtualization."
         ))
-        pdf.set_y(box_y + 18.0)
+        pdf.set_y(box_y + 20.0)
 
         # Optical Presence Subsection
         pdf.subsection_header("Workstation Physical Presence Evidence", min_space_needed=22)
@@ -1056,13 +1074,13 @@ class ForensicReportGenerator:
             pdf.set_x(47)
             pdf.set_font(pdf.doc_font_family, 'I', 6.8)
             pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
-            pdf.cell(0, 3.6, "Privacy & Evidentiary Notice: Confirms terminal occupancy only; does not identify legal identity.", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 3.6, "Privacy & Policy Notice: Optical capture requires explicit consent (ENABLE_WEBCAM_CAPTURE=1); confirms terminal presence only.", new_x="LMARGIN", new_y="NEXT")
 
             pdf.set_y(p_box_y + 26.0)
         else:
             pdf.set_font(pdf.doc_font_family, 'I', 7.2)
             pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
-            pdf.cell(0, 4.0, "[OPTICAL CAPTURE IDLE / PRIVACY MODE ENABLED] No physical webcam frame embedded.", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 4.0, "[OPTICAL CAPTURE DISABLED / PRIVACY MODE] Webcam capture inactive or unconsented (ENABLE_WEBCAM_CAPTURE=0).", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(1.5)
 
     # -----------------------------------------------------------------------
@@ -1082,7 +1100,9 @@ class ForensicReportGenerator:
             mapped_techs.append(("T1087.001", MITRE_TECHNIQUE_METADATA["T1087.001"]))
         if any("shell_command" in a for a in all_actions):
             mapped_techs.append(("T1059.001", MITRE_TECHNIQUE_METADATA["T1059.001"]))
-        if any("folder_navigated" in a for a in all_actions):
+        if any("folder_navigated" in a or "file_view" in a for a in all_actions):
+            mapped_techs.append(("T1083", MITRE_TECHNIQUE_METADATA["T1083"]))
+        if any(cmd in " ".join(all_targets) for cmd in ["systeminfo", "uname", "hostname", "ver"]):
             mapped_techs.append(("T1082", MITRE_TECHNIQUE_METADATA["T1082"]))
         if any("delete" in a for a in all_actions):
             mapped_techs.append(("T1485", MITRE_TECHNIQUE_METADATA["T1485"]))
@@ -1090,7 +1110,7 @@ class ForensicReportGenerator:
             mapped_techs.append(("T1110", MITRE_TECHNIQUE_METADATA["T1110"]))
 
         if not mapped_techs:
-            mapped_techs.append(("T1082", MITRE_TECHNIQUE_METADATA["T1082"]))
+            mapped_techs.append(("T1083", MITRE_TECHNIQUE_METADATA["T1083"]))
 
         col_w = (20, 50, 68, 44)
         hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
@@ -1155,6 +1175,15 @@ class ForensicReportGenerator:
     # -----------------------------------------------------------------------
     def _add_section_11_evidence_inventory_and_integrity(self, pdf: ForensicPDF, photo_path: Optional[str], timeline: list, stats: dict):
         pdf.section_header("11. Evidence Inventory & Cryptographic Integrity", subtitle="FIPS 180-4 SHA-256 Digest Verification on Local Disk", min_space_needed=50)
+
+        pdf.set_font(pdf.doc_font_family, 'I', 7.0)
+        pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+        pdf.multi_cell(pdf.printable_width, 3.4, (
+            "Integrity Scope Notice: Cryptographic verification below computes point-in-time FIPS 180-4 SHA-256 digests "
+            "of forensic artifacts on disk at report generation time. This guarantees point-in-time file snapshot integrity, "
+            "distinguished from continuous tamper-evident or chained/merkle append-only audit logging."
+        ))
+        pdf.ln(2.0)
 
         def get_artifact(rel_path: str, label: str):
             full_p = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))

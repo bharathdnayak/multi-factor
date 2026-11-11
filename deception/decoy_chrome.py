@@ -15,6 +15,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from deception.forensic_tracker import get_tracker
+from deception.virtual_fs import safe_sandbox_path
 
 
 class DecoyChrome(QFrame):
@@ -33,7 +34,7 @@ class DecoyChrome(QFrame):
     - Optional Isolated Real Internet Browsing with download sandbox interception
     - All actions recorded directly to ForensicTracker for offline Ollama threat intelligence.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, sandbox_dir=None):
         super().__init__(parent)
         self.tracker = get_tracker()
         self.is_maximized = False
@@ -45,7 +46,7 @@ class DecoyChrome(QFrame):
         
         # Real internet access configuration (Disabled by default for strict isolation)
         self.internet_enabled = os.environ.get("DECOY_BROWSER_INTERNET_ENABLED", "false").lower() in ("true", "1", "yes")
-        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
+        self.sandbox_dir = sandbox_dir or os.path.join(PROJECT_ROOT, "data", "sandbox")
         os.makedirs(self.sandbox_dir, exist_ok=True)
         
         # Tabs model
@@ -1141,11 +1142,11 @@ class DecoyChrome(QFrame):
         self.tracker.record_file_access(f"CloudDrive: {filename}", action="DOWNLOAD_ATTEMPT")
         print(f"[DECEPTION CHROME] Intruder clicked sensitive cloud file: '{filename}'", flush=True)
         try:
-            from deception.virtual_fs import get_vfs
+            from deception.virtual_fs import get_vfs, get_synthetic_username
             vfs = get_vfs()
-            current_user = os.environ.get("USERNAME", "Dell")
+            current_user = get_synthetic_username()
             user_downloads = f"C:\\Users\\{current_user}\\Downloads"
-            dest_dir = user_downloads if vfs.exists(user_downloads) else "C:\\Users\\Dell\\Downloads"
+            dest_dir = user_downloads if vfs.exists(user_downloads) else f"C:\\Users\\{current_user}\\Downloads"
             if not vfs.exists(dest_dir):
                 vfs.mkdir(dest_dir, parents=True)
             vfs_download_path = f"{dest_dir}\\{filename}"
@@ -1221,7 +1222,8 @@ class DecoyChrome(QFrame):
             if not filename or "." not in filename:
                 filename = "quarantined_payload.exe"
 
-            sandbox_path = os.path.join(self.sandbox_dir, filename)
+            sandbox_path = safe_sandbox_path(self.sandbox_dir, filename, default_name="quarantined_payload.exe")
+            filename = os.path.basename(sandbox_path) if sandbox_path else "quarantined_payload.exe"
             quarantine_content = (
                 f"# ============================================================\n"
                 f"# [QUARANTINED BY HONEYPOT DECEPTION BROWSER]\n"
@@ -1231,11 +1233,13 @@ class DecoyChrome(QFrame):
                 f"# Action Taken          : File Quarantined in data/sandbox/\n"
                 f"# ============================================================\n"
             )
-            try:
-                with open(sandbox_path, "w", encoding="utf-8") as f:
-                    f.write(quarantine_content)
-            except Exception:
-                pass
+            if sandbox_path:
+                os.makedirs(self.sandbox_dir, exist_ok=True)
+                try:
+                    with open(sandbox_path, "w", encoding="utf-8") as f:
+                        f.write(quarantine_content)
+                except Exception:
+                    pass
 
             netloc = "c2-server.net"
             try:

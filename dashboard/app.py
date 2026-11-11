@@ -5,6 +5,7 @@ import json
 import glob
 import asyncio
 import logging
+import subprocess
 from typing import List, Optional
 from contextlib import asynccontextmanager
 from collections import deque
@@ -21,6 +22,48 @@ from pydantic import BaseModel
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+
+def _load_local_env_defaults():
+    """Populate unset environment variables from .env without overriding process env."""
+    env_path = os.path.join(PROJECT_ROOT, ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                if s and not s.startswith("#") and "=" in s:
+                    k, v = s.split("=", 1)
+                    key = k.strip()
+                    val = v.strip().strip('"').strip("'")
+                    if key and val and not os.environ.get(key):
+                        os.environ[key] = val
+    except Exception:
+        pass
+
+
+_load_local_env_defaults()
+
+def _is_worker_supervisor_active() -> bool:
+    """Returns True when Process Supervisor Worker 2 owns desktop breach alerts."""
+    lock_path = os.path.join(PROJECT_ROOT, "data", "logs", "supervisor.lock")
+    if not os.path.exists(lock_path):
+        return False
+    try:
+        with open(lock_path, "r", encoding="utf-8") as f:
+            info = json.load(f)
+        pid = int(info.get("pid", -1))
+        if pid > 0 and psutil.pid_exists(pid):
+            proc = psutil.Process(pid)
+            if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                return "run_system.py" in " ".join(proc.cmdline()).lower()
+    except Exception:
+        pass
+    return False
+
+
+active_breach_is_simulated = False
 
 # Windows active window helper
 try:
@@ -52,28 +95,61 @@ telemetry_history: deque = deque(maxlen=120)
 incident_log: deque = deque(maxlen=60)
 server_start_time = time.time()
 
-# Default initial state
+# Default initial state (truthful idle baseline; updated only by real or explicitly simulated events)
 current_telemetry_state = {
     "timestamp": time.time(),
-    "instant_risk": 0.08,
-    "smoothed_risk": 0.07,
+    "instant_risk": 0.0,
+    "smoothed_risk": 0.0,
     "threshold": 0.55,
     "status": "NORMAL",  # NORMAL | WARNING | BREACHED
-    "active_app": "Code.exe",
-    "active_window": "Continuous Authentication SOC",
-    "interaction_mode": "ide_development",
-    "dwell_mean": 0.098,
-    "flight_mean": 0.114,
-    "keystroke_count": 34,
-    "mouse_velocity": 420.5,
-    "mouse_events": 18,
-    "cpu_usage": 14.2,
-    "ram_usage_mb": 245.0,
+    "data_state": "IDLE",  # IDLE | LIVE | STALE | SIMULATED
+    "is_simulated": False,
+    "append_chart": False,
+    "telemetry_age_seconds": None,
+    "active_app": "None",
+    "active_window": "Waiting for telemetry window",
+    "interaction_mode": "idle",
+    "dwell_mean": 0.0,
+    "flight_mean": 0.0,
+    "keystroke_count": 0,
+    "mouse_velocity": 0.0,
+    "mouse_events": 0,
+    "cpu_usage": 0.0,
+    "ram_usage_mb": 0.0,
     "is_breached": False,
-    "active_otp": None,
-    "svdd_confidence": 0.965,
+    "otp_issued": False,
+    "svdd_confidence": 1.0,
     "event_count": 0
 }
+
+# Cached AI analysis keyed by (session_id, timeline_length)
+_cached_ai_key = None
+_cached_ai_report = None
+
+
+def _get_cached_ai_analysis(timeline, stats):
+    """Returns real IntruderIntentAnalyzer output cached per forensic timeline state."""
+    global _cached_ai_key, _cached_ai_report
+    session_id = stats.get("session_id", "") if isinstance(stats, dict) else ""
+    cache_key = (session_id, len(timeline))
+    if _cached_ai_key == cache_key and _cached_ai_report is not None:
+        return _cached_ai_report
+
+    if not timeline:
+        report = ai_analyzer._build_empty_session_report()
+        report["attacker_persona"] = "Awaiting Intruder Event"
+        report["primary_intent"] = "System monitoring baseline owner behavior. Honeypot armed."
+        report["source"] = "Baseline Monitor"
+    else:
+        try:
+            report = ai_analyzer.analyze_session(timeline=timeline, stats=stats)
+        except Exception:
+            report = ai_analyzer._heuristic_expert_analysis(
+                timeline, stats, ai_analyzer.evaluate_deterministic_threat(timeline, stats)
+            )
+    _cached_ai_key = cache_key
+    _cached_ai_report = report
+    return report
 
 # ---------------------------------------------------------
 # Helper Functions
@@ -182,7 +258,12 @@ class TelemetryStreamer:
         self.running = False
         self.task: Optional[asyncio.Task] = None
         self.last_file_pos = 0
-        self.telemetry_file = os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
+        self._last_file_head = ""
+        self.last_real_telemetry_ts: Optional[float] = None
+        self.telemetry_file = os.environ.get(
+            "TELEMETRY_LOG_PATH",
+            os.path.join(PROJECT_ROOT, "telemetry_data.jsonl")
+        )
 
     async def start(self):
         self.running = True
@@ -200,97 +281,123 @@ class TelemetryStreamer:
         logger.info("TelemetryStreamer background loop stopped.")
 
     async def _stream_loop(self):
-        # Seek to near the end of the telemetry file if it exists
+        # Seek cleanly to EOF so we never parse partial JSON lines or replay old sessions
         if os.path.exists(self.telemetry_file):
             try:
-                size = os.path.getsize(self.telemetry_file)
-                self.last_file_pos = max(0, size - 4096)
+                self.last_file_pos = os.path.getsize(self.telemetry_file)
             except Exception:
                 self.last_file_pos = 0
 
         while self.running:
+            global active_breach_is_simulated
             try:
+                sync_event = evaluator.sync_cross_process_state()
+                if sync_event == "RESET":
+                    active_breach_is_simulated = False
+                if sync_event == "RESET" and current_telemetry_state.get("is_breached"):
+                    current_telemetry_state.update({
+                        "instant_risk": 0.0,
+                        "smoothed_risk": 0.0,
+                        "status": "NORMAL",
+                        "data_state": "IDLE",
+                        "is_simulated": False,
+                        "is_breached": False,
+                        "otp_issued": False,
+                        "append_chart": False,
+                    })
+
                 new_row = self._read_next_telemetry_line()
                 now = time.time()
+                otp_issued = bool(evaluator.active_otp or evaluator._load_active_otp())
 
                 if new_row:
-                    # Score real line from telemetry agent
-                    fused_risk, smoothed_risk, triggered = evaluator.evaluate_row(new_row)
-                    app_name = new_row.get("active_app", "Code.exe")
-                    win_title = new_row.get("active_window", "Workspace")
+                    # Score telemetry line without duplicating Worker 2 desktop alerts when supervisor is active
+                    emit_alerts = not _is_worker_supervisor_active()
+                    fused_risk, smoothed_risk, triggered = evaluator.evaluate_row(new_row, emit_alerts=emit_alerts)
+                    svdd_conf = round(float(getattr(evaluator, "last_svdd_conf", 0.98)), 3)
+                    app_name = new_row.get("active_app", "unknown")
+                    win_title = new_row.get("active_window", "Active Desktop")
                     mode = new_row.get("interaction_mode", "general_productivity")
-                    dwell = float(new_row.get("dwell_mean", 0.10))
-                    flight = float(new_row.get("flight_mean", 0.12))
+                    dwell = float(new_row.get("dwell_mean", 0.0))
+                    flight = float(new_row.get("flight_mean", 0.0))
                     k_count = int(new_row.get("keystroke_count", 0))
                     m_vel = float(new_row.get("mouse_velocity_mean", 0.0))
                     m_events = int(new_row.get("mouse_events", 0))
-                    cpu = float(new_row.get("cpu_usage", 10.0))
-                    ram = float(new_row.get("ram_usage_mb", 200.0))
+                    cpu = float(new_row.get("cpu_usage", 0.0))
+                    ram = float(new_row.get("ram_usage_mb", 0.0))
+                    is_sim = bool(new_row.get("is_simulated", False))
+
+                    self.last_real_telemetry_ts = now
+                    data_state = "SIMULATED" if is_sim else ("IDLE" if (k_count == 0 and m_events < 5) else "LIVE")
+                    status = "BREACHED" if (evaluator.is_breached or fused_risk >= 0.78) else (
+                        "WARNING" if (fused_risk >= 0.40 or smoothed_risk >= 0.40) else "NORMAL"
+                    )
+
+                    if triggered:
+                        incident_log.appendleft({
+                            "time": time.strftime("%H:%M:%S"),
+                            "level": "CRITICAL",
+                            "message": f"Behavioral Drift Breach Triggered! Risk: {fused_risk:.2f} (Threshold: 0.55). Honeypot Activated."
+                        })
+
+                    current_telemetry_state.update({
+                        "timestamp": now,
+                        "instant_risk": round(fused_risk, 3),
+                        "smoothed_risk": round(smoothed_risk, 3),
+                        "threshold": 0.55,
+                        "status": status,
+                        "data_state": data_state,
+                        "is_simulated": is_sim,
+                        "append_chart": True,
+                        "telemetry_age_seconds": 0.0,
+                        "active_app": app_name,
+                        "active_window": win_title,
+                        "interaction_mode": mode,
+                        "dwell_mean": round(dwell, 4),
+                        "flight_mean": round(flight, 4),
+                        "keystroke_count": k_count,
+                        "mouse_velocity": round(m_vel, 1),
+                        "mouse_events": m_events,
+                        "cpu_usage": round(cpu, 1),
+                        "ram_usage_mb": round(ram, 1),
+                        "is_breached": evaluator.is_breached,
+                        "otp_issued": bool(evaluator.active_otp or evaluator._load_active_otp()),
+                        "svdd_confidence": svdd_conf,
+                        "event_count": current_telemetry_state.get("event_count", 0) + 1
+                    })
+                    telemetry_history.append(dict(current_telemetry_state))
                 else:
-                    # Generate live ambient monitoring frame
+                    # Truthful heartbeat when no new telemetry window has arrived (never fake metrics)
                     app_name, win_title = get_foreground_window_info()
                     cpu = psutil.cpu_percent(interval=None)
                     ram = psutil.virtual_memory().used / (1024 * 1024)
-                    mode = "ide_development" if "code" in app_name.lower() or "py" in win_title.lower() else "general_productivity"
-                    dwell = round(0.085 + (0.015 * (time.time() % 3)), 3)
-                    flight = round(0.110 + (0.020 * (time.time() % 2)), 3)
-                    k_count = int(15 + (10 * (time.time() % 4)))
-                    m_vel = round(380.0 + (50.0 * (time.time() % 5)), 1)
-                    m_events = 12
+                    age = round(now - self.last_real_telemetry_ts, 1) if self.last_real_telemetry_ts is not None else None
 
-                    if evaluator.is_breached:
-                        fused_risk = 0.88
-                        smoothed_risk = 0.82
-                        triggered = False
+                    if current_telemetry_state.get("is_simulated") and evaluator.is_breached:
+                        data_state = "SIMULATED"
+                    elif age is not None and age > 25.0:
+                        data_state = "STALE"
                     else:
-                        fused_risk = round(0.06 + (0.04 * (time.time() % 3)), 3)
-                        smoothed_risk = round(0.07 + (0.02 * (time.time() % 4)), 3)
-                        triggered = False
+                        data_state = "IDLE"
 
-                # Calculate status
-                if evaluator.is_breached or fused_risk >= 0.75:
-                    status = "BREACHED"
-                elif fused_risk >= 0.40 or smoothed_risk >= 0.40:
-                    status = "WARNING"
-                else:
-                    status = "NORMAL"
+                    status = "BREACHED" if evaluator.is_breached else (
+                        "WARNING" if current_telemetry_state.get("smoothed_risk", 0.0) >= 0.40 else "NORMAL"
+                    )
 
-                # Log incident if triggered or state changed
-                if triggered:
-                    incident_log.appendleft({
-                        "time": time.strftime("%H:%M:%S"),
-                        "level": "CRITICAL",
-                        "message": f"Behavioral Drift Breach Triggered! Risk: {fused_risk:.2f} (Threshold: 0.55). Honeypot Activated."
+                    current_telemetry_state.update({
+                        "timestamp": now,
+                        "status": status,
+                        "data_state": data_state,
+                        "append_chart": False,
+                        "telemetry_age_seconds": age,
+                        "active_app": app_name if current_telemetry_state.get("event_count", 0) == 0 else current_telemetry_state["active_app"],
+                        "active_window": win_title if current_telemetry_state.get("event_count", 0) == 0 else current_telemetry_state["active_window"],
+                        "cpu_usage": round(cpu, 1),
+                        "ram_usage_mb": round(ram, 1),
+                        "is_breached": evaluator.is_breached,
+                        "otp_issued": otp_issued,
                     })
 
-                svdd_conf = round(max(0.0, min(1.0, 1.0 - (fused_risk * 0.9))), 3)
-
-                current_telemetry_state.update({
-                    "timestamp": now,
-                    "instant_risk": round(fused_risk, 3),
-                    "smoothed_risk": round(smoothed_risk, 3),
-                    "threshold": 0.55,
-                    "status": status,
-                    "active_app": app_name,
-                    "active_window": win_title,
-                    "interaction_mode": mode,
-                    "dwell_mean": dwell,
-                    "flight_mean": flight,
-                    "keystroke_count": k_count,
-                    "mouse_velocity": m_vel,
-                    "mouse_events": m_events,
-                    "cpu_usage": round(cpu, 1),
-                    "ram_usage_mb": round(ram, 1),
-                    "is_breached": evaluator.is_breached,
-                    "active_otp": evaluator.active_otp,
-                    "svdd_confidence": svdd_conf,
-                    "event_count": current_telemetry_state.get("event_count", 0) + 1
-                })
-
-                # Append to history buffer
-                telemetry_history.append(dict(current_telemetry_state))
-
-                # Broadcast to connected WebSockets
                 payload = {
                     "type": "TELEMETRY_UPDATE",
                     "data": current_telemetry_state,
@@ -304,17 +411,39 @@ class TelemetryStreamer:
             await asyncio.sleep(1.0)
 
     def _read_next_telemetry_line(self):
-        """Tails the telemetry_data.jsonl file for any freshly appended line."""
+        """Tails telemetry_data.jsonl safely, handling truncation/rotation and partial writes."""
         if not os.path.exists(self.telemetry_file):
+            self.last_file_pos = 0
+            self._last_file_head = ""
             return None
         try:
-            with open(self.telemetry_file, "r", encoding="utf-8") as f:
+            file_size = os.path.getsize(self.telemetry_file)
+            with open(self.telemetry_file, "r", encoding="utf-8", errors="replace") as f:
+                head_sample = f.read(128)
+                rewritten = bool(
+                    self._last_file_head
+                    and not (
+                        head_sample.startswith(self._last_file_head)
+                        or self._last_file_head.startswith(head_sample)
+                    )
+                )
+                if file_size < self.last_file_pos or rewritten:
+                    self.last_file_pos = 0
+                self._last_file_head = head_sample
+
                 f.seek(self.last_file_pos)
-                line = f.readline()
-                if line and line.strip():
+                while True:
+                    line = f.readline()
+                    if not line:
+                        self.last_file_pos = f.tell()
+                        break
+                    if not line.endswith("\n"):
+                        # Partial write in progress; wait for newline
+                        break
                     self.last_file_pos = f.tell()
-                    return json.loads(line.strip())
-                self.last_file_pos = f.tell()
+                    stripped = line.strip()
+                    if stripped:
+                        return json.loads(stripped)
         except Exception:
             pass
         return None
@@ -349,11 +478,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS
+# Enable CORS strictly for configured/local origins (wildcard credentials disabled)
+_default_port = os.environ.get("PORT", "8000").strip() or "8000"
+_cors_env = os.environ.get(
+    "CORS_ORIGINS",
+    f"http://localhost:{_default_port},http://127.0.0.1:{_default_port},http://localhost:8000,http://127.0.0.1:8000",
+)
+_allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -374,7 +509,7 @@ class SimulateAnomalyRequest(BaseModel):
 
 
 class ResetSecurityRequest(BaseModel):
-    bypass_key: str = "admin"
+    bypass_key: str = ""
 
 
 # ---------------------------------------------------------
@@ -419,7 +554,12 @@ async def websocket_telemetry(websocket: WebSocket):
                 elif cmd == "simulate_anomaly":
                     await handle_simulate_anomaly(msg.get("anomaly_type", "acute_spike"), msg.get("severity", 0.88))
                 elif cmd == "reset":
-                    await handle_security_reset()
+                    res = await handle_security_reset(msg.get("bypass_key", ""))
+                    if isinstance(res, JSONResponse):
+                        await websocket.send_json({
+                            "type": "RESET_DENIED",
+                            "message": "Invalid verification credential. Provide the valid 6-digit OTP or Recovery Key."
+                        })
             except Exception:
                 pass
     except WebSocketDisconnect:
@@ -435,13 +575,16 @@ async def websocket_telemetry(websocket: WebSocket):
 @app.get("/api/status")
 async def get_system_status():
     """Returns overall health, models, and breach status."""
+    evaluator.sync_cross_process_state()
     latest_pdf, latest_intruder, has_desktop = scan_latest_forensic_files()
     return {
         "status": "ONLINE",
         "evaluator_models_loaded": evaluator.models_loaded,
         "deep_svdd_active": evaluator.sequence_detector.model is not None,
         "is_breached": evaluator.is_breached,
-        "active_otp": evaluator.active_otp,
+        "otp_issued": bool(evaluator.active_otp or evaluator._load_active_otp()),
+        "data_state": current_telemetry_state.get("data_state", "IDLE"),
+        "is_simulated": current_telemetry_state.get("is_simulated", False),
         "current_instant_risk": current_telemetry_state["instant_risk"],
         "current_smoothed_risk": current_telemetry_state["smoothed_risk"],
         "threshold": 0.55,
@@ -466,11 +609,12 @@ async def get_recent_telemetry(limit: int = Query(60, ge=5, le=120)):
 
 @app.get("/api/forensics/latest")
 async def get_latest_forensics():
-    """Returns metadata for latest forensic captures (PDF, intruder photo, actions)."""
+    """Returns metadata and grounded AI/heuristic threat assessment for latest forensic captures."""
     latest_pdf, latest_intruder, has_desktop = scan_latest_forensic_files()
     timeline = tracker.get_timeline()
     stats = tracker.get_summary_stats()
-    
+    ai_report = await asyncio.to_thread(_get_cached_ai_analysis, timeline, stats)
+
     return {
         "has_forensics": latest_pdf is not None or latest_intruder is not None,
         "latest_pdf": latest_pdf,
@@ -478,7 +622,17 @@ async def get_latest_forensics():
         "has_desktop_snapshot": has_desktop,
         "stats": stats,
         "timeline_events_count": len(timeline),
-        "recent_timeline": timeline[-10:] if timeline else []
+        "recent_timeline": timeline[-10:] if timeline else [],
+        "ai_analysis": {
+            "threat_level": ai_report.get("threat_level", "LOW"),
+            "threat_score": ai_report.get("threat_score", 0.05),
+            "attacker_persona": ai_report.get("attacker_persona", "Awaiting Intruder Event"),
+            "primary_intent": ai_report.get("primary_intent", "System monitoring baseline owner behavior."),
+            "mitre_tactics": ai_report.get("mitre_tactics", []),
+            "model_name": ai_report.get("model_name", "None"),
+            "source": ai_report.get("source", "Baseline Monitor"),
+            "observed_facts": ai_report.get("observed_facts", []),
+        }
     }
 
 
@@ -697,18 +851,31 @@ async def handle_simulate_anomaly(anomaly_type: str, severity: float):
         }
         reason = "SUSTAINED MULTI-WINDOW BEHAVIORAL DRIFT"
 
-    # Evaluate the simulated row
-    fused_risk, smoothed_risk, triggered = evaluator.evaluate_row(simulated_row)
+    # Tag row clearly as simulated
+    simulated_row["is_simulated"] = True
+
+    global active_breach_is_simulated
+    existing_real_breach = bool(
+        evaluator.is_breached
+        and not active_breach_is_simulated
+        and (evaluator.active_otp or evaluator._load_active_otp())
+    )
+
+    # Evaluate the simulated row (suppress side-effectful alerts when a real breach is already active)
+    fused_risk, smoothed_risk, triggered = evaluator.evaluate_row(simulated_row, emit_alerts=not existing_real_breach)
+    svdd_conf = round(float(getattr(evaluator, "last_svdd_conf", max(0.0, 1.0 - fused_risk))), 3)
 
     # Force elevate if severity specified
     forced_risk = max(fused_risk, severity)
     evaluator.is_breached = True
-    if evaluator.active_otp is None:
-        try:
+    exposed_sim_otp = None
+    if not existing_real_breach:
+        active_breach_is_simulated = True
+        if not evaluator.active_otp:
             from security.otp_service import generate_otp
             evaluator.active_otp = generate_otp()
-        except Exception:
-            evaluator.active_otp = "849201"
+        evaluator._save_active_otp(evaluator.active_otp, is_breach=True)
+        exposed_sim_otp = evaluator.active_otp
 
     # Record in tracker
     tracker.record_shell_command(
@@ -719,7 +886,7 @@ async def handle_simulate_anomaly(anomaly_type: str, severity: float):
     incident_log.appendleft({
         "time": time.strftime("%H:%M:%S"),
         "level": "CRITICAL",
-        "message": f"🚨 [SIMULATED BREACH] {reason} | Risk: {forced_risk:.2f} (Threshold: 0.55)"
+        "message": f"[SIMULATED BREACH] {reason} | Risk: {forced_risk:.2f} (Threshold: 0.55)"
     })
 
     current_telemetry_state.update({
@@ -727,6 +894,10 @@ async def handle_simulate_anomaly(anomaly_type: str, severity: float):
         "instant_risk": round(forced_risk, 3),
         "smoothed_risk": round(forced_risk * 0.92, 3),
         "status": "BREACHED",
+        "data_state": "SIMULATED",
+        "is_simulated": True,
+        "append_chart": True,
+        "telemetry_age_seconds": 0.0,
         "active_app": simulated_row["active_app"],
         "active_window": simulated_row["active_window"],
         "interaction_mode": simulated_row["interaction_mode"],
@@ -738,13 +909,25 @@ async def handle_simulate_anomaly(anomaly_type: str, severity: float):
         "cpu_usage": simulated_row["cpu_usage"],
         "ram_usage_mb": simulated_row["ram_usage_mb"],
         "is_breached": True,
-        "active_otp": evaluator.active_otp,
-        "svdd_confidence": round(1.0 - forced_risk, 3)
+        "otp_issued": True,
+        "svdd_confidence": svdd_conf,
+        "event_count": current_telemetry_state.get("event_count", 0) + 1
     })
 
     telemetry_history.append(dict(current_telemetry_state))
 
-    # Broadcast breach immediately
+    # Persist simulated row to telemetry stream for daemon IPC synchronization (unless disabled for isolated tests)
+    if os.environ.get("DISABLE_SIM_TELEMETRY_WRITE") != "1":
+        try:
+            telemetry_file = streamer.telemetry_file
+            os.makedirs(os.path.dirname(os.path.abspath(telemetry_file)), exist_ok=True)
+            with open(telemetry_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(simulated_row) + "\n")
+                f.flush()
+        except Exception as e:
+            logger.warning(f"Could not append simulated anomaly to telemetry log: {e}")
+
+    # Broadcast breach immediately without exposing raw OTP
     await ws_manager.broadcast({
         "type": "BREACH_ALERT",
         "data": current_telemetry_state,
@@ -758,34 +941,47 @@ async def handle_simulate_anomaly(anomaly_type: str, severity: float):
         "instant_risk": forced_risk,
         "smoothed_risk": current_telemetry_state["smoothed_risk"],
         "is_breached": True,
-        "active_otp": evaluator.active_otp
+        "is_simulated": True,
+        "otp_issued": True,
+        "otp_redacted": existing_real_breach,
+        "simulated_otp": exposed_sim_otp,
     }
 
 
 @app.post("/api/security/reset")
 async def reset_security_endpoint(req: Optional[ResetSecurityRequest] = None):
     """
-    Resets the security breach state, normalizes threat scores,
-    and runs behavioral model adaptation retraining.
+    Verifies OTP / configured Emergency Recovery Key and resets the security breach state.
+    Rejects unauthenticated or trivial credentials with HTTP 403.
     """
-    bypass = req.bypass_key if req else "admin"
+    bypass = req.bypass_key if req else ""
     result = await handle_security_reset(bypass)
     return result
 
 
-async def handle_security_reset(bypass_key: str = "admin"):
-    evaluator.verify_otp_and_reset(bypass_key)
-    evaluator.is_breached = False
-    evaluator.risk_history.clear()
-    evaluator.active_otp = None
-    
-    # Also clean up the active OTP file if it exists
-    otp_path = os.path.join(PROJECT_ROOT, "models", ".active_otp")
-    if os.path.exists(otp_path):
-        try:
-            os.remove(otp_path)
-        except Exception:
-            pass
+async def handle_security_reset(bypass_key: str = ""):
+    verified = evaluator.verify_otp_and_reset(bypass_key)
+    if not verified:
+        incident_log.appendleft({
+            "time": time.strftime("%H:%M:%S"),
+            "level": "WARNING",
+            "message": "SECURITY RESET DENIED: Invalid 6-digit OTP or Recovery Key."
+        })
+        await ws_manager.broadcast({
+            "type": "RESET_DENIED",
+            "latest_alert": incident_log[0]
+        })
+        return JSONResponse(
+            status_code=403,
+            content={
+                "status": "denied",
+                "message": "Verification failed. Enter the active 6-digit OTP or configured Emergency Recovery Key.",
+                "is_breached": evaluator.is_breached
+            }
+        )
+
+    global active_breach_is_simulated
+    active_breach_is_simulated = False
 
     incident_log.appendleft({
         "time": time.strftime("%H:%M:%S"),
@@ -794,12 +990,15 @@ async def handle_security_reset(bypass_key: str = "admin"):
     })
 
     current_telemetry_state.update({
-        "instant_risk": 0.06,
-        "smoothed_risk": 0.07,
+        "instant_risk": 0.0,
+        "smoothed_risk": 0.0,
         "status": "NORMAL",
+        "data_state": "IDLE",
+        "is_simulated": False,
+        "append_chart": True,
         "is_breached": False,
-        "active_otp": None,
-        "svdd_confidence": 0.982
+        "otp_issued": False,
+        "svdd_confidence": 1.0
     })
     telemetry_history.append(dict(current_telemetry_state))
 
@@ -826,7 +1025,7 @@ async def get_incident_feed():
 
 
 class StepUpVerifyRequest(BaseModel):
-    entered_code: str = "admin"
+    entered_code: str = ""
 
 
 @app.get("/api/security/tier_status")
@@ -848,7 +1047,8 @@ async def get_security_tier_status():
 async def verify_step_up_endpoint(req: StepUpVerifyRequest):
     """Verifies a non-blocking Tier 2 step-up MFA challenge."""
     if evaluator.orchestrator:
-        success, msg = evaluator.orchestrator.verify_step_up(req.entered_code, evaluator.active_otp)
+        active_code = evaluator.active_otp or evaluator._load_active_otp()
+        success, msg = evaluator.orchestrator.verify_step_up(req.entered_code, active_code)
         if success:
             current_telemetry_state["status"] = "NORMAL"
             current_telemetry_state["instant_risk"] = 0.08
@@ -873,13 +1073,64 @@ async def verify_step_up_endpoint(req: StepUpVerifyRequest):
 
 
 # ---------------------------------------------------------
+# Desktop Application Integration & Explorer Endpoints
+# ---------------------------------------------------------
+@app.post("/api/system/launch_forensics_gui")
+async def launch_forensics_gui_endpoint():
+    """Spawns the native PyQt6 Forensic Analyst Workbench desktop application."""
+    try:
+        forensic_script = os.path.join(PROJECT_ROOT, "dashboard", "forensic_dashboard.py")
+        if not os.path.exists(forensic_script):
+            raise HTTPException(status_code=404, detail="Forensic dashboard script not found.")
+        subprocess.Popen([sys.executable, forensic_script], cwd=PROJECT_ROOT)
+        return {"status": "success", "message": "Forensic Desktop Dashboard launched."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch forensics GUI: {str(e)}")
+
+
+@app.post("/api/system/launch_honeypot_gui")
+async def launch_honeypot_gui_endpoint():
+    """Spawns the native PyQt6 isolated Sandboxed Windows 11 Honeypot Desktop."""
+    try:
+        honeypot_script = os.path.join(PROJECT_ROOT, "deception", "honey_desktop.py")
+        if not os.path.exists(honeypot_script):
+            raise HTTPException(status_code=404, detail="Honeypot desktop script not found.")
+        subprocess.Popen([sys.executable, honeypot_script], cwd=PROJECT_ROOT)
+        return {"status": "success", "message": "Sandboxed Honeypot Desktop launched."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch honeypot GUI: {str(e)}")
+
+
+@app.post("/api/system/open_folder")
+async def open_folder_endpoint(folder: str = "logs"):
+    """Opens a system directory (logs, sandbox, forensics) in Windows Explorer."""
+    allowed_folders = {
+        "logs": os.path.join(PROJECT_ROOT, "data", "logs"),
+        "sandbox": os.path.join(PROJECT_ROOT, "data", "sandbox"),
+        "forensics": os.path.join(PROJECT_ROOT, "data", "forensics"),
+    }
+    target_dir = allowed_folders.get(folder.lower())
+    if not target_dir or not os.path.exists(target_dir):
+        raise HTTPException(status_code=400, detail="Invalid or non-existent folder specified.")
+    
+    try:
+        if sys.platform == "win32":
+            os.startfile(target_dir)
+        return {"status": "success", "message": f"Opened {folder} folder in File Explorer."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open folder: {str(e)}")
+
+
+# ---------------------------------------------------------
 # Standalone Runner
 # ---------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+    _bind_host = os.environ.get("HOST", "127.0.0.1")
+    _bind_port = int(os.environ.get("PORT", 8000))
     print("\n" + "=" * 70)
     print("CONTINUOUS AUTHENTICATION & HONEYPOT FORENSICS WEB DASHBOARD")
     print("Department of ISE | Team 30 | Major Project")
-    print("Serving live monitoring console at: http://localhost:8000")
+    print(f"Serving live monitoring console at: http://{_bind_host}:{_bind_port}")
     print("=" * 70 + "\n")
-    uvicorn.run("dashboard.app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("dashboard.app:app", host=_bind_host, port=_bind_port, reload=False)

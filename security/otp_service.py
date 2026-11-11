@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import json
 import random
 import time
@@ -14,6 +15,15 @@ from email.mime.image import MIMEImage
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+
+def _redact_telegram_token(msg: str, bot_token: str = "") -> str:
+    """Masks Telegram bot tokens inside HTTP/connection error logs."""
+    out = str(msg)
+    if bot_token:
+        out = out.replace(str(bot_token), "***REDACTED***")
+    out = re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot***REDACTED***", out)
+    return out
 
 
 def parse_env_file(filepath=ENV_PATH):
@@ -33,7 +43,7 @@ def parse_env_file(filepath=ENV_PATH):
 
 
 def get_alert_config():
-    """Merges configurations from .env and config.json with priority to .env."""
+    """Merges configurations from os.environ, .env, and config.json with priority to os.environ then .env."""
     env_vars = parse_env_file()
     
     # Base configuration from config.json if present
@@ -50,18 +60,36 @@ def get_alert_config():
     sec_cfg = cfg.get("security", {})
     tw_cfg = cfg.get("twilio", {})
 
-    # Priority to .env over config.json
-    sender_pwd = env_vars.get("SMTP_APP_PASSWORD", email_cfg.get("sender_password", ""))
+    def get_var(key, fallback=""):
+        val = os.environ.get(key)
+        if val is not None and str(val).strip() != "":
+            return str(val).strip()
+        env_val = env_vars.get(key)
+        if env_val is not None and str(env_val).strip() != "":
+            return str(env_val).strip()
+        return fallback
+
+    # Priority to non-empty os.environ -> .env -> config.json
+    sender_pwd = get_var("SMTP_APP_PASSWORD", email_cfg.get("sender_password", ""))
     clean_pwd = sender_pwd.replace(" ", "").strip() if sender_pwd else ""
 
-    sender_email = env_vars.get("SMTP_EMAIL", email_cfg.get("sender_email", ""))
-    recipient_email = env_vars.get("ALERT_EMAIL", email_cfg.get("recipient_email", sender_email))
-    smtp_server = env_vars.get("SMTP_SERVER", email_cfg.get("smtp_server", "smtp.gmail.com"))
-    smtp_port = int(env_vars.get("SMTP_PORT", email_cfg.get("smtp_port", 465)))
+    sender_email = get_var("SMTP_EMAIL", email_cfg.get("sender_email", ""))
+    recipient_email = get_var("ALERT_EMAIL", email_cfg.get("recipient_email", sender_email))
+    smtp_server = get_var("SMTP_SERVER", email_cfg.get("smtp_server", "smtp.gmail.com"))
+    smtp_port = int(get_var("SMTP_PORT", str(email_cfg.get("smtp_port", 465))))
 
-    tg_bot = env_vars.get("TELEGRAM_BOT_TOKEN", tg_cfg.get("bot_token", ""))
-    tg_chat = env_vars.get("TELEGRAM_CHAT_ID", tg_cfg.get("chat_id", ""))
-    bypass_pwd = env_vars.get("EMERGENCY_RECOVERY_KEY", env_vars.get("MASTER_BYPASS_PASSWORD", sec_cfg.get("emergency_recovery_key", sec_cfg.get("master_bypass_password", ""))))
+    tg_bot = get_var("TELEGRAM_BOT_TOKEN", tg_cfg.get("bot_token", ""))
+    tg_chat = get_var("TELEGRAM_CHAT_ID", tg_cfg.get("chat_id", ""))
+    bypass_pwd = get_var(
+        "EMERGENCY_RECOVERY_KEY",
+        get_var(
+            "SECURITY_MASTER_RECOVERY_PASSWORD",
+            get_var(
+                "MASTER_BYPASS_PASSWORD",
+                sec_cfg.get("emergency_recovery_key") or sec_cfg.get("master_bypass_password", ""),
+            ),
+        ),
+    )
 
     config = {
         "email": {
@@ -198,7 +226,7 @@ def send_email_otp(otp, photo_path=None, threat_info=None):
         server.login(sender, password)
         server.sendmail(sender, recipient_list, msg.as_string())
         server.quit()
-        print(f"[OTP] [SUCCESS] Alert email with OTP {otp} successfully delivered to {', '.join(recipient_list)}", flush=True)
+        print(f"[OTP] [SUCCESS] Alert email with OTP {str(otp)[:2]}**** delivered to {', '.join(recipient_list)}", flush=True)
         return True
     except Exception as e:
         print(f"[OTP] [ERROR] SMTP delivery error: {e}", flush=True)
@@ -209,19 +237,22 @@ def get_latest_telegram_chat_id(bot_token):
     """Auto-discovers the user's chat ID from the bot's latest messages if misconfigured."""
     try:
         url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-        resp = requests.get(url, timeout=6)
+        resp = requests.get(url, timeout=8)
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("result", [])
             if results:
                 for item in reversed(results):
-                    msg = item.get("message", item.get("my_chat_member", {}))
+                    msg = item.get("message") or item.get("channel_post") or item.get("edited_message") or item.get("my_chat_member", {})
                     chat = msg.get("chat", {})
                     chat_id = chat.get("id")
-                    if chat_id and str(chat_id) != bot_token.split(":")[0]:
+                    bot_prefix = bot_token.split(":")[0] if ":" in bot_token else ""
+                    if chat_id and str(chat_id) != bot_prefix:
                         return str(chat_id)
-    except Exception:
-        pass
+        else:
+            print(f"[OTP] [WARNING] Telegram getUpdates failed (HTTP {resp.status_code}): {_redact_telegram_token(resp.text, bot_token)}", flush=True)
+    except Exception as e:
+        print(f"[OTP] [WARNING] Telegram getUpdates connection error: {_redact_telegram_token(e, bot_token)}", flush=True)
     return None
 
 
@@ -234,18 +265,21 @@ def send_telegram_alert(otp, photo_path=None, threat_info=None):
     raw_chat_id = tg_conf.get("chat_id")
     
     if not bot_token:
+        print("[OTP] [INFO] Telegram alert skipped: TELEGRAM_BOT_TOKEN not configured in .env or environment.", flush=True)
         return False
 
     chat_ids = [c.strip() for c in str(raw_chat_id).split(",") if c.strip()] if raw_chat_id else []
-    bot_id = bot_token.split(":")[0]
+    bot_id = bot_token.split(":")[0] if ":" in bot_token else ""
     valid_chat_ids = [cid for cid in chat_ids if cid != bot_id]
 
     if not valid_chat_ids:
+        print("[OTP] [INFO] Telegram Chat ID not specified or matches Bot ID. Attempting auto-discovery via getUpdates...", flush=True)
         auto_chat_id = get_latest_telegram_chat_id(bot_token)
         if auto_chat_id:
+            print(f"[OTP] [INFO] Auto-discovered Telegram Chat ID: {auto_chat_id}", flush=True)
             valid_chat_ids = [auto_chat_id]
         else:
-            print(f"[OTP] [NOTICE] Telegram Chat ID '{raw_chat_id}' is the Bot's ID or empty. Message your bot on Telegram or configure group chat ID.", flush=True)
+            print(f"[OTP] [NOTICE] Telegram Chat ID '{raw_chat_id}' is empty or invalid, and no user message found. Message your bot on Telegram (e.g. send /start) or configure TELEGRAM_CHAT_ID in .env.", flush=True)
             return False
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -287,18 +321,21 @@ def send_telegram_alert(otp, photo_path=None, threat_info=None):
                 print(f"[OTP] [SUCCESS] Live Telegram alert + evidence dispatched to chat ID {chat_id}", flush=True)
                 any_success = True
             else:
-                print(f"[OTP] [WARNING] Telegram send to {chat_id} returned status {resp.status_code}: {resp.text}", flush=True)
+                print(f"[OTP] [WARNING] Telegram send to {chat_id} returned status {resp.status_code}: {_redact_telegram_token(resp.text, bot_token)}", flush=True)
         except Exception as e:
-            print(f"[OTP] [WARNING] Telegram send to {chat_id} failed: {e}", flush=True)
+            print(f"[OTP] [WARNING] Telegram send to {chat_id} failed: {_redact_telegram_token(e, bot_token)}", flush=True)
 
     return any_success
 
 
 def dispatch_otp(otp, photo_path=None, threat_info=None):
     """Dispatches OTP across all enabled communication channels (Email + Telegram + SMS)."""
-    print(f"[ALERT-DISPATCHER] Initiating multi-channel security alerts for OTP: {otp}...", flush=True)
+    masked_otp = f"{str(otp)[:2]}****" if otp else "******"
+    print(f"[ALERT-DISPATCHER] Initiating multi-channel security alerts for OTP: {masked_otp}...", flush=True)
     email_ok = send_email_otp(otp, photo_path=photo_path, threat_info=threat_info)
     tg_ok = send_telegram_alert(otp, photo_path=photo_path, threat_info=threat_info)
+    if not email_ok and not tg_ok:
+        print(f"[ALERT-DISPATCHER] [FALLBACK] No external delivery channels active. Active OTP saved to models/.active_otp ({masked_otp}).", flush=True)
     return email_ok or tg_ok
 
 

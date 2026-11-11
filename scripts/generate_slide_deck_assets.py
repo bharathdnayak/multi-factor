@@ -430,7 +430,7 @@ def generate_presentation_slide_deck_markdown(output_file: str = None) -> str:
 
 ## SLIDE 11: Real-Time Cyber-Ops Web Dashboard & WebSocket Streaming
 * **Technology:** FastAPI ASGI Server + Uvicorn + WebSockets + HTML5 Canvas (`dashboard/app.py`).
-* **Live Streaming Endpoint:** `/ws/telemetry` streaming live at 10-second intervals.
+* **Live Streaming Endpoint:** `/ws/telemetry` pushing 1-second state updates/heartbeats over WebSocket when live telemetry is active (with explicit `LIVE` / `IDLE` / `STALE` / `SIMULATED` indicators) alongside 10-second telemetry aggregation windows.
 * **Core Dashboard Visualizations:**
   - **Live Threat Risk Gauge:** Smooth needle gauge with dynamic color zones (Green $<0.40$, Amber $0.40-0.75$, Red $>0.75$).
   - **Quad-Factor Metric Cards:** Real-time breakdown of Deep SVDD, OC-SVM, Isolation Forest, and Cognitive Context scores.
@@ -557,7 +557,7 @@ def generate_presentation_slide_deck_markdown(output_file: str = None) -> str:
 * **Stage 4 (Honeypot Deception Traps):**
   - Attacker enters Honeypot desktop; enters credentials in fake NetBanking; exfiltrates fake AWS keys; HoneyShell traps network recon and quarantines C2 downloads.
 * **Stage 5 (Owner Recovery & Forensic PDF):**
-  - Owner returns, inputs OTP or master bypass (`admin`), restores session.
+  - Owner returns, submits the verified 6-digit OTP (or configured `EMERGENCY_RECOVERY_KEY`), restores session.
   - Offline Ollama AI classifies MITRE ATT&CK tactics and compiles executive forensic PDF.
 
 > **Speaker Notes:**

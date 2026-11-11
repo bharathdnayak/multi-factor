@@ -34,7 +34,7 @@ class EnvironmentalSensorMonitor:
     """
 
     DEFAULT_TRUSTED_SSIDS = [
-        "$$$$$5", "Home_Secure_5G", "Campus_Lab_NMAMIT", "CorpSec_Internal_WiFi",
+        "Home_Secure_5G", "Campus_Lab_NMAMIT", "CorpSec_Internal_WiFi",
         "Ethernet", "eduroam", "NMAMIT-Faculty"
     ]
 

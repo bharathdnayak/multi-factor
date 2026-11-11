@@ -122,7 +122,7 @@ class StepUpToastWidget(QWidget if PYQT_AVAILABLE else object):
         # Input & Button Row
         action_layout = QHBoxLayout()
         self.pin_input = QLineEdit(card)
-        self.pin_input.setPlaceholderText("Enter PIN / OTP (or admin)")
+        self.pin_input.setPlaceholderText("Enter 6-digit OTP")
         self.pin_input.setStyleSheet("""
             QLineEdit {
                 background-color: #1e293b;
@@ -367,7 +367,11 @@ class DynamicRiskOrchestrator:
 
         # 2. Check configured emergency recovery key (must be non-trivial, >= 8 chars)
         if not is_valid:
-            env_master = os.environ.get("EMERGENCY_RECOVERY_KEY") or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+            env_master = (
+                os.environ.get("EMERGENCY_RECOVERY_KEY")
+                or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+                or os.environ.get("MASTER_BYPASS_PASSWORD")
+            )
             if env_master and len(env_master.strip()) >= 8:
                 clean_env = env_master.strip()
                 if clean_env.lower() not in TRIVIAL_BLACKLIST and entered == clean_env:

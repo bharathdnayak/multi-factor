@@ -3,24 +3,34 @@ import sys
 import unittest
 import json
 import shutil
+import tempfile
+from unittest.mock import patch
 
 # Append project root
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_dir)
 
 from security.drift_detector import ThreatEvaluator
+from deception.forensic_tracker import get_tracker
 
 class TestSecurityPipeline(unittest.TestCase):
     def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory(prefix="member3_test_")
+        self.tracker = get_tracker()
+        self.tracker.use_temp_storage(self.tmp_dir.name)
         # Initialize the evaluator with low alert threshold for testing
         self.evaluator = ThreatEvaluator(threshold=0.60)
-        self.forensics_dir = os.path.join(project_dir, "data", "test_forensics")
-        os.makedirs(self.forensics_dir, exist_ok=True)
         
     def tearDown(self):
-        # Clear mock directories
-        if os.path.exists(self.forensics_dir):
-            shutil.rmtree(self.forensics_dir)
+        self.tracker.restore_storage()
+        for fname in (".active_otp", ".session_reset"):
+            p = os.path.join(project_dir, "models", fname)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        self.tmp_dir.cleanup()
             
     def test_end_to_end_scoring_fusion(self):
         print("\n--- Running End-to-End Security Scoring Fusion Test ---")
@@ -84,7 +94,9 @@ class TestSecurityPipeline(unittest.TestCase):
         triggered_at_least_once = False
         
         for i in range(3):
-            f_risk, s_risk, triggered = self.evaluator.evaluate_row(imposter_row)
+            with patch("telemetry.evaluator.dispatch_otp", return_value=True), \
+                 patch("telemetry.evaluator.capture_intruder", return_value=None):
+                f_risk, s_risk, triggered = self.evaluator.evaluate_row(imposter_row)
             print(f"   [Imposter {i+1}] Fused Risk: {f_risk:.4f} | Smoothed Risk: {s_risk:.4f} | Triggered: {triggered}")
             if triggered:
                 triggered_at_least_once = True
@@ -94,10 +106,12 @@ class TestSecurityPipeline(unittest.TestCase):
         self.assertIsNotNone(self.evaluator.active_otp)
         print(f"[OK] System breached state set. Generated OTP: {self.evaluator.active_otp}")
         
-        # 3. Test OTP Verification and Restoring State
+        # 3. Test OTP Verification and Restoring State (mock adaptation retraining so live models are untouched)
         print("\nVerifying correct OTP...")
         correct_otp = self.evaluator.active_otp
-        verification_ok = self.evaluator.verify_otp_and_reset(correct_otp)
+        with patch("ml_engine.train.adapt_to_verified_drift"), \
+             patch.object(self.evaluator.controller, "learn_from_session"):
+            verification_ok = self.evaluator.verify_otp_and_reset(correct_otp)
         
         self.assertTrue(verification_ok)
         self.assertFalse(self.evaluator.is_breached)

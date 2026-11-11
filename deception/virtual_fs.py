@@ -8,12 +8,81 @@ from typing import Optional, List, Dict, Tuple, Any, Callable
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def get_synthetic_username() -> str:
+    """
+    Returns the synthetic Windows username for the honeypot VFS.
+    Priority:
+    1. SYNTHETIC_USERNAME or HONEYPOT_USER env var if explicitly set.
+    2. USERNAME env var (the active host Windows user, e.g. 'Dell').
+    3. Defaults to 'Dell'.
+    """
+    user = os.environ.get("SYNTHETIC_USERNAME", os.environ.get("HONEYPOT_USER", "")).strip()
+    if user:
+        return user
+    return os.environ.get("USERNAME", "Dell").strip() or "Dell"
+
+
+def safe_sandbox_path(
+    sandbox_dir: str,
+    unsafe_name: str,
+    default_name: str = "quarantined_file"
+) -> Optional[str]:
+    """
+    Safely resolves a quarantined filename strictly within `sandbox_dir`.
+    Strips directory separators, drive prefixes, and traversal segments ('..')
+    and verifies realpath containment inside `sandbox_dir`.
+    """
+    if not sandbox_dir:
+        return None
+    raw = str(unsafe_name or "").replace("\\", "/").strip()
+    base = os.path.basename(raw)
+    if ":" in base:
+        base = base.split(":")[-1]
+    base = os.path.basename(base.replace("\\", "/"))
+    if not base or base in (".", ".."):
+        base = default_name
+    sandbox_real = os.path.realpath(sandbox_dir)
+    candidate_real = os.path.realpath(os.path.join(sandbox_real, base))
+    try:
+        if os.path.commonpath([sandbox_real, candidate_real]) != sandbox_real:
+            return None
+    except ValueError:
+        return None
+    if candidate_real == sandbox_real:
+        return os.path.realpath(os.path.join(sandbox_real, default_name))
+    return candidate_real
+
+
+def resolve_contained_sandbox_path(sandbox_dir: str, target_path: str) -> Optional[str]:
+    """
+    Resolves a relative read target strictly inside `sandbox_dir` WITHOUT stripping
+    parent directories. Rejects absolute paths, drive prefixes, or traversal escapes.
+    """
+    if not sandbox_dir or not target_path:
+        return None
+    raw = str(target_path).strip()
+    norm_slash = raw.replace("\\", "/")
+    if norm_slash.startswith("/") or ":" in raw:
+        return None
+    sandbox_real = os.path.realpath(sandbox_dir)
+    candidate_real = os.path.realpath(os.path.join(sandbox_real, *norm_slash.split("/")))
+    try:
+        if os.path.commonpath([sandbox_real, candidate_real]) != sandbox_real:
+            return None
+    except ValueError:
+        return None
+    if candidate_real == sandbox_real:
+        return None
+    return candidate_real
+
 class PathUtils:
     """Windows-specific path manipulation and normalization utilities."""
 
     CANONICAL_SEGMENTS = {
         "users": "Users",
         "dell": "Dell",
+        "workstationuser": "WorkstationUser",
+        "administrator": "Administrator",
         "desktop": "Desktop",
         "documents": "Documents",
         "downloads": "Downloads",
@@ -70,6 +139,10 @@ class PathUtils:
             rest = "\\" + p
 
         # Split segments and resolve . and ..
+        synth_user = get_synthetic_username()
+        if synth_user.lower() not in PathUtils.CANONICAL_SEGMENTS:
+            PathUtils.CANONICAL_SEGMENTS[synth_user.lower()] = synth_user
+
         raw_segments = rest.split("\\")
         resolved = []
         for seg in raw_segments:
@@ -342,19 +415,26 @@ class VirtualFileSystem:
         self.clipboard = VirtualClipboard()
         self.recycle_bin: Dict[str, VirtualRecycleBinEntry] = {}
         self.listeners: List[Callable[[str, str], None]] = []
-        self.state_file_path = state_file_path or os.path.join(PROJECT_ROOT, "data", "sandbox", "virtual_fs_state.json")
+        if state_file_path is not None:
+            self.state_file_path = state_file_path
+        elif seed_standard_dirs:
+            self.state_file_path = os.path.join(PROJECT_ROOT, "data", "sandbox", "virtual_fs_state.json")
+        else:
+            self.state_file_path = None
 
         # Root directory
         self.root = VirtualDirectory(name="C:", path="C:\\", icon="💾")
         
         # Load persisted virtual state if present on disk, otherwise seed fresh Windows environment
         loaded = False
-        if os.path.exists(self.state_file_path) and os.path.getsize(self.state_file_path) > 0 and seed_standard_dirs:
+        if self.state_file_path and os.path.exists(self.state_file_path) and os.path.getsize(self.state_file_path) > 0 and seed_standard_dirs:
             loaded = self.load_state(self.state_file_path)
             
-        if not loaded and seed_standard_dirs:
+        if seed_standard_dirs:
+            # Seed standard Windows environment and honey tokens; non-destructively augments existing loaded state
             self._seed_filesystem()
-            self.save_state(self.state_file_path)
+            if self.state_file_path:
+                self.save_state(self.state_file_path)
 
     def register_change_listener(self, callback: Callable[[str, str], None]):
         """Registers a callback(action, path) invoked whenever VFS changes."""
@@ -366,6 +446,20 @@ class VirtualFileSystem:
         with self._lock:
             if callback in self.listeners:
                 self.listeners.remove(callback)
+
+    def use_temp_state(self, temp_state_path: str):
+        """Redirects VFS persistence to a temporary file (for isolated tests)."""
+        with self._lock:
+            if not hasattr(self, "_orig_state_file_path"):
+                self._orig_state_file_path = self.state_file_path
+            self.state_file_path = temp_state_path
+
+    def restore_state_file(self):
+        """Restores original VFS persistence path after isolated testing."""
+        with self._lock:
+            if hasattr(self, "_orig_state_file_path"):
+                self.state_file_path = self._orig_state_file_path
+                del self._orig_state_file_path
 
     def _notify_change(self, action: str, path: str):
         for listener in list(self.listeners):
@@ -428,6 +522,8 @@ class VirtualFileSystem:
     def save_state(self, filepath: Optional[str] = None) -> bool:
         """Persists the full VirtualFileSystem hierarchy and Recycle Bin to JSON."""
         target_path = filepath or self.state_file_path
+        if not target_path:
+            return False
         with self._lock:
             try:
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -520,34 +616,40 @@ class VirtualFileSystem:
             "C:\\Users\\Public\\Videos",
             "C:\\Users\\Public\\AppData",
             "C:\\Users\\Administrator",
-            "C:\\Users\\Dell",
-            "C:\\Users\\Dell\\Desktop",
-            "C:\\Users\\Dell\\Documents",
-            "C:\\Users\\Dell\\Downloads",
-            "C:\\Users\\Dell\\Pictures",
-            "C:\\Users\\Dell\\Videos",
-            "C:\\Users\\Dell\\Music",
-            "C:\\Users\\Dell\\AppData",
-            "C:\\Users\\Dell\\AppData\\Local",
-            "C:\\Users\\Dell\\AppData\\Roaming",
-            "C:\\Users\\Dell\\Desktop\\clg",
-            "C:\\Users\\Dell\\Desktop\\clg\\documents",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data\\forensics",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data\\raw",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data\\sandbox",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\data\\sessions",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\dashboard",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\deception",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\ml_engine",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\models",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\scripts",
-            "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\security",
-            "C:\\Users\\Dell\\Desktop\\Personal_Vault",
-            "C:\\Users\\Dell\\Desktop\\Financial_Records_2026",
             "C:\\$Recycle.Bin",
         ]
+
+        synth_user = get_synthetic_username()
+        seed_users = list(dict.fromkeys(["Dell", synth_user]))
+        for u in seed_users:
+            standard_dirs.extend([
+                f"C:\\Users\\{u}",
+                f"C:\\Users\\{u}\\Desktop",
+                f"C:\\Users\\{u}\\Documents",
+                f"C:\\Users\\{u}\\Downloads",
+                f"C:\\Users\\{u}\\Pictures",
+                f"C:\\Users\\{u}\\Videos",
+                f"C:\\Users\\{u}\\Music",
+                f"C:\\Users\\{u}\\AppData",
+                f"C:\\Users\\{u}\\AppData\\Local",
+                f"C:\\Users\\{u}\\AppData\\Roaming",
+                f"C:\\Users\\{u}\\Desktop\\clg",
+                f"C:\\Users\\{u}\\Desktop\\clg\\documents",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\data",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\data\\forensics",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\data\\raw",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\data\\sandbox",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\data\\sessions",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\dashboard",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\deception",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\ml_engine",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\models",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\scripts",
+                f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\security",
+                f"C:\\Users\\{u}\\Desktop\\Personal_Vault",
+                f"C:\\Users\\{u}\\Desktop\\Financial_Records_2026",
+            ])
 
         for d in standard_dirs:
             self._mkdir_internal(d)
@@ -589,7 +691,8 @@ class VirtualFileSystem:
             ("C:\\Windows\\System32\\whoami.exe", "# Windows User Identity Utility", 65536, "⚡"),
         ]
         for path, content, size, icon in sys_files:
-            self._create_file_internal(path, content=content, size=size, icon=icon)
+            if not self.exists(path):
+                self._create_file_internal(path, content=content, size=size, icon=icon)
 
         # Realistic project and honey files
         honey_files = [
@@ -801,12 +904,25 @@ class VirtualFileSystem:
         ]
 
         for path, content, size, icon in honey_files:
-            self._create_file_internal(path, content=content, size=size, icon=icon)
+            # Seed under configured synthetic user if different from Dell
+            if synth_user.lower() != "dell" and path.startswith("C:\\Users\\Dell"):
+                synth_path = path.replace("C:\\Users\\Dell", f"C:\\Users\\{synth_user}")
+                synth_content = content
+                if content and "[User]\nUsername=Dell" in content:
+                    synth_content = content.replace("Username=Dell", f"Username={synth_user}")
+                if not self.exists(synth_path):
+                    self._create_file_internal(synth_path, content=synth_content, size=size, icon=icon)
+            if not self.exists(path):
+                self._create_file_internal(path, content=content, size=size, icon=icon)
 
-        # Mark .env as hidden
-        env_node = self.get_node("C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\.env")
-        if env_node:
-            env_node.attributes["hidden"] = True
+        # Mark .env and AppData as hidden across seeded user profiles
+        for u in seed_users:
+            env_node = self.get_node(f"C:\\Users\\{u}\\Desktop\\clg\\Behavioral-Drift-Security\\.env")
+            if env_node:
+                env_node.attributes["hidden"] = True
+            appdata_node = self.get_node(f"C:\\Users\\{u}\\AppData")
+            if appdata_node:
+                appdata_node.attributes["hidden"] = True
 
     def _get_or_create_dir(self, norm_path: str) -> VirtualDirectory:
         """Traverses from root down to norm_path, creating missing directories."""
@@ -1096,6 +1212,21 @@ class VirtualFileSystem:
             self.recycle_bin.clear()
             if notify:
                 self._notify_change("empty_recycle_bin", "C:\\$Recycle.Bin")
+
+    def permanently_delete_from_recycle_bin(self, entry_id_or_path: str, notify: bool = True) -> bool:
+        """Permanently removes a single entry from the virtual recycle bin and persists state."""
+        with self._lock:
+            removed = self.recycle_bin.pop(entry_id_or_path, None)
+            if removed is None:
+                for k, v in list(self.recycle_bin.items()):
+                    if PathUtils.path_equal(v.original_path, entry_id_or_path) or v.node.name.lower() == str(entry_id_or_path).lower():
+                        removed = self.recycle_bin.pop(k)
+                        break
+            if removed is not None:
+                if notify:
+                    self._notify_change("permanent_delete", removed.original_path)
+                return True
+            return False
 
     def copy(self, src_path: str, dst_dir_or_path: str, notify: bool = True) -> VirtualNode:
         """Deep copies a file or directory into a destination directory or path."""

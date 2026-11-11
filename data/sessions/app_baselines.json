@@ -2,39 +2,39 @@
   "chrome.exe::coding_problem_solving": {
     "app_name": "chrome.exe",
     "context_mode": "coding_problem_solving",
-    "sample_count": 188,
+    "sample_count": 190,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 3.2406,
-        "std": 1.9646
+        "mean": 3.1203,
+        "std": 1.8845
       },
       "thinking_pause_ratio": {
-        "mean": 0.8168,
-        "std": 0.2469
+        "mean": 0.8347,
+        "std": 0.2394
       },
       "avg_burst_length": {
-        "mean": 22.2828,
-        "std": 2.3346
+        "mean": 22.2065,
+        "std": 2.1777
       },
       "code_symbol_ratio": {
-        "mean": 0.2813,
-        "std": 0.0392
+        "mean": 0.2833,
+        "std": 0.0372
       },
       "backspace_ratio": {
-        "mean": 0.044,
-        "std": 0.0345
+        "mean": 0.042,
+        "std": 0.033
       },
       "dwell_mean": {
         "mean": 0.0888,
-        "std": 0.007
+        "std": 0.0068
       },
       "flight_mean": {
-        "mean": 0.1504,
-        "std": 0.0143
+        "mean": 0.1496,
+        "std": 0.0135
       }
     },
     "first_seen": "2026-09-25 18:51:22",
-    "last_updated": "2026-10-11 16:48:01"
+    "last_updated": "2026-11-11 18:49:57"
   },
   "code.exe::ide_development": {
     "app_name": "code.exe",
@@ -187,122 +187,122 @@
   "unknown::general_productivity": {
     "app_name": "unknown",
     "context_mode": "general_productivity",
-    "sample_count": 7,
+    "sample_count": 14,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.7774,
-        "std": 0.8873
+        "mean": 0.533,
+        "std": 0.7886
       },
       "thinking_pause_ratio": {
-        "mean": 0.0776,
-        "std": 0.0899
+        "mean": 0.0529,
+        "std": 0.0789
       },
       "code_symbol_ratio": {
-        "mean": 0.0429,
-        "std": 0.0697
+        "mean": 0.0215,
+        "std": 0.049
       },
       "backspace_ratio": {
-        "mean": 0.0714,
-        "std": 0.1152
+        "mean": 0.0358,
+        "std": 0.0812
       },
       "dwell_mean": {
-        "mean": 0.1803,
-        "std": 0.0808
+        "mean": 0.1382,
+        "std": 0.0674
       },
       "flight_mean": {
-        "mean": 0.2578,
-        "std": 0.0956
+        "mean": 0.2774,
+        "std": 0.1511
       },
       "avg_burst_length": {
-        "mean": 8.3333,
-        "std": 2.3611
+        "mean": 7.3849,
+        "std": 2.8431
       }
     },
     "first_seen": "2026-09-25 19:02:56",
-    "last_updated": "2026-10-06 21:09:17"
+    "last_updated": "2026-10-16 14:36:04"
   },
   "chrome.exe::web_browsing": {
     "app_name": "chrome.exe",
     "context_mode": "web_browsing",
-    "sample_count": 8,
+    "sample_count": 21,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.0,
-        "std": 0.0056
+        "mean": 0.3903,
+        "std": 0.4503
       },
       "thinking_pause_ratio": {
-        "mean": 0.0,
-        "std": 0.0056
+        "mean": 0.066,
+        "std": 0.0772
       },
       "avg_burst_length": {
-        "mean": 62.125,
-        "std": 35.3421
+        "mean": 44.7347,
+        "std": 38.765
       },
       "code_symbol_ratio": {
-        "mean": 0.013,
-        "std": 0.0165
+        "mean": 0.005,
+        "std": 0.0109
       },
       "backspace_ratio": {
         "mean": 0.0,
-        "std": 0.0056
+        "std": 0.0054
       },
       "dwell_mean": {
-        "mean": 0.1738,
-        "std": 0.084
+        "mean": 0.1543,
+        "std": 0.0764
       },
       "flight_mean": {
-        "mean": 0.1105,
-        "std": 0.0784
+        "mean": 0.1793,
+        "std": 0.0915
       }
     },
     "first_seen": "2026-09-25 19:05:20",
-    "last_updated": "2026-09-25 20:32:50"
+    "last_updated": "2026-10-16 14:23:00"
   },
   "windowsterminal.exe::terminal_command_line": {
     "app_name": "WindowsTerminal.exe",
     "context_mode": "terminal_command_line",
-    "sample_count": 7,
+    "sample_count": 19,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.0,
-        "std": 0.0057
+        "mean": 2.6356,
+        "std": 2.8655
       },
       "thinking_pause_ratio": {
-        "mean": 0.0,
-        "std": 0.0057
+        "mean": 0.1796,
+        "std": 0.1967
       },
       "avg_burst_length": {
-        "mean": 140.1667,
-        "std": 150.7861
+        "mean": 80.2731,
+        "std": 125.753
       },
       "code_symbol_ratio": {
-        "mean": 0.0148,
-        "std": 0.0215
+        "mean": 0.0054,
+        "std": 0.0131
       },
       "backspace_ratio": {
         "mean": 0.0003,
-        "std": 0.0057
+        "std": 0.0054
       },
       "dwell_mean": {
-        "mean": 0.2163,
-        "std": 0.111
+        "mean": 0.1755,
+        "std": 0.0999
       },
       "flight_mean": {
-        "mean": 0.2987,
-        "std": 0.162
+        "mean": 0.2247,
+        "std": 0.118
       }
     },
     "first_seen": "2026-09-25 19:05:40",
-    "last_updated": "2026-10-06 21:11:27"
+    "last_updated": "2026-10-16 14:20:48"
   },
   "antigravity.exe::ai_chat_prompting": {
     "app_name": "Antigravity.exe",
     "context_mode": "ai_chat_prompting",
-    "sample_count": 49,
+    "sample_count": 50,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 1.5543,
-        "std": 0.6193
+        "mean": 1.5232,
+        "std": 0.6374
       },
       "thinking_pause_ratio": {
         "mean": 0.0,
@@ -317,37 +317,37 @@
         "std": 0.0054
       },
       "backspace_ratio": {
-        "mean": 0.0325,
-        "std": 0.0122
+        "mean": 0.0319,
+        "std": 0.0126
       },
       "dwell_mean": {
-        "mean": 0.1107,
-        "std": 0.0523
+        "mean": 0.1103,
+        "std": 0.0517
       },
       "flight_mean": {
-        "mean": 0.1613,
-        "std": 0.0716
+        "mean": 0.1609,
+        "std": 0.0706
       }
     },
     "first_seen": "2026-09-25 19:06:00",
-    "last_updated": "2026-10-06 20:53:35"
+    "last_updated": "2026-10-16 14:02:49"
   },
   "explorer.exe::general_productivity": {
     "app_name": "explorer.exe",
     "context_mode": "general_productivity",
-    "sample_count": 94,
+    "sample_count": 107,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.0078,
-        "std": 0.0397
+        "mean": 0.1271,
+        "std": 0.1827
       },
       "thinking_pause_ratio": {
-        "mean": 0.0009,
-        "std": 0.0069
+        "mean": 0.0247,
+        "std": 0.0357
       },
       "avg_burst_length": {
-        "mean": 10.25,
-        "std": 6.4604
+        "mean": 9.2257,
+        "std": 6.4532
       },
       "code_symbol_ratio": {
         "mean": 0.0,
@@ -358,16 +358,16 @@
         "std": 0.0054
       },
       "dwell_mean": {
-        "mean": 0.0936,
-        "std": 0.0165
+        "mean": 0.1062,
+        "std": 0.0266
       },
       "flight_mean": {
-        "mean": 0.1412,
-        "std": 0.0086
+        "mean": 0.1686,
+        "std": 0.0369
       }
     },
     "first_seen": "2026-09-25 19:06:30",
-    "last_updated": "2026-10-11 16:52:32"
+    "last_updated": "2026-10-16 14:17:35"
   },
   "brave.exe::coding_problem_solving": {
     "app_name": "brave.exe",
@@ -520,39 +520,39 @@
   "msedge.exe::web_browsing": {
     "app_name": "msedge.exe",
     "context_mode": "web_browsing",
-    "sample_count": 6,
+    "sample_count": 14,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.0,
-        "std": 0.0058
+        "mean": 1.3825,
+        "std": 1.7931
       },
       "thinking_pause_ratio": {
-        "mean": 0.0,
-        "std": 0.0058
+        "mean": 0.0518,
+        "std": 0.0674
       },
       "avg_burst_length": {
-        "mean": 40.4,
-        "std": 21.9533
+        "mean": 36.6811,
+        "std": 21.2837
       },
       "code_symbol_ratio": {
         "mean": 0.0,
-        "std": 0.0058
+        "std": 0.0054
       },
       "backspace_ratio": {
         "mean": 0.0,
-        "std": 0.0058
+        "std": 0.0054
       },
       "dwell_mean": {
-        "mean": 0.1207,
-        "std": 0.023
+        "mean": 0.1069,
+        "std": 0.0231
       },
       "flight_mean": {
-        "mean": 0.1813,
-        "std": 0.0915
+        "mean": 0.2122,
+        "std": 0.1119
       }
     },
     "first_seen": "2026-09-25 20:22:14",
-    "last_updated": "2026-10-06 21:12:07"
+    "last_updated": "2026-10-16 14:36:14"
   },
   "brave.exe::media_consumption": {
     "app_name": "brave.exe",
@@ -631,38 +631,141 @@
   "python.exe::general_productivity": {
     "app_name": "python.exe",
     "context_mode": "general_productivity",
-    "sample_count": 8,
+    "sample_count": 27,
     "metrics": {
       "avg_thinking_pause": {
-        "mean": 0.0,
-        "std": 0.0056
+        "mean": 1.9455,
+        "std": 1.9147
       },
       "thinking_pause_ratio": {
-        "mean": 0.0,
-        "std": 0.0056
+        "mean": 0.0841,
+        "std": 0.0832
       },
       "avg_burst_length": {
-        "mean": 5.25,
-        "std": 2.8125
+        "mean": 5.5822,
+        "std": 2.3403
       },
       "code_symbol_ratio": {
-        "mean": 0.0084,
-        "std": 0.0141
+        "mean": 0.0045,
+        "std": 0.0098
       },
       "backspace_ratio": {
-        "mean": 0.0084,
-        "std": 0.0141
+        "mean": 0.0469,
+        "std": 0.0619
       },
       "dwell_mean": {
-        "mean": 0.0939,
-        "std": 0.0093
+        "mean": 0.0965,
+        "std": 0.0105
       },
       "flight_mean": {
-        "mean": 0.24,
-        "std": 0.162
+        "mean": 0.2812,
+        "std": 0.1646
       }
     },
     "first_seen": "2026-10-06 21:09:37",
-    "last_updated": "2026-10-06 21:12:17"
+    "last_updated": "2026-10-16 14:22:30"
+  },
+  "whatsapp.root.exe::communication_and_social": {
+    "app_name": "WhatsApp.Root.exe",
+    "context_mode": "communication_and_social",
+    "sample_count": 1,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "backspace_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "dwell_mean": {
+        "mean": 0.09,
+        "std": 0.0225
+      },
+      "flight_mean": {
+        "mean": 0.14,
+        "std": 0.035
+      }
+    },
+    "first_seen": "2026-10-16 14:06:33",
+    "last_updated": "2026-10-16 14:06:33"
+  },
+  "lockapp.exe::general_productivity": {
+    "app_name": "LockApp.exe",
+    "context_mode": "general_productivity",
+    "sample_count": 1,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "avg_burst_length": {
+        "mean": 1.0,
+        "std": 0.25
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "backspace_ratio": {
+        "mean": 0.0,
+        "std": 0.01
+      },
+      "dwell_mean": {
+        "mean": 0.1509,
+        "std": 0.0377
+      },
+      "flight_mean": {
+        "mean": 0.14,
+        "std": 0.035
+      }
+    },
+    "first_seen": "2026-10-16 14:17:14",
+    "last_updated": "2026-10-16 14:17:14"
+  },
+  "startmenuexperiencehost.exe::general_productivity": {
+    "app_name": "StartMenuExperienceHost.exe",
+    "context_mode": "general_productivity",
+    "sample_count": 6,
+    "metrics": {
+      "avg_thinking_pause": {
+        "mean": 0.0,
+        "std": 0.0058
+      },
+      "thinking_pause_ratio": {
+        "mean": 0.0,
+        "std": 0.0058
+      },
+      "code_symbol_ratio": {
+        "mean": 0.0,
+        "std": 0.0058
+      },
+      "backspace_ratio": {
+        "mean": 0.0,
+        "std": 0.0058
+      },
+      "dwell_mean": {
+        "mean": 0.09,
+        "std": 0.0079
+      },
+      "flight_mean": {
+        "mean": 0.14,
+        "std": 0.01
+      }
+    },
+    "first_seen": "2026-11-11 18:45:21",
+    "last_updated": "2026-11-11 18:49:57"
   }
 }

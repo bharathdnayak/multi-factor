@@ -24,7 +24,7 @@
         <div class="header-status-group">
             <div id="liveStreamBadge" class="status-pill status-nominal">
                 <span class="pulsing-dot"></span>
-                <span id="streamStatusText">LIVE STREAM: CONNECTED</span>
+                <span id="streamStatusText">CONNECTING...</span>
             </div>
             <div id="systemStateBadge" class="status-pill status-secure">
                 <span id="systemStateText">AUTHENTICATED: OWNER</span>
@@ -42,7 +42,7 @@
                 <span id="breachBannerDetail">Multi-factor behavioral drift threshold exceeded. Honeypot Deception sandbox active.</span>
             </div>
             <div class="banner-actions">
-                <span class="otp-pill">ACTIVE OTP: <strong id="bannerOtpCode">------</strong></span>
+                <span class="otp-pill">OTP CHALLENGE: <strong id="bannerOtpCode">DISPATCHED</strong></span>
                 <button class="btn btn-sm btn-outline-light" onclick="triggerReset()">Verify & Reset</button>
             </div>
         </div>
@@ -241,7 +241,7 @@
                         </div>
                         <div class="ai-intel-container">
                             <div class="intel-header">
-                                <span class="ai-chip">OLLAMA QWEN2.5 AI INTEL</span>
+                                <span class="ai-chip" id="aiModelChip">HONEYPOT AI INTEL</span>
                             </div>
                             <div class="intel-persona" id="aiPersonaVal">Awaiting Intruder Event</div>
                             <p class="intel-intent" id="aiIntentVal">System monitoring baseline owner behavior. Honeypot decoy Chrome & Explorer armed.</p>
@@ -272,6 +272,14 @@
                         </a>
                         <button class="btn btn-secondary" onclick="generateFreshPdf()">
                             ⚡ Generate Fresh Report
+                        </button>
+                    </div>
+                    <div class="forensics-btn-group" style="margin-top: 8px;">
+                        <button class="btn btn-secondary" onclick="launchForensicsGui()" title="Launch Native PyQt6 Forensic Analyst Workbench">
+                            🖥️ Open Forensic Desktop App
+                        </button>
+                        <button class="btn btn-secondary" onclick="launchHoneypotGui()" title="Launch Isolated Windows 11 Sandboxed Honeypot Desktop">
+                            🪤 Launch Honeypot Desktop
                         </button>
                     </div>
                 </div>
@@ -371,6 +379,31 @@
             <div class="modal-footer">
                 <a href="/api/forensics/intruder_photo" download="intruder_snapshot.jpg" class="btn btn-primary">Download Image</a>
                 <button class="btn btn-secondary" onclick="closePhotoModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Authenticated Security Reset Verification -->
+    <div id="resetAuthModal" class="modal hidden" onclick="closeResetModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Identity Verification Required for System Reset</h3>
+                <button class="modal-close" onclick="closeResetModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="flex-direction: column; gap: 10px; background: var(--bg-secondary);">
+                <p style="font-size: 13px; color: var(--text-secondary);">
+                    Enter the active 6-digit Session OTP (from alert channel / <code>models/.active_otp</code>)
+                    or your configured Emergency Recovery Key:
+                </p>
+                <input id="resetCredentialInput" type="password" autocomplete="off"
+                    placeholder="6-digit OTP or Emergency Recovery Key"
+                    style="padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: #0f172a; color: #ffffff; font-family: var(--font-mono); font-size: 14px;"
+                    onkeydown="if (event.key === 'Enter') submitResetVerification();">
+                <div id="resetAuthError" class="text-crimson" style="font-size: 12px; min-height: 16px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeResetModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitResetVerification()">Verify & Normalize</button>
             </div>
         </div>
     </div>

@@ -58,6 +58,7 @@ const el = {
     eventCounterBadge: document.getElementById('eventCounterBadge'),
 
     intruderPhotoImg: document.getElementById('intruderPhotoImg'),
+    aiModelChip: document.getElementById('aiModelChip'),
     aiPersonaVal: document.getElementById('aiPersonaVal'),
     aiIntentVal: document.getElementById('aiIntentVal'),
     aiThreatPill: document.getElementById('aiThreatPill'),
@@ -69,7 +70,10 @@ const el = {
     incidentLogFeed: document.getElementById('incidentLogFeed'),
     toastContainer: document.getElementById('toastContainer'),
     photoModal: document.getElementById('photoModal'),
-    modalImg: document.getElementById('modalImg')
+    modalImg: document.getElementById('modalImg'),
+    resetAuthModal: document.getElementById('resetAuthModal'),
+    resetCredentialInput: document.getElementById('resetCredentialInput'),
+    resetAuthError: document.getElementById('resetAuthError')
 };
 
 // -----------------------------------------------------------------------------
@@ -89,7 +93,12 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     const icon = type === 'critical' ? '🚨' : (type === 'success' ? '✅' : 'ℹ️');
-    toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = icon;
+    const msgSpan = document.createElement('span');
+    msgSpan.textContent = ` ${String(message || '')}`;
+    toast.appendChild(iconSpan);
+    toast.appendChild(msgSpan);
     el.toastContainer.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
@@ -326,44 +335,81 @@ function updateTelemetryUI(d) {
     }
 
     // 3. Cognitive Context
-    el.contextModeVal.textContent = (d.interaction_mode || 'IDE_DEVELOPMENT').replace(/_/g, ' ').toUpperCase();
-    el.contextAppTag.textContent = d.active_app || 'Code.exe';
-    el.windowTitleVal.textContent = d.active_window || 'Continuous Authentication SOC';
+    el.contextModeVal.textContent = (d.interaction_mode || 'IDLE').replace(/_/g, ' ').toUpperCase();
+    el.contextAppTag.textContent = d.active_app || 'None';
+    el.windowTitleVal.textContent = d.active_window || 'Waiting for telemetry window';
 
-    // 4. Biometrics
-    const confVal = Math.round((d.svdd_confidence || 0.98) * 100);
+    // 4. Biometrics (zero synthetic fallbacks when idle)
+    const svddRaw = (d.svdd_confidence !== undefined && d.svdd_confidence !== null) ? parseFloat(d.svdd_confidence) : 1.0;
+    const confVal = Math.round(svddRaw * 100);
     el.svddConfVal.textContent = `${confVal}%`;
-    el.dwellVal.textContent = `${Math.round((d.dwell_mean || 0.09) * 1000)}ms`;
-    el.flightVal.textContent = `${Math.round((d.flight_mean || 0.11) * 1000)}ms`;
+    if (el.svddTag) {
+        if (svddRaw < 0.45) {
+            el.svddTag.className = 'kpi-tag tag-danger';
+            el.svddTag.textContent = 'ANOMALY';
+        } else if (svddRaw < 0.70) {
+            el.svddTag.className = 'kpi-tag tag-warning';
+            el.svddTag.textContent = 'DRIFT';
+        } else {
+            el.svddTag.className = 'kpi-tag tag-emerald';
+            el.svddTag.textContent = 'MATCH';
+        }
+    }
+    el.dwellVal.textContent = `${Math.round((d.dwell_mean || 0.0) * 1000)}ms`;
+    el.flightVal.textContent = `${Math.round((d.flight_mean || 0.0) * 1000)}ms`;
 
-    // 5. Station Hardware State
-    el.hwActiveApp.textContent = d.active_app || 'Code.exe';
-    el.hwWindowTitle.textContent = d.active_window || 'Major Project Workspace';
-    el.hwKeystrokeCount.textContent = d.keystroke_count || 0;
-    el.hwMouseEvents.textContent = d.mouse_events || 0;
+    // 5. Station Hardware State & Data State Badge
+    el.hwActiveApp.textContent = d.active_app || 'None';
+    el.hwWindowTitle.textContent = d.active_window || 'Waiting for telemetry window';
+    el.hwKeystrokeCount.textContent = d.keystroke_count ?? 0;
+    el.hwMouseEvents.textContent = d.mouse_events ?? 0;
     el.hwMouseVel.textContent = `${Math.round(d.mouse_velocity || 0)} px/s`;
     el.hwCpuLoad.textContent = `${(d.cpu_usage || 0).toFixed(1)}%`;
     el.hwRamUsage.textContent = `${Math.round(d.ram_usage_mb || 0)} MB`;
-    if (d.event_count && el.eventCounterBadge) {
-        el.eventCounterBadge.textContent = `Events: ${d.event_count}`;
+    if (el.eventCounterBadge) {
+        el.eventCounterBadge.textContent = `Events: ${d.event_count ?? 0}`;
     }
+
+    updateStreamStateBadge(d.data_state, d.telemetry_age_seconds);
 
     // 6. Breach Status Banner & Header Pill
     if (d.is_breached || instRisk >= 0.78 || smoothRisk >= CONFIG.RISK_THRESHOLD) {
-        setBreachState(true, d.active_otp);
+        setBreachState(true, d.otp_issued);
     } else {
-        setBreachState(false);
+        setBreachState(false, false);
     }
 
-    // Append to charts
-    appendChartData(timeStr, instRisk, smoothRisk, d.dwell_mean || 0.09, d.flight_mean || 0.11, d.mouse_velocity || 350);
+    // Append to charts only for fresh real or simulated telemetry frames (never duplicate heartbeats)
+    if (d.append_chart !== false) {
+        appendChartData(timeStr, instRisk, smoothRisk, d.dwell_mean || 0.0, d.flight_mean || 0.0, d.mouse_velocity || 0.0);
+    }
 }
 
-function setBreachState(breached, otpCode = null) {
+function updateStreamStateBadge(dataState, ageSeconds) {
+    if (!el.liveStreamBadge || !el.streamStatusText) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const state = (dataState || 'IDLE').toUpperCase();
+    if (state === 'SIMULATED') {
+        el.liveStreamBadge.className = 'status-pill tag-danger';
+        el.streamStatusText.textContent = 'SIMULATION MODE ACTIVE';
+    } else if (state === 'LIVE') {
+        el.liveStreamBadge.className = 'status-pill status-nominal';
+        el.streamStatusText.textContent = 'LIVE TELEMETRY: ACTIVE';
+    } else if (state === 'STALE') {
+        el.liveStreamBadge.className = 'status-pill tag-warning';
+        const ageTxt = ageSeconds !== null && ageSeconds !== undefined ? ` (${Math.round(ageSeconds)}s)` : '';
+        el.streamStatusText.textContent = `TELEMETRY STALE${ageTxt}`;
+    } else {
+        el.liveStreamBadge.className = 'status-pill tag-warning';
+        el.streamStatusText.textContent = 'CONNECTED (IDLE)';
+    }
+}
+
+function setBreachState(breached, otpIssued = false) {
     isBreachedState = breached;
     if (breached) {
         if (el.breachBanner) el.breachBanner.classList.remove('hidden');
-        if (el.bannerOtpCode) el.bannerOtpCode.textContent = otpCode || 'ACTIVE';
+        if (el.bannerOtpCode) el.bannerOtpCode.textContent = otpIssued ? 'ACTIVE (CHECK ALERT)' : 'DISPATCHED';
         if (el.systemStateBadge) {
             el.systemStateBadge.className = 'status-pill status-breach';
             el.systemStateText.textContent = '🚨 LOCKDOWN: HONEYPOT ACTIVE';
@@ -391,9 +437,19 @@ function setBreachState(breached, otpCode = null) {
 function appendIncident(item) {
     if (!el.incidentLogFeed || !item) return;
     const entry = document.createElement('div');
-    const lvl = (item.level || 'info').toLowerCase();
+    const lvl = (item.level || 'info').toLowerCase().replace(/[^a-z]/g, '') || 'info';
     entry.className = `log-entry log-${lvl}`;
-    entry.innerHTML = `<span class="log-time">[${item.time || 'NOW'}]</span> <span class="log-msg">${item.message}</span>`;
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'log-time';
+    timeSpan.textContent = `[${item.time || 'NOW'}] `;
+
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'log-msg';
+    msgSpan.textContent = String(item.message || '');
+
+    entry.appendChild(timeSpan);
+    entry.appendChild(msgSpan);
     el.incidentLogFeed.prepend(entry);
 
     // Keep log size bounded
@@ -420,8 +476,8 @@ function connectWebSocket() {
     ws.onopen = () => {
         console.log('WebSocket connected to SOC telemetry server.');
         if (el.liveStreamBadge) {
-            el.liveStreamBadge.className = 'status-pill status-nominal';
-            el.streamStatusText.textContent = 'LIVE STREAM: CONNECTED';
+            el.liveStreamBadge.className = 'status-pill tag-warning';
+            el.streamStatusText.textContent = 'CONNECTED (IDLE)';
         }
     };
 
@@ -442,13 +498,16 @@ function connectWebSocket() {
             } else if (msg.type === 'BREACH_ALERT') {
                 updateTelemetryUI(msg.data);
                 if (msg.latest_alert) appendIncident(msg.latest_alert);
-                showToast(`🚨 Security Breach: Honeypot Activated! Risk: ${msg.data.instant_risk}`, 'critical');
+                showToast(`Security Breach: Honeypot Activated! Risk: ${msg.data.instant_risk}`, 'critical');
                 refreshForensics();
             } else if (msg.type === 'SYSTEM_RESET') {
                 updateTelemetryUI(msg.data);
                 if (msg.latest_alert) appendIncident(msg.latest_alert);
                 showToast('System normalized. Baseline adaptation complete.', 'success');
                 refreshForensics();
+            } else if (msg.type === 'RESET_DENIED') {
+                if (msg.latest_alert) appendIncident(msg.latest_alert);
+                showToast(msg.message || 'Verification rejected: Invalid OTP or Recovery Key.', 'critical');
             }
         } catch (err) {
             console.error('Error handling WebSocket frame:', err);
@@ -491,13 +550,28 @@ async function refreshForensics() {
             el.intruderPhotoImg.src = `/api/forensics/intruder_photo?t=${Date.now()}`;
         }
 
-        // Refresh AI Intel
-        if (data.stats && data.stats.suspicious_events_count > 0) {
-            if (el.aiPersonaVal) el.aiPersonaVal.textContent = 'Reconnaissance Adversary';
-            if (el.aiIntentVal) el.aiIntentVal.textContent = 'Trajectory indicates credential searching and sandbox file diversion.';
+        // Refresh AI Intel dynamically from backend IntruderIntentAnalyzer
+        const ai = data.ai_analysis;
+        if (ai) {
+            if (el.aiModelChip) {
+                const srcLabel = (ai.source || '').toUpperCase().includes('OLLAMA') ? `OLLAMA (${ai.model_name || 'LOCAL LLM'})` : (ai.source || 'HEURISTIC ENGINE').toUpperCase();
+                el.aiModelChip.textContent = srcLabel;
+            }
+            if (el.aiPersonaVal) el.aiPersonaVal.textContent = ai.attacker_persona || 'Awaiting Intruder Event';
+            if (el.aiIntentVal) el.aiIntentVal.textContent = ai.primary_intent || 'System monitoring baseline owner behavior.';
             if (el.aiThreatPill) {
-                el.aiThreatPill.textContent = 'THREAT LEVEL: HIGH (MITRE T1087 / T1083)';
-                el.aiThreatPill.className = 'intel-threat-pill text-crimson';
+                const lvl = (ai.threat_level || 'LOW').toUpperCase();
+                const mitres = Array.isArray(ai.mitre_tactics) && ai.mitre_tactics.length > 0
+                    ? ` (${ai.mitre_tactics.slice(0, 2).map(m => m.split(' ')[0]).join(' / ')})`
+                    : '';
+                el.aiThreatPill.textContent = `THREAT LEVEL: ${lvl}${mitres}`;
+                if (lvl === 'CRITICAL' || lvl === 'HIGH') {
+                    el.aiThreatPill.className = 'intel-threat-pill text-crimson';
+                } else if (lvl === 'MEDIUM') {
+                    el.aiThreatPill.className = 'intel-threat-pill text-amber';
+                } else {
+                    el.aiThreatPill.className = 'intel-threat-pill text-emerald';
+                }
             }
         }
     } catch (err) {
@@ -517,6 +591,36 @@ async function generateFreshPdf() {
         window.location.href = data.download_url;
     } catch (err) {
         showToast('Error generating PDF report.', 'critical');
+    }
+}
+
+async function launchForensicsGui() {
+    showToast('Launching Desktop Forensic Analyst Workbench...', 'info');
+    try {
+        const res = await fetch('/api/system/launch_forensics_gui', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast('Desktop Forensic Dashboard opened!', 'success');
+        } else {
+            showToast(data.message || 'Failed to open Forensic Dashboard', 'critical');
+        }
+    } catch (err) {
+        showToast(`Launch error: ${err.message}`, 'critical');
+    }
+}
+
+async function launchHoneypotGui() {
+    showToast('Launching Sandboxed Honeypot Desktop...', 'info');
+    try {
+        const res = await fetch('/api/system/launch_honeypot_gui', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast('Honeypot Desktop window launched!', 'success');
+        } else {
+            showToast(data.message || 'Failed to open Honeypot Desktop', 'critical');
+        }
+    } catch (err) {
+        showToast(`Launch error: ${err.message}`, 'critical');
     }
 }
 
@@ -542,17 +646,42 @@ async function simulateAnomaly(type) {
 }
 
 async function triggerReset() {
-    showToast('Dispatching identity verification & adaptation reset...', 'info');
+    if (el.resetAuthModal) {
+        if (el.resetCredentialInput) el.resetCredentialInput.value = '';
+        if (el.resetAuthError) el.resetAuthError.textContent = '';
+        el.resetAuthModal.classList.remove('hidden');
+        if (el.resetCredentialInput) el.resetCredentialInput.focus();
+    }
+}
+
+function closeResetModal() {
+    if (el.resetAuthModal) {
+        el.resetAuthModal.classList.add('hidden');
+    }
+}
+
+async function submitResetVerification() {
+    const cred = el.resetCredentialInput ? el.resetCredentialInput.value.trim() : '';
+    if (!cred) {
+        if (el.resetAuthError) el.resetAuthError.textContent = 'Enter the 6-digit Session OTP or Emergency Recovery Key.';
+        return;
+    }
+    showToast('Verifying credential for baseline reset...', 'info');
     try {
         const res = await fetch('/api/security/reset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bypass_key: 'admin' })
+            body: JSON.stringify({ bypass_key: cred })
         });
         const data = await res.json();
-        if (data.status === 'success') {
-            showToast('System normalized. Baseline adaptation active.', 'success');
+        if (res.ok && data.status === 'success') {
+            closeResetModal();
+            showToast('Identity verified. System normalized.', 'success');
             refreshForensics();
+        } else {
+            const msg = data.message || 'Invalid credential. Reset denied.';
+            if (el.resetAuthError) el.resetAuthError.textContent = msg;
+            showToast(msg, 'critical');
         }
     } catch (err) {
         showToast(`Reset error: ${err.message}`, 'critical');

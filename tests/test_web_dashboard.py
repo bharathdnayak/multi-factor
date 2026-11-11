@@ -2,19 +2,45 @@ import os
 import sys
 import unittest
 import json
+import tempfile
+from unittest.mock import patch
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+os.environ["DISABLE_SIM_TELEMETRY_WRITE"] = "1"
+
 from fastapi.testclient import TestClient
+import dashboard.app as dash_app
 from dashboard.app import app
 
 
 class TestWebDashboard(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.tmp_dir = tempfile.TemporaryDirectory(prefix="web_dash_test_")
+        dash_app.tracker.use_temp_storage(cls.tmp_dir.name)
+        cls._orig_pdf_dir = dash_app.report_generator.output_dir
+        cls._orig_tel_file = dash_app.streamer.telemetry_file
+        dash_app.report_generator.output_dir = os.path.join(cls.tmp_dir.name, "forensics")
+        dash_app.streamer.telemetry_file = os.path.join(cls.tmp_dir.name, "telemetry.jsonl")
+        os.makedirs(dash_app.report_generator.output_dir, exist_ok=True)
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        dash_app.report_generator.output_dir = cls._orig_pdf_dir
+        dash_app.streamer.telemetry_file = cls._orig_tel_file
+        dash_app.tracker.restore_storage()
+        for fname in (".active_otp", ".session_reset"):
+            p = os.path.join(PROJECT_ROOT, "models", fname)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        cls.tmp_dir.cleanup()
 
     def test_01_root_page(self):
         """Tests that the main dashboard UI renders HTTP 200 with HTML content."""
@@ -48,6 +74,9 @@ class TestWebDashboard(unittest.TestCase):
         status_data = status_res.json()
         self.assertEqual(status_data["status"], "ONLINE")
         self.assertTrue(status_data["evaluator_models_loaded"])
+        self.assertNotIn("active_otp", status_data)
+        self.assertIn("otp_issued", status_data)
+        self.assertIn("data_state", status_data)
         self.assertIn("uptime_seconds", status_data)
 
         recent_res = self.client.get("/api/telemetry/recent?limit=30")
@@ -63,6 +92,8 @@ class TestWebDashboard(unittest.TestCase):
         fdata = forensics_res.json()
         self.assertIn("has_forensics", fdata)
         self.assertIn("stats", fdata)
+        self.assertIn("ai_analysis", fdata)
+        self.assertIn("attacker_persona", fdata["ai_analysis"])
 
         # PDF download or fallback generation
         pdf_res = self.client.get("/api/forensics/download_pdf")
@@ -71,27 +102,44 @@ class TestWebDashboard(unittest.TestCase):
         self.assertGreater(len(pdf_res.content), 1000)
 
     def test_05_simulation_and_reset(self):
-        """Tests viva demonstration anomaly injection and emergency reset."""
-        # 1. Simulate anomaly
-        sim_res = self.client.post(
-            "/api/security/simulate_anomaly",
-            json={"anomaly_type": "acute_spike", "severity": 0.88}
-        )
-        self.assertEqual(sim_res.status_code, 200)
-        sim_data = sim_res.json()
-        self.assertEqual(sim_data["status"], "success")
-        self.assertTrue(sim_data["is_breached"])
-        self.assertGreaterEqual(sim_data["instant_risk"], 0.78)
+        """Tests viva anomaly injection, strict OTP auth enforcement on reset, and valid OTP acceptance."""
+        with patch("telemetry.evaluator.dispatch_otp", return_value=True), \
+             patch("telemetry.evaluator.capture_intruder", return_value=None):
+            # 1. Simulate anomaly
+            sim_res = self.client.post(
+                "/api/security/simulate_anomaly",
+                json={"anomaly_type": "acute_spike", "severity": 0.88}
+            )
+            self.assertEqual(sim_res.status_code, 200)
+            sim_data = sim_res.json()
+            self.assertEqual(sim_data["status"], "success")
+            self.assertTrue(sim_data["is_breached"])
+            self.assertTrue(sim_data["is_simulated"])
+            self.assertGreaterEqual(sim_data["instant_risk"], 0.78)
+            valid_otp = sim_data.get("simulated_otp")
+            self.assertTrue(valid_otp and len(str(valid_otp)) == 6)
 
-        # 2. Reset system
-        reset_res = self.client.post(
-            "/api/security/reset",
-            json={"bypass_key": "admin"}
-        )
-        self.assertEqual(reset_res.status_code, 200)
-        reset_data = reset_res.json()
-        self.assertEqual(reset_data["status"], "success")
-        self.assertFalse(reset_data["is_breached"])
+            # 2. Verify trivial/unauthenticated reset ('admin') is strictly DENIED (HTTP 403)
+            denied_res = self.client.post(
+                "/api/security/reset",
+                json={"bypass_key": "admin"}
+            )
+            self.assertEqual(denied_res.status_code, 403)
+            denied_data = denied_res.json()
+            self.assertEqual(denied_data["status"], "denied")
+            self.assertTrue(denied_data["is_breached"])
+
+            # 3. Verify valid 6-digit session OTP resets lockdown cleanly
+            with patch("ml_engine.train.adapt_to_verified_drift"), \
+                 patch.object(dash_app.evaluator.controller, "learn_from_session"):
+                reset_res = self.client.post(
+                    "/api/security/reset",
+                    json={"bypass_key": valid_otp}
+                )
+            self.assertEqual(reset_res.status_code, 200)
+            reset_data = reset_res.json()
+            self.assertEqual(reset_data["status"], "success")
+            self.assertFalse(reset_data["is_breached"])
 
     def test_06_websocket_stream(self):
         """Tests real-time bi-directional telemetry streaming over WebSocket."""
@@ -106,6 +154,32 @@ class TestWebDashboard(unittest.TestCase):
             ws.send_json({"command": "ping"})
             pong_msg = ws.receive_json()
             self.assertEqual(pong_msg["type"], "PONG")
+
+    def test_07_desktop_system_endpoints(self):
+        """Tests system GUI launch and explorer directory endpoints."""
+        from unittest.mock import patch
+
+        # Test folder open with valid and invalid options
+        with patch("os.startfile", return_value=None):
+            res_valid = self.client.post("/api/system/open_folder?folder=logs")
+            self.assertEqual(res_valid.status_code, 200)
+            self.assertEqual(res_valid.json()["status"], "success")
+
+            res_invalid = self.client.post("/api/system/open_folder?folder=nonexistent_xyz")
+            self.assertEqual(res_invalid.status_code, 400)
+
+        # Test GUI launchers
+        with patch("subprocess.Popen", return_value=None) as mock_popen:
+            res_forensics = self.client.post("/api/system/launch_forensics_gui")
+            self.assertEqual(res_forensics.status_code, 200)
+            self.assertEqual(res_forensics.json()["status"], "success")
+            self.assertTrue(mock_popen.called)
+
+        with patch("subprocess.Popen", return_value=None) as mock_popen:
+            res_honeypot = self.client.post("/api/system/launch_honeypot_gui")
+            self.assertEqual(res_honeypot.status_code, 200)
+            self.assertEqual(res_honeypot.json()["status"], "success")
+            self.assertTrue(mock_popen.called)
 
 
 if __name__ == "__main__":

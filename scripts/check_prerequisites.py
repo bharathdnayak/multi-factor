@@ -206,6 +206,16 @@ def check_camera() -> Tuple[str, str]:
         return ("WARN", f"Camera probe exception: {e}")
 
 
+def check_websocket_transport() -> Tuple[str, str]:
+    for mod in ("websockets", "wsproto"):
+        try:
+            __import__(mod)
+            return ("OK", f"WebSocket transport ready via '{mod}'")
+        except ImportError:
+            continue
+    return ("FAIL", "Missing 'websockets' or 'wsproto' package (Uvicorn /ws/telemetry requires WebSocket support)")
+
+
 def check_port(port: int = 8000) -> Tuple[str, str]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(1.0)
@@ -282,7 +292,12 @@ def run_all_checks() -> bool:
     print_status("Offline Ollama Threat Engine", st, det)
     results.append(st)
 
-    # 9. Web Port Availability
+    # 9. WebSocket Protocol Transport
+    st, det = check_websocket_transport()
+    print_status("WebSocket Server Transport", st, det)
+    results.append(st)
+
+    # 10. Web Port Availability
     dashboard_port = int(os.environ.get("PORT", 8000))
     st, det = check_port(dashboard_port)
     print_status(f"Web Dashboard Port ({dashboard_port})", st, det)

@@ -308,7 +308,10 @@ class IntruderIntentAnalyzer:
             "cred_count": len(cred_events),
             "fin_count": len(fin_events),
             "tamper_count": len(tamper_events),
-            "delete_count": len(delete_events)
+            "delete_count": len(delete_events),
+            "recon_count": len(recon_events),
+            "shell_count": len(shell_events),
+            "portal_count": len(portal_events)
         }
 
     def extract_behavioral_indicators(self, timeline=None):
@@ -848,15 +851,25 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
         raw_mitre = parsed_json.get("mitre_tactics", [])
         mitre_tactics = [sanitize_narrative(m) for m in raw_mitre if sanitize_narrative(m)] if isinstance(raw_mitre, list) else []
         if not mitre_tactics:
-            mitre_tactics = [
-                "T1552.001 - Credentials in Files",
-                "T1082 - System Information Discovery",
-                "T1059.001 - Command and Scripting Interpreter",
-                "T1485 - Data Destruction"
-            ]
+            dynamic_mitre = []
+            if det_eval.get("cred_count", 0) > 0:
+                dynamic_mitre.append("T1552.001 - Credentials in Files")
+            if det_eval.get("recon_count", 0) > 0:
+                dynamic_mitre.append("T1082 - System Information Discovery")
+            if det_eval.get("shell_count", 0) > 0:
+                dynamic_mitre.append("T1059.001 - Command and Scripting Interpreter")
+            if det_eval.get("delete_count", 0) > 0:
+                dynamic_mitre.append("T1485 - Data Destruction")
+            if det_eval.get("tamper_count", 0) > 0:
+                dynamic_mitre.append("T1565.001 - Stored Data Manipulation")
+            if det_eval.get("portal_count", 0) > 0:
+                dynamic_mitre.append("T1114 - Email / Web Portal Collection")
+            if any(ev.get("action_type") in ("FOLDER_NAVIGATED", "FILE_VIEW", "FILE_OPENED") for ev in timeline) or not dynamic_mitre:
+                dynamic_mitre.append("T1083 - File and Directory Discovery")
+            mitre_tactics = dynamic_mitre
 
         result = {
-            "source": f"Ollama DFIR Forensic Unit ({model_name})",
+            "source": f"Ollama DFIR Forensic Unit ({model_name}) [Local On-Device Inference]",
             "model_name": model_name,
             "status": "SUCCESS_STRUCTURED",
             "threat_level": final_threat,
@@ -939,11 +952,17 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             f"Recorded {det_eval.get('delete_count', 0)} destructive file deletion events in honeypot folders."
         ]
 
-        inferences = [
-            "Targeting of root credentials and recovery keys indicates deliberate intent to achieve privilege escalation.",
-            "Sequential opening and deletion of financial documents indicates deliberate sabotage or data exfiltration staging.",
-            "Engagement with external sign-in portals indicates intent to harvest credentials for external cloud access."
-        ]
+        inferences = []
+        if det_eval.get("cred_count", 0) > 0:
+            inferences.append("Targeting of root credentials and recovery keys indicates deliberate intent to achieve privilege escalation.")
+        if det_eval.get("delete_count", 0) > 0:
+            inferences.append("Destructive deletion of documents indicates deliberate sabotage or anti-forensic activity.")
+        elif det_eval.get("fin_count", 0) > 0:
+            inferences.append("Sequential opening of financial documents indicates deliberate data reconnaissance and exfiltration staging.")
+        if det_eval.get("portal_count", 0) > 0:
+            inferences.append("Engagement with external sign-in portals indicates intent to harvest credentials for external cloud access.")
+        if not inferences:
+            inferences.append("Adversary activity was confined to initial filesystem exploration and directory enumeration without payload execution.")
 
         alternative_explanations = [
             "Unauthorized internal employee or guest exploring workstation without malicious persistence intent.",
@@ -957,16 +976,25 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             {"priority": 4, "action": "Review perimeter firewall egress logs for connection attempts to external reconnaissance targets.", "timeframe": "Within 4 hours"}
         ]
 
-        mitre_tactics = [
-            "T1552.001 - Credentials in Files",
-            "T1082 - System Information Discovery",
-            "T1059.001 - Command and Scripting Interpreter",
-            "T1485 - Data Destruction"
-        ]
+        mitre_tactics = []
+        if det_eval.get("cred_count", 0) > 0:
+            mitre_tactics.append("T1552.001 - Credentials in Files")
+        if det_eval.get("recon_count", 0) > 0:
+            mitre_tactics.append("T1082 - System Information Discovery")
+        if det_eval.get("shell_count", 0) > 0:
+            mitre_tactics.append("T1059.001 - Command and Scripting Interpreter")
+        if det_eval.get("delete_count", 0) > 0:
+            mitre_tactics.append("T1485 - Data Destruction")
+        if det_eval.get("tamper_count", 0) > 0:
+            mitre_tactics.append("T1565.001 - Stored Data Manipulation")
+        if det_eval.get("portal_count", 0) > 0:
+            mitre_tactics.append("T1114 - Email / Web Portal Collection")
+        if any(ev.get("action_type") in ("FOLDER_NAVIGATED", "FILE_VIEW", "FILE_OPENED") for ev in timeline) or not mitre_tactics:
+            mitre_tactics.append("T1083 - File and Directory Discovery")
 
         return {
-            "source": "Offline Expert Cybersecurity Heuristics (Rule-Based Engine)",
-            "model_name": "Rule-Based Heuristic Threat Intelligence",
+            "source": "Offline Expert Cybersecurity Heuristics (Rule-Based Fallback Engine)",
+            "model_name": "Rule-Based Heuristic Threat Intelligence (Offline Fallback)",
             "status": "SUCCESS_HEURISTIC",
             "threat_level": final_threat,
             "threat_score": final_score,
@@ -987,7 +1015,7 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "confidence_level": "HIGH" if len(timeline) >= 15 else "MEDIUM",
             "confidence_score": 0.85 if len(timeline) >= 15 else 0.65,
             "confidence_justification": f"High confidence established through deterministic evaluation of {len(timeline)} recorded honeypot events.",
-            "limitations": "Deterministic heuristic evaluation provides objective factual telemetry mapping without probabilistic LLM semantic extrapolation.",
+            "limitations": "Deterministic heuristic evaluation provides objective factual telemetry mapping without probabilistic LLM semantic extrapolation. Analysis runs locally on-device; local host execution is distinct from a physically air-gapped system.",
             "recommended_actions": recommendations,
             "recommendations": recommendations,
             "mitre_tactics": mitre_tactics,
@@ -1038,10 +1066,12 @@ if __name__ == "__main__":
     available, models = analyzer.check_ollama_available()
     print(f"Ollama Available: {available} | Models: {models}")
     
+    from deception.virtual_fs import get_synthetic_username
+    _u = get_synthetic_username()
     mock_stats = {
         "total_actions": 5,
         "session_duration_seconds": 45,
-        "folders_visited": ["C:\\Users\\Dell\\Desktop\\clg", "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security"],
+        "folders_visited": [f"C:\\Users\\{_u}\\Desktop\\clg", f"C:\\Users\\{_u}\\Desktop\\clg\\Behavioral-Drift-Security"],
         "files_accessed": ["passwords.txt", "database_backup.sql"],
         "commands_executed": ["whoami", "ipconfig", "dir", "echo malware > test.exe"],
         "browser_searches": ["how to find passwords in windows", "company admin login"],

@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 import json
 import time
@@ -11,7 +12,7 @@ if PROJECT_ROOT not in sys.path:
 
 from PyQt6.QtWidgets import QApplication
 
-from deception.virtual_fs import get_vfs, PathUtils, VirtualFileSystem
+from deception.virtual_fs import get_vfs, get_synthetic_username, PathUtils, VirtualFileSystem
 from deception.command_engine import VirtualCommandEngine
 from deception.forensic_tracker import get_tracker
 from deception.honey_desktop import HoneypotDesktop, DecoySettings, Windows11StartMenu
@@ -29,36 +30,36 @@ class TestHoneypotRealisticDesktop(unittest.TestCase):
             cls.app = QApplication(sys.argv)
 
     def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory(prefix="realistic_hp_test_")
         self.vfs = get_vfs()
+        self.vfs.use_temp_state(os.path.join(self.tmp_dir.name, "vfs_state.json"))
         self.tracker = get_tracker()
-        self.tracker.reset_session()
-        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "test_realistic_sandbox")
-        self.log_dir = os.path.join(PROJECT_ROOT, "data", "test_realistic_forensics")
-        os.makedirs(self.sandbox_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
+        self.tracker.use_temp_storage(self.tmp_dir.name)
+        self.sandbox_dir = self.tracker.sandbox_dir
+        self.log_dir = self.tracker.log_dir
 
     def tearDown(self):
-        if os.path.exists(self.sandbox_dir):
-            shutil.rmtree(self.sandbox_dir, ignore_errors=True)
-        if os.path.exists(self.log_dir):
-            shutil.rmtree(self.log_dir, ignore_errors=True)
+        self.vfs.restore_state_file()
+        self.tracker.restore_storage()
+        self.tmp_dir.cleanup()
 
     def test_01_vfs_persistence_and_extended_user_profile(self):
         print("\n--- Testing VFS Extended Profile & JSON Serialization Persistence ---")
+        synth_user = get_synthetic_username()
         # 1. Extended user profile paths
         expected_dirs = [
             "C:\\Users\\Public\\Desktop",
-            "C:\\Users\\Dell\\Documents",
-            "C:\\Users\\Dell\\Downloads",
-            "C:\\Users\\Dell\\Pictures",
-            "C:\\Users\\Dell\\AppData",
+            f"C:\\Users\\{synth_user}\\Documents",
+            f"C:\\Users\\{synth_user}\\Downloads",
+            f"C:\\Users\\{synth_user}\\Pictures",
+            f"C:\\Users\\{synth_user}\\AppData",
             "C:\\$Recycle.Bin"
         ]
         for d in expected_dirs:
             self.assertTrue(self.vfs.exists(d), f"Missing expected standard directory: {d}")
 
         # 2. Add custom test file to VFS
-        test_file = "C:\\Users\\Dell\\Documents\\Persisted_Report_2026.txt"
+        test_file = f"C:\\Users\\{synth_user}\\Documents\\Persisted_Report_2026.txt"
         self.vfs.create_file(test_file, content="CONFIDENTIAL TEST DATA", overwrite=True)
         self.assertTrue(self.vfs.exists(test_file))
 
@@ -70,7 +71,7 @@ class TestHoneypotRealisticDesktop(unittest.TestCase):
         self.assertGreater(os.path.getsize(test_state_file), 1000)
 
         # 4. Create new isolated VirtualFileSystem and load state
-        fresh_vfs = VirtualFileSystem(seed_standard_dirs=False)
+        fresh_vfs = VirtualFileSystem(state_file_path=os.path.join(self.sandbox_dir, "isolated_test_vfs.json"), seed_standard_dirs=False)
         self.assertFalse(fresh_vfs.exists(test_file))
 
         loaded = fresh_vfs.load_state(test_state_file)

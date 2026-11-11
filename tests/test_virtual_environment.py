@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 import unittest
 import json
 import time
@@ -29,19 +30,18 @@ class TestVirtualWindowsEnvironment(unittest.TestCase):
             cls.app = QApplication(sys.argv)
 
     def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory(prefix="virt_env_test_")
         self.vfs = get_vfs()
+        self.vfs.use_temp_state(os.path.join(self.tmp_dir.name, "vfs_state.json"))
         self.tracker = get_tracker()
-        self.tracker.reset_session()
-        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "test_sandbox_env")
-        self.log_dir = os.path.join(PROJECT_ROOT, "data", "test_forensics_env")
-        os.makedirs(self.sandbox_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
+        self.tracker.use_temp_storage(self.tmp_dir.name)
+        self.sandbox_dir = self.tracker.sandbox_dir
+        self.log_dir = self.tracker.log_dir
 
     def tearDown(self):
-        if os.path.exists(self.sandbox_dir):
-            shutil.rmtree(self.sandbox_dir, ignore_errors=True)
-        if os.path.exists(self.log_dir):
-            shutil.rmtree(self.log_dir, ignore_errors=True)
+        self.vfs.restore_state_file()
+        self.tracker.restore_storage()
+        self.tmp_dir.cleanup()
 
     def test_01_path_normalization_and_case_insensitivity(self):
         print("\n--- Testing Windows Path Normalization & Case-Insensitive Lookup ---")
@@ -237,7 +237,7 @@ class TestVirtualWindowsEnvironment(unittest.TestCase):
 
     def test_07_decoy_chrome_real_internet_and_isolation(self):
         print("\n--- Testing Decoy Chrome Real Internet Configuration & Download Protection ---")
-        chrome = DecoyChrome()
+        chrome = DecoyChrome(sandbox_dir=self.sandbox_dir)
 
         # By default, real internet access must be disabled
         self.assertFalse(chrome.internet_enabled, "Real internet browsing must be disabled by default!")

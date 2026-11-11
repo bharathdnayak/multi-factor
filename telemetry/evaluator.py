@@ -54,6 +54,10 @@ class ThreatEvaluator:
         self.is_breached = False
         self.last_alert_time = 0.0
         self.active_otp = None
+        self.last_svdd_conf = 0.98
+        self.last_policy_action = None
+        self._session_reset_file = os.path.join(PROJECT_ROOT, "models", ".session_reset")
+        self._last_seen_reset_at = self._read_reset_timestamp()
 
         # Formal Online ADWIN Concept Drift Monitor
         self.drift_monitor = None
@@ -175,18 +179,21 @@ class ThreatEvaluator:
         jerk = float(telemetry_row.get("mouse_jerk_mean", 0.0))
         straight = min(max(float(telemetry_row.get("mouse_straightness_mean", 0.90)), 0.0), 1.0)
 
-        # Calibrated robust kinematics distance from owner baseline
-        # Medians: [271.79, 21.75, 3.26, 0.906], MADs: [31.30, 2.51, 0.38, 0.0292]
-        z_vel = abs(vel - 271.79) / 31.30
-        z_acc = abs(acc - 21.75) / max(2.51, 0.1)
-        z_jerk = abs(jerk - 3.26) / max(0.38, 0.05)
-        z_str = abs(straight - 0.906) / max(0.0292, 0.005)
+        # Calibrated robust kinematics distance from owner baseline (learned per user with fallback)
+        baseline = getattr(self.models, "mouse_baseline", None) or {}
+        medians = baseline.get("medians") or [271.79, 21.75, 3.26, 0.906]
+        mads = baseline.get("mads") or [31.30, 2.51, 0.38, 0.0292]
+
+        z_vel = abs(vel - float(medians[0])) / max(float(mads[0]), 5.0)
+        z_acc = abs(acc - float(medians[1])) / max(float(mads[1]), 0.1)
+        z_jerk = abs(jerk - float(medians[2])) / max(float(mads[2]), 0.05)
+        z_str = abs(straight - float(medians[3])) / max(float(mads[3]), 0.005)
 
         z_comp = 0.30 * z_vel + 0.25 * z_acc + 0.20 * z_jerk + 0.25 * z_str
         anomaly_score = 1.0 / (1.0 + np.exp(-1.5 * (z_comp - 2.8)))
         return float(1.0 - np.clip(anomaly_score, 0.0, 1.0))
 
-    def evaluate_row(self, telemetry_row, weights=None, dynamic_fusion=True, legacy_mode=False):
+    def evaluate_row(self, telemetry_row, weights=None, dynamic_fusion=True, legacy_mode=False, emit_alerts=True):
         """
         Scores a single telemetry JSON row using Quad/Penta-Factor Continuous Fusion.
         
@@ -220,6 +227,7 @@ class ThreatEvaluator:
             try:
                 # 1. Fetch Deep SVDD 1D-CNN Keystroke Biometric Confidence
                 svdd_conf = self.evaluate_keystroke_sequence(telemetry_row)
+                self.last_svdd_conf = float(svdd_conf)
                 
                 # 2. Fetch Keystroke Dynamics (OC-SVM) & Context Dynamics (Isolation Forest) Confidences
                 svm_conf, if_conf = self.models.score(telemetry_row)
@@ -327,14 +335,27 @@ class ThreatEvaluator:
             except Exception:
                 pass
 
-        # 3-Tier Dynamic Risk Policy Evaluation
+        # 3-Tier Dynamic Risk Policy Evaluation & Action Execution
         policy_action = None
         if self.orchestrator is not None:
             try:
                 policy_action = self.orchestrator.evaluate_policy(fused_risk, smoothed_risk, telemetry_row)
             except Exception:
                 pass
-        
+        self.last_policy_action = policy_action
+
+        if policy_action is not None:
+            try:
+                tier_val = getattr(getattr(policy_action, "tier", None), "value", None)
+                if tier_val == "TIER_2_MEDIUM" and getattr(policy_action, "action", None) == "STEP_UP_CHALLENGE":
+                    # Ensure an ephemeral step-up OTP exists so Web SOC / Toast verification can validate
+                    if not self.active_otp and not self._load_active_otp():
+                        self.active_otp = generate_otp()
+                        self._save_active_otp(self.active_otp, ttl_seconds=300, is_breach=False)
+                        print("[ORCHESTRATOR] [TIER 2] Issued non-blocking Step-Up MFA challenge OTP.", flush=True)
+            except Exception:
+                pass
+
         # Dual-Tier Smoothing & Anomaly Breach Evaluation:
         now = time.time()
         has_active_keystrokes = (keys_in_window >= 2 or dwell_val > 0.0)
@@ -350,32 +371,39 @@ class ThreatEvaluator:
 
         # ADWIN Abrupt Shift: Statistically verified distribution shift in risk or biometrics
         is_adwin_abrupt = bool(drift_verdict and drift_verdict.get("primary_drift_type") == "ABRUPT" and has_active_keystrokes)
+
+        # Tier 3 Step-Up Failure Escalation
+        is_step_up_escalated = bool(
+            self.orchestrator is not None
+            and getattr(policy_action, "is_blocking", False)
+            and self.orchestrator.step_up_failures >= self.orchestrator.max_step_up_failures
+        )
         
-        should_trigger = (is_acute or is_two_spike or is_sustained or is_adwin_abrupt)
+        should_trigger = (is_acute or is_two_spike or is_sustained or is_adwin_abrupt or is_step_up_escalated)
         
         if should_trigger:
             if not self.is_breached and (now - self.last_alert_time > self.cooldown_seconds):
                 self.is_breached = True
                 self.last_alert_time = now
-                self.active_otp = generate_otp()
                 triggered = True
-                
-                trigger_reason = "ADWIN ABRUPT SHIFT" if is_adwin_abrupt else ("ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT"))
-                print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! ({trigger_reason})", flush=True)
-                print(f"[ALERT] Instant Risk: {fused_risk:.4f} | Smoothed (30s): {smoothed_risk:.4f} (Threshold: {self.threshold:.2f})", flush=True)
-                print(f"[OTP] Cryptographic 6-digit Session OTP generated and dispatched via alert channels (valid for 5 min).", flush=True)
-                print(f"[OTP] Security Challenge Issued: Enter verified 6-digit OTP or configured Emergency Recovery Key.", flush=True)
-                
-                # Active Security Responses
-                captured_photo = capture_intruder()
-                active_app_name = telemetry_row.get("active_app", "Unknown") if isinstance(telemetry_row, dict) else "Active Desktop Session"
-                dispatch_otp(self.active_otp, photo_path=captured_photo, threat_info={"risk_score": float(fused_risk), "active_app": active_app_name})
-                self._save_active_otp(self.active_otp)
-                try:
-                    from deception.forensic_tracker import get_tracker
-                    get_tracker().start_new_session()
-                except Exception:
-                    pass
+                if emit_alerts:
+                    self.active_otp = generate_otp()
+                    trigger_reason = "ADWIN ABRUPT SHIFT" if is_adwin_abrupt else ("ACUTE INTRUDER SPIKE" if is_acute else ("SUCCESSIVE ANOMALY" if is_two_spike else "SUSTAINED BEHAVIORAL DRIFT"))
+                    print(f"\n[ALERT] BEHAVIORAL DRIFT BREACH DETECTED! ({trigger_reason})", flush=True)
+                    print(f"[ALERT] Instant Risk: {fused_risk:.4f} | Smoothed (30s): {smoothed_risk:.4f} (Threshold: {self.threshold:.2f})", flush=True)
+                    print(f"[OTP] Cryptographic 6-digit Session OTP generated and dispatched via alert channels (valid for 5 min).", flush=True)
+                    print(f"[OTP] Security Challenge Issued: Enter verified 6-digit OTP or configured Emergency Recovery Key.", flush=True)
+
+                    # Active Security Responses
+                    captured_photo = capture_intruder()
+                    active_app_name = telemetry_row.get("active_app", "Unknown") if isinstance(telemetry_row, dict) else "Active Desktop Session"
+                    dispatch_otp(self.active_otp, photo_path=captured_photo, threat_info={"risk_score": float(fused_risk), "active_app": active_app_name})
+                    self._save_active_otp(self.active_otp)
+                    try:
+                        from deception.forensic_tracker import get_tracker
+                        get_tracker().start_new_session()
+                    except Exception:
+                        pass
                 
         return float(fused_risk), float(smoothed_risk), triggered
 
@@ -424,22 +452,33 @@ class ThreatEvaluator:
             stored_otp = self.active_otp
 
         if is_expired:
-            print("[SECURITY] [EXPIRED] Active OTP expired (TTL 300s exceeded). Re-challenge required.", flush=True)
+            print("[SECURITY] [EXPIRED] Active OTP expired (TTL 300s exceeded); rejecting OTP match while still permitting Emergency Recovery Key.", flush=True)
             self._clear_active_otp()
-            return False
+            self.active_otp = None
+            stored_otp = None
 
         # 2. Match against active 6-digit session OTP
-        is_valid_otp = bool(stored_otp and entered == stored_otp.strip())
+        is_valid_otp = bool((not is_expired) and stored_otp and entered == stored_otp.strip())
 
-        # 3. Trivial password blacklist: NEVER allow trivial default passwords as a bypass
+        # 3. Trivial password blacklist: NEVER allow trivial default passwords as a bypass (still rate-limited)
         TRIVIAL_BLACKLIST = {"admin", "admin123", "123456", "password", "root", "guest", "default", "qwerty"}
         if not is_valid_otp and entered.lower() in TRIVIAL_BLACKLIST:
+            self._failed_verification_attempts += 1
+            if self._failed_verification_attempts >= 10:
+                self._verification_lockout_until = now + 60.0
+                print("[SECURITY] [RATE-LIMITED] 10 consecutive failed verification attempts. 60s lockout engaged.", flush=True)
+                self._clear_active_otp()
+                self.active_otp = None
             print(f"[SECURITY] [BLOCKED] Hardcoded / trivial recovery credential '{entered}' rejected. Workstation remains locked.", flush=True)
             return False
 
         # 4. Explicit non-trivial Emergency Recovery Key
         is_valid_emergency = False
-        env_master = os.environ.get("EMERGENCY_RECOVERY_KEY") or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+        env_master = (
+            os.environ.get("EMERGENCY_RECOVERY_KEY")
+            or os.environ.get("SECURITY_MASTER_RECOVERY_PASSWORD")
+            or os.environ.get("MASTER_BYPASS_PASSWORD")
+        )
         if env_master and len(env_master.strip()) >= 8:
             clean_env = env_master.strip()
             if clean_env.lower() not in TRIVIAL_BLACKLIST and entered == clean_env:
@@ -466,6 +505,7 @@ class ThreatEvaluator:
             self.risk_history.clear()
             self.active_otp = None
             self._clear_active_otp()
+            self._write_session_reset_signal(now)
             if self.orchestrator is not None:
                 self.orchestrator.reset()
             try:
@@ -499,6 +539,30 @@ class ThreatEvaluator:
     # Alias for explicit credential verification
     verify_recovery_code = verify_otp_and_reset
 
+    def _read_next_line_from_stream(self, log_path: str, offset: int, last_head: str):
+        """Safely reads the next complete JSONL line, handling UTF-8, partial writes, and log rotation."""
+        if not os.path.exists(log_path):
+            return None, 0, ""
+
+        file_size = os.path.getsize(log_path)
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            head_sample = f.read(128)
+            rewritten = bool(
+                last_head
+                and not (head_sample.startswith(last_head) or last_head.startswith(head_sample))
+            )
+            if file_size < offset or rewritten:
+                offset = 0
+
+            f.seek(offset)
+            line = f.readline()
+            if not line:
+                return None, f.tell(), head_sample
+            if not line.endswith("\n"):
+                # Partial write in progress; keep current offset until complete line is flushed
+                return None, offset, head_sample
+            return line.strip(), f.tell(), head_sample
+
     def start_daemon(self, telemetry_file="telemetry_data.jsonl"):
         """
         Starts a live tailing file watcher on the telemetry log,
@@ -506,42 +570,64 @@ class ThreatEvaluator:
         """
         log_path = os.path.join(PROJECT_ROOT, telemetry_file) if not os.path.isabs(telemetry_file) else telemetry_file
         print(f"[DAEMON] Starting Quad-Factor threat evaluation daemon. Monitoring '{log_path}'...", flush=True)
-        
+
         while not os.path.exists(log_path):
             time.sleep(1.0)
-            
-        with open(log_path, "r") as f:
-            f.seek(0, 2)
-            
-            while True:
-                line = f.readline()
-                if not line:
-                    time.sleep(0.5)
-                    continue
-                    
-                line = line.strip()
-                if line:
-                    try:
-                        row = json.loads(line)
-                        f_risk, s_risk, triggered = self.evaluate_row(row)
-                        status_tag = ""
-                        if f_risk >= 0.78:
-                            status_tag = " >>> CRITICAL INTRUDER SPIKE! <<<"
-                        elif f_risk >= 0.55:
-                            status_tag = " [ELEVATED DRIFT]"
-                        elif f_risk <= 0.15:
-                            status_tag = " [NORMAL OWNER]"
-                            
-                        print(f"[DAEMON] Scored event. Risk: {f_risk:.4f} | Smoothed (30s): {s_risk:.4f}{status_tag}", flush=True)
-                        
-                        if triggered:
-                            print("[DAEMON] Intrusion breach triggered! Spawning verification UI...", flush=True)
-                            from security.lock_handler import launch_verification_lock
-                            launch_verification_lock(self)
-                    except Exception as e:
-                        print(f"[DAEMON] [ERROR] Processing line failed: {e}", file=sys.stderr, flush=True)
 
-    def _save_active_otp(self, otp, ttl_seconds=300):
+        offset = os.path.getsize(log_path)
+        last_head = ""
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                last_head = f.read(128)
+        except Exception:
+            last_head = ""
+
+        lock_shown_for_breach = False
+        while True:
+            sync_event = self.sync_cross_process_state()
+            if not self.is_breached:
+                lock_shown_for_breach = False
+            if (sync_event == "BREACHED" or self.is_breached) and not lock_shown_for_breach:
+                lock_shown_for_breach = True
+                print("[DAEMON] Cross-process intrusion breach detected! Spawning verification UI...", flush=True)
+                from security.lock_handler import launch_verification_lock
+                launch_verification_lock(self)
+                lock_shown_for_breach = bool(self.is_breached)
+
+            try:
+                raw_line, offset, last_head = self._read_next_line_from_stream(log_path, offset, last_head)
+            except Exception as e:
+                print(f"[DAEMON] [ERROR] Reading telemetry stream failed: {e}", file=sys.stderr, flush=True)
+                time.sleep(0.5)
+                continue
+
+            if not raw_line:
+                time.sleep(0.5)
+                continue
+
+            try:
+                row = json.loads(raw_line)
+                f_risk, s_risk, triggered = self.evaluate_row(row)
+                status_tag = ""
+                if f_risk >= 0.78:
+                    status_tag = " >>> CRITICAL INTRUDER SPIKE! <<<"
+                elif f_risk >= 0.55:
+                    status_tag = " [ELEVATED DRIFT]"
+                elif f_risk <= 0.15:
+                    status_tag = " [NORMAL OWNER]"
+
+                print(f"[DAEMON] Scored event. Risk: {f_risk:.4f} | Smoothed (30s): {s_risk:.4f}{status_tag}", flush=True)
+
+                if (triggered or self.is_breached) and not lock_shown_for_breach:
+                    lock_shown_for_breach = True
+                    print("[DAEMON] Intrusion breach triggered! Spawning verification UI...", flush=True)
+                    from security.lock_handler import launch_verification_lock
+                    launch_verification_lock(self)
+                    lock_shown_for_breach = bool(self.is_breached)
+            except Exception as e:
+                print(f"[DAEMON] [ERROR] Processing line failed: {e}", file=sys.stderr, flush=True)
+
+    def _save_active_otp(self, otp, ttl_seconds=300, is_breach=True):
         otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
         os.makedirs(os.path.dirname(otp_file), exist_ok=True)
         now = time.time()
@@ -549,7 +635,8 @@ class ThreatEvaluator:
             "otp": str(otp).strip(),
             "created_at": now,
             "expires_at": now + ttl_seconds,
-            "ttl_seconds": ttl_seconds
+            "ttl_seconds": ttl_seconds,
+            "is_breach": bool(is_breach),
         }
         try:
             with open(otp_file, "w", encoding="utf-8") as f:
@@ -557,7 +644,7 @@ class ThreatEvaluator:
         except Exception:
             pass
 
-    def _load_active_otp(self):
+    def _load_active_otp_record(self):
         otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")
         if os.path.exists(otp_file):
             try:
@@ -567,12 +654,57 @@ class ThreatEvaluator:
                     data = json.loads(content)
                     if time.time() > float(data.get("expires_at", float("inf"))):
                         return None
-                    return str(data.get("otp", "")).strip()
-                else:
-                    return content
+                    return data
+                return {"otp": content, "is_breach": True}
             except Exception:
                 pass
+        return None
+
+    def _load_active_otp(self):
+        rec = self._load_active_otp_record()
+        if rec and rec.get("otp"):
+            return str(rec["otp"]).strip()
         return self.active_otp
+
+    def _read_reset_timestamp(self) -> float:
+        if os.path.exists(self._session_reset_file):
+            try:
+                with open(self._session_reset_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return float(data.get("reset_at", 0.0))
+            except Exception:
+                pass
+        return 0.0
+
+    def _write_session_reset_signal(self, ts: Optional[float] = None):
+        ts = float(ts if ts is not None else time.time())
+        self._last_seen_reset_at = ts
+        os.makedirs(os.path.dirname(self._session_reset_file), exist_ok=True)
+        try:
+            with open(self._session_reset_file, "w", encoding="utf-8") as f:
+                json.dump({"reset_at": ts}, f)
+        except Exception:
+            pass
+
+    def sync_cross_process_state(self) -> Optional[str]:
+        """Synchronizes breach/reset state across daemon and web dashboard processes."""
+        reset_at = self._read_reset_timestamp()
+        if reset_at > self._last_seen_reset_at:
+            self._last_seen_reset_at = reset_at
+            self.is_breached = False
+            self.risk_history.clear()
+            self.active_otp = None
+            if self.orchestrator is not None:
+                self.orchestrator.reset()
+            return "RESET"
+
+        rec = self._load_active_otp_record()
+        if rec and rec.get("otp"):
+            self.active_otp = str(rec["otp"]).strip()
+            if rec.get("is_breach", True) and not self.is_breached:
+                self.is_breached = True
+                return "BREACHED"
+        return None
 
     def _clear_active_otp(self):
         otp_file = os.path.join(PROJECT_ROOT, "models", ".active_otp")

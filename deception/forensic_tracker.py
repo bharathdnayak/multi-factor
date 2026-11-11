@@ -3,6 +3,7 @@ import sys
 import time
 import json
 import glob
+import uuid
 import threading
 from collections import deque
 
@@ -55,7 +56,7 @@ class ForensicTracker:
         
         self.archive_dir = os.path.join(self.log_dir, "archive")
         os.makedirs(self.archive_dir, exist_ok=True)
-        self.session_id = f"SESS_{time.strftime('%Y%m%d_%H%M%S')}"
+        self.session_id = f"SESS_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         self.session_start = time.time()
         self.events = []
         self._write_lock = threading.Lock()
@@ -424,7 +425,7 @@ class ForensicTracker:
             except Exception as e:
                 print(f"[FORENSICS] Error clearing active session logs: {e}", file=sys.stderr)
 
-            self.session_id = f"SESS_{time.strftime('%Y%m%d_%H%M%S')}"
+            self.session_id = f"SESS_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
             self.session_start = time.time()
             self.events = []
 
@@ -450,10 +451,11 @@ class ForensicTracker:
             
             return self.session_id
 
-    def get_timeline(self):
+    def get_timeline(self, include_recent_archive: bool = False):
         """
         Returns the chronological list of recorded events for the CURRENT active session.
-        Strictly isolates from any previous sessions, but seamlessly synchronizes with disk.
+        Strictly isolates from previous archived sessions unless `include_recent_archive=True`
+        is explicitly requested.
         """
         with self._write_lock:
             disk_events = []
@@ -469,9 +471,7 @@ class ForensicTracker:
             if disk_events and len(disk_events) >= len(self.events):
                 self.events = disk_events
 
-            # If current active file has only 1 event (just HONEYPOT_ACTIVATED),
-            # check if a recently archived session from the last 15 minutes contains the actual interactions
-            if len(self.events) <= 1 and os.path.exists(self.archive_dir):
+            if include_recent_archive and len(self.events) <= 1 and os.path.exists(self.archive_dir):
                 try:
                     archive_files = sorted(
                         glob.glob(os.path.join(self.archive_dir, "session_actions_*.jsonl")),
@@ -554,6 +554,41 @@ class ForensicTracker:
     def reset_session(self):
         """Resets tracker for a new session and archives previous actions."""
         return self.start_new_session(archive_previous=True)
+
+    def use_temp_storage(self, temp_dir: str):
+        """Redirects tracker log/sandbox storage into `temp_dir` for isolated tests."""
+        with self._write_lock:
+            if not hasattr(self, "_orig_storage"):
+                self._orig_storage = (
+                    self.log_dir,
+                    self.jsonl_path,
+                    self.text_log_path,
+                    self.sandbox_dir,
+                    self.archive_dir,
+                )
+            self.log_dir = os.path.join(temp_dir, "forensics")
+            self.sandbox_dir = os.path.join(temp_dir, "sandbox")
+            self.archive_dir = os.path.join(self.log_dir, "archive")
+            self.jsonl_path = os.path.join(self.log_dir, "session_actions.jsonl")
+            self.text_log_path = os.path.join(self.log_dir, "honeypot_commands.log")
+            os.makedirs(self.log_dir, exist_ok=True)
+            os.makedirs(self.sandbox_dir, exist_ok=True)
+            os.makedirs(self.archive_dir, exist_ok=True)
+        return self.start_new_session(archive_previous=False)
+
+    def restore_storage(self):
+        """Restores original ForensicTracker storage directories after isolated testing."""
+        with self._write_lock:
+            if hasattr(self, "_orig_storage"):
+                (
+                    self.log_dir,
+                    self.jsonl_path,
+                    self.text_log_path,
+                    self.sandbox_dir,
+                    self.archive_dir,
+                ) = self._orig_storage
+                del self._orig_storage
+            self.events = []
 
 
 # Global helper instance

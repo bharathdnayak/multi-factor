@@ -42,8 +42,8 @@ This engineering audit was conducted to resolve critical integration failures, l
 ## 3. System Component Inventory & Dependency Mapping
 
 The full technical inventory and architectural dependency maps are documented in:
-- Component Inventory: [`docs/system_component_inventory.md`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/docs/system_component_inventory.md) (Cataloging all 20 subsystems `CMP-01` to `CMP-20`)
-- Dependency Map: [`docs/pipeline_dependency_map.md`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/docs/pipeline_dependency_map.md) (Mermaid lifecycle and inter-service contracts)
+- Component Inventory: [`docs/system_component_inventory.md`](../docs/system_component_inventory.md) (Cataloging all 20 subsystems `CMP-01` to `CMP-20`)
+- Dependency Map: [`docs/pipeline_dependency_map.md`](../docs/pipeline_dependency_map.md) (Mermaid lifecycle and inter-service contracts)
 
 ### Architectural Architecture Summary:
 ```
@@ -140,7 +140,7 @@ All launchers were verified under both normal execution and non-interactive (`--
   BEHAVIORAL DRIFT CONTINUOUS SECURITY - PRE-FLIGHT VERIFICATION
   Department of ISE | Team 30 | Major Project
 ==========================================================================
-  Project Root: C:\Users\Dell\Desktop\clg\major project\Behavioral-Drift-Security
+  Project Root: <repository-root>/Behavioral-Drift-Security
 
   [OK  ] Operating System                    - win32 (Windows)
   [OK  ] Python Runtime                      - Python 3.14.3 (Supported 3.10 - 3.14)

@@ -21,7 +21,8 @@ if project_dir not in sys.path:
 from deception.forensic_tracker import get_tracker
 from deception.decoy_chrome import DecoyChrome
 from deception.virtual_fs import (
-    get_vfs, PathUtils, VirtualFileSystem, VirtualFile, VirtualDirectory, VirtualClipboard
+    get_vfs, PathUtils, VirtualFileSystem, VirtualFile, VirtualDirectory, VirtualClipboard,
+    get_synthetic_username
 )
 from deception.window_manager import get_window_manager, DecoyWindowManager
 from deception.command_engine import VirtualCommandEngine
@@ -341,7 +342,7 @@ class DecoySettings(QFrame):
         u_icon.setStyleSheet("font-size: 20px;")
         u_layout.addWidget(u_icon)
         u_text = QVBoxLayout()
-        u_name = QLabel("Dell")
+        u_name = QLabel(get_synthetic_username())
         u_name.setStyleSheet("color: #ffffff; font-weight: bold; font-size: 12px;")
         u_role = QLabel("Administrator")
         u_role.setStyleSheet("color: #888888; font-size: 10px;")
@@ -797,7 +798,7 @@ class Windows11StartMenu(QFrame):
         f_layout = QHBoxLayout()
         f_layout.setContentsMargins(16, 0, 16, 0)
         
-        user_lbl = QLabel("👤  Dell (Administrator)")
+        user_lbl = QLabel(f"👤  {get_synthetic_username()} (Administrator)")
         user_lbl.setStyleSheet("color: #e0e0e0; font-family: 'Segoe UI', sans-serif; font-size: 12px; font-weight: 500;")
         f_layout.addWidget(user_lbl)
         f_layout.addStretch()
@@ -841,7 +842,7 @@ class Windows11StartMenu(QFrame):
                 self.results_layout.addWidget(btn)
 
         # 2. Virtual Filesystem Matches
-        vfs_matches = self.vfs.search(q, root_path="C:\\Users\\Dell", recursive=True)
+        vfs_matches = self.vfs.search(q, root_path="C:\\Users", recursive=True)
         for node in vfs_matches[:7]:
             matches_found += 1
             btn = QPushButton(f"{node.icon}  {node.name}\n   {node.path}")
@@ -1041,27 +1042,38 @@ class HoneypotVerificationDialog(QDialog):
         layout.addLayout(btn_layout)
         self.setLayout(layout)
 
-    def verify_code(self):
-        entered = self.input_field.text().strip()
+    def _get_evaluator(self):
+        existing = getattr(self.desktop, "evaluator", None)
+        if existing is not None:
+            return existing
         from security.drift_detector import ThreatEvaluator
         evaluator = ThreatEvaluator()
         evaluator.is_breached = True
-        
+        return evaluator
+
+    def _complete_unlock(self):
+        app = QApplication.instance()
+        persistent_loop = bool(app and not app.quitOnLastWindowClosed())
+        self.status_lbl.setStyleSheet("color: #2ed573;")
+        self.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
+        QApplication.processEvents()
+        time.sleep(0.3)
+        self.desktop._opened_forensics_on_exit = True
+        self.desktop._can_close = True
+        self.accept()
+        self.desktop.close()
+
+        from dashboard.forensic_dashboard import ForensicDashboard
+        global _active_forensics_window
+        _active_forensics_window = ForensicDashboard(quit_app_on_close=persistent_loop)
+        _active_forensics_window.show()
+
+    def verify_code(self):
+        entered = self.input_field.text().strip()
+        evaluator = self._get_evaluator()
         ok = evaluator.verify_otp_and_reset(entered)
         if ok:
-            self.status_lbl.setStyleSheet("color: #2ed573;")
-            self.status_lbl.setText("Identity Verified! Opening Forensics Dashboard...")
-            QApplication.processEvents()
-            time.sleep(0.8)
-            self.accept()
-            self.desktop._can_close = True
-            self.desktop.close()
-            
-            # Open Forensics Recovery Dashboard
-            from dashboard.forensic_dashboard import ForensicDashboard
-            global _active_forensics_window
-            _active_forensics_window = ForensicDashboard()
-            _active_forensics_window.show()
+            self._complete_unlock()
         else:
             self.failed_attempts += 1
             self.status_lbl.setStyleSheet("color: #ff4757;")
@@ -1069,13 +1081,26 @@ class HoneypotVerificationDialog(QDialog):
             self.input_field.clear()
 
     def emergency_exit(self):
-        self.status_lbl.setStyleSheet("color: #00d2d3;")
-        self.status_lbl.setText("Emergency exit confirmed. Restoring desktop...")
-        QApplication.processEvents()
-        time.sleep(0.4)
-        self.accept()
-        self.desktop._can_close = True
-        self.desktop.close()
+        if os.environ.get("ALLOW_DEMO_ESCAPE") == "1":
+            self.status_lbl.setStyleSheet("color: #00d2d3;")
+            self.status_lbl.setText("[DEV] Explicit demo escape confirmed. Restoring desktop...")
+            QApplication.processEvents()
+            time.sleep(0.2)
+            self.desktop._can_close = True
+            self.accept()
+            self.desktop.close()
+            return
+
+        entered = self.input_field.text().strip()
+        evaluator = self._get_evaluator()
+        if entered and evaluator.verify_otp_and_reset(entered):
+            self._complete_unlock()
+            return
+
+        self.failed_attempts += 1
+        self.status_lbl.setStyleSheet("color: #ff4757;")
+        self.status_lbl.setText("Enter valid 6-digit OTP or configured Emergency Recovery Key.")
+        self.input_field.clear()
 
 
 class VirtualFsDictAdapter(dict):
@@ -1616,8 +1641,10 @@ class HoneypotDesktop(QWidget):
     interactive File Explorer, Notepad, Decoy Chrome, and Start Menu.
     All applications share the centralized VirtualFileSystem and DecoyWindowManager.
     """
-    def __init__(self, snapshot_path=None):
+    def __init__(self, snapshot_path=None, evaluator=None):
         super().__init__()
+        self.evaluator = evaluator
+        self._opened_forensics_on_exit = False
         self.sandbox_dir = os.path.join(project_dir, "data", "sandbox")
         self.log_dir = os.path.join(project_dir, "data", "forensics")
         os.makedirs(self.sandbox_dir, exist_ok=True)
@@ -1747,19 +1774,23 @@ class HoneypotDesktop(QWidget):
             w.deleteLater()
         self.desktop_icon_widgets.clear()
         
+        synth_user = get_synthetic_username()
+        desktop_dir = f"C:\\Users\\{synth_user}\\Desktop" if self.vfs.exists(f"C:\\Users\\{synth_user}\\Desktop") else "C:\\Users\\Dell\\Desktop"
+        docs_dir = f"C:\\Users\\{synth_user}\\Documents" if self.vfs.exists(f"C:\\Users\\{synth_user}\\Documents") else "C:\\Users\\Dell\\Documents"
+
         standard_icons = [
             ("🌐", "Google Chrome", self.open_chrome),
             ("💻", "This PC", self.open_explorer),
             ("🗑️", "Recycle Bin", lambda: self.open_explorer(folder_path="C:\\$Recycle.Bin")),
-            ("📁", "clg", lambda: self.open_explorer(folder_path="C:\\Users\\Dell\\Desktop\\clg")),
-            ("📄", "tester.txt", lambda: self.open_notepad(file_path="C:\\Users\\Dell\\Desktop\\tester.txt")),
-            ("📂", "My Documents", lambda: self.open_explorer(folder_path="C:\\Users\\Dell\\Documents")),
-            ("🔒", "passwords.txt", lambda: self.open_notepad(file_path="C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt")),
+            ("📁", "clg", lambda: self.open_explorer(folder_path=f"{desktop_dir}\\clg")),
+            ("📄", "tester.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\tester.txt")),
+            ("📂", "My Documents", lambda: self.open_explorer(folder_path=docs_dir)),
+            ("🔒", "passwords.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\clg\\Behavioral-Drift-Security\\passwords.txt")),
             ("⚡", "PowerShell", self.open_terminal)
         ]
         
         # Also query user's Desktop directory in VFS for newly created files/folders
-        desktop_nodes = self.vfs.list_dir("C:\\Users\\Dell\\Desktop", include_hidden=False)
+        desktop_nodes = self.vfs.list_dir(desktop_dir, include_hidden=False)
         added_names = {item[1] for item in standard_icons}
         
         for node in desktop_nodes:
@@ -1843,7 +1874,8 @@ class HoneypotDesktop(QWidget):
         menu.exec(event.globalPos())
 
     def create_desktop_folder(self):
-        desktop_dir = "C:\\Users\\Dell\\Desktop"
+        synth_user = get_synthetic_username()
+        desktop_dir = f"C:\\Users\\{synth_user}\\Desktop" if self.vfs.exists(f"C:\\Users\\{synth_user}\\Desktop") else "C:\\Users\\Dell\\Desktop"
         base = "New folder"
         p = PathUtils.join(desktop_dir, base)
         idx = 2
@@ -1855,7 +1887,8 @@ class HoneypotDesktop(QWidget):
         self.setup_desktop_icons()
 
     def create_desktop_document(self):
-        desktop_dir = "C:\\Users\\Dell\\Desktop"
+        synth_user = get_synthetic_username()
+        desktop_dir = f"C:\\Users\\{synth_user}\\Desktop" if self.vfs.exists(f"C:\\Users\\{synth_user}\\Desktop") else "C:\\Users\\Dell\\Desktop"
         base = "New Text Document.txt"
         p = PathUtils.join(desktop_dir, base)
         idx = 2
@@ -2027,17 +2060,18 @@ class HoneypotDesktop(QWidget):
                 self.start_menu.hide()
                 event.accept()
                 return
-                
-            # Double-Escape within 1.5s emergency exit
-            now = time.time()
-            if hasattr(self, '_last_esc_time') and (now - self._last_esc_time < 1.5):
-                print("[DECEPTION] Double-Escape emergency exit triggered. Restoring session.", flush=True)
-                self._can_close = True
-                self.close()
-                event.accept()
-                return
-            self._last_esc_time = now
-            
+
+            # Development-only isolated demo escape (requires explicit opt-in env flag)
+            if os.environ.get("ALLOW_DEMO_ESCAPE") == "1":
+                now = time.time()
+                if hasattr(self, '_last_esc_time') and (now - self._last_esc_time < 1.5):
+                    print("[DECEPTION] [DEV] Explicit ALLOW_DEMO_ESCAPE Double-Escape exit triggered.", flush=True)
+                    self._can_close = True
+                    self.close()
+                    event.accept()
+                    return
+                self._last_esc_time = now
+
             self.show_verification_prompt()
             event.accept()
         else:
@@ -2046,10 +2080,20 @@ class HoneypotDesktop(QWidget):
     def closeEvent(self, event):
         if getattr(self, '_can_close', False):
             event.accept()
+            if not getattr(self, '_opened_forensics_on_exit', False):
+                app = QApplication.instance()
+                if app and not app.quitOnLastWindowClosed():
+                    app.setQuitOnLastWindowClosed(True)
+                    QTimer.singleShot(0, app.quit)
         else:
             self.show_verification_prompt()
             if getattr(self, '_can_close', False):
                 event.accept()
+                if not getattr(self, '_opened_forensics_on_exit', False):
+                    app = QApplication.instance()
+                    if app and not app.quitOnLastWindowClosed():
+                        app.setQuitOnLastWindowClosed(True)
+                        QTimer.singleShot(0, app.quit)
             else:
                 event.ignore()
 

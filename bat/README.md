@@ -8,6 +8,7 @@ This directory contains all verified, production-ready Windows batch scripts for
 
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
+| **`..\VIVA_START.bat`** | **Master Coordinated Viva Defense Launcher (Root)**<br>Runs pre-flight doctor diagnostics, guards against duplicate instances, coordinates the Supervisor & Web SOC terminal (`http://localhost:8000`) with HTTP readiness polling, and starts the 5-stage `demo_viva_runner.py` console. | Double-click from root or pass `--auto --no-ui` / `--auto-stop` |
 | **`setup_environment.bat`** | **One-Click Environment Setup & Dependency Installer**<br>Validates Python, configures virtual environment, installs manifests, initializes runtime folders/configs, and verifies models. | Double-click or run from terminal |
 | **`run_viva_demo.bat`** | **Interactive 5-Stage Live Viva Defense Runner**<br>Guides examiners through baseline operations, physical walk-away takeover, Tier 2 step-up toast challenge, Tier 3 honeypot diversion, and offline AI forensic reporting. Includes speaking points. | Double-click or run from terminal |
 | **`run_security_system.bat`** | **Production Continuous Security System**<br>Spawns the Unified Process Supervisor, low-level OS telemetry hooks, threat evaluator daemon, system tray icon, and live cyber-ops web dashboard on `http://localhost:8000`. | Double-click or run from terminal |

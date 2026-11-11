@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QCursor, QTextCursor
 
-from deception.virtual_fs import get_vfs, PathUtils
+from deception.virtual_fs import get_vfs, PathUtils, get_synthetic_username, safe_sandbox_path
 from deception.forensic_tracker import get_tracker
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -157,7 +157,10 @@ class DecoyNotepad(QFrame):
         self.drag_position = QPoint()
 
         # Document state
-        self.current_vfs_path: Optional[str] = initial_file or "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt"
+        synth_user = get_synthetic_username()
+        base_user = f"C:\\Users\\{synth_user}" if self.vfs.exists(f"C:\\Users\\{synth_user}") else "C:\\Users\\Dell"
+        default_file = f"{base_user}\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt"
+        self.current_vfs_path: Optional[str] = initial_file or default_file
         self.is_dirty: bool = False
         self.word_wrap_enabled: bool = True
         self.recent_files: List[str] = []
@@ -372,7 +375,9 @@ class DecoyNotepad(QFrame):
             self.open_virtual_file(self.current_vfs_path)
         else:
             # Check passwords.txt
-            pwd_path = "C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt"
+            synth_user = get_synthetic_username()
+            base_user = f"C:\\Users\\{synth_user}" if self.vfs.exists(f"C:\\Users\\{synth_user}") else "C:\\Users\\Dell"
+            pwd_path = f"{base_user}\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt"
             if self.vfs.exists(pwd_path):
                 self.open_virtual_file(pwd_path)
             else:
@@ -418,16 +423,20 @@ class DecoyNotepad(QFrame):
         self.update_title()
         self.update_status_bar()
 
-        # Update sandbox replica for immediate backward compatibility with tests
+        # Update sandbox replica safely inside sandbox directory
         try:
             content = self.editor.toPlainText()
-            filename = PathUtils.split_path(self.current_vfs_path)[1] if self.current_vfs_path else "passwords.txt"
-            sandbox_file = os.path.join(self.sandbox_dir, filename)
-            with open(sandbox_file, "w", encoding="utf-8") as f:
-                f.write(content)
+            raw_name = PathUtils.split_path(self.current_vfs_path)[1] if self.current_vfs_path else "passwords.txt"
+            sandbox_file = safe_sandbox_path(self.sandbox_dir, raw_name, default_name="passwords.txt")
+            filename = os.path.basename(sandbox_file) if sandbox_file else "passwords.txt"
+            if sandbox_file:
+                os.makedirs(self.sandbox_dir, exist_ok=True)
+                with open(sandbox_file, "w", encoding="utf-8") as f:
+                    f.write(content)
             if was_clean:
                 self.tracker.record_file_access(filename, action="MODIFY", application="NOTEPAD")
                 self.tracker.record_sandbox_write(filename, len(content.encode("utf-8")))
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             with open(self.log_path, "a", encoding="utf-8") as f:
                 f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [NOTEPAD_EDIT] {filename} modified\n")
         except Exception:
@@ -475,7 +484,8 @@ class DecoyNotepad(QFrame):
         dlg.setStyleSheet("background-color: #252526; color: #ffffff;")
         d_lay = QVBoxLayout()
         d_lay.addWidget(QLabel("Save to virtual path:"))
-        path_input = QLineEdit(self.current_vfs_path or "C:\\Users\\Dell\\Desktop\\new_document.txt")
+        user = get_synthetic_username()
+        path_input = QLineEdit(self.current_vfs_path or f"C:\\Users\\{user}\\Desktop\\new_document.txt")
         path_input.setStyleSheet("background-color: #1e1e1e; color: #ffffff; padding: 4px;")
         d_lay.addWidget(path_input)
 
@@ -506,7 +516,8 @@ class DecoyNotepad(QFrame):
         dlg.setStyleSheet("background-color: #252526; color: #ffffff;")
         d_lay = QVBoxLayout()
         d_lay.addWidget(QLabel("Virtual file path to open:"))
-        path_input = QLineEdit("C:\\Users\\Dell\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt")
+        user = get_synthetic_username()
+        path_input = QLineEdit(f"C:\\Users\\{user}\\Desktop\\clg\\Behavioral-Drift-Security\\passwords.txt")
         path_input.setStyleSheet("background-color: #1e1e1e; color: #ffffff; padding: 4px;")
         d_lay.addWidget(path_input)
 

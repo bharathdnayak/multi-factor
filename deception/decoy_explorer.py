@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import (
     QMenu, QDialog, QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QAbstractItemView
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPoint, pyqtSignal, QThread, QTimer
 from PyQt6.QtGui import QFont, QColor, QCursor, QIcon, QAction
 
-from deception.virtual_fs import get_vfs, PathUtils, VirtualNode
+from deception.virtual_fs import get_vfs, PathUtils, VirtualNode, get_synthetic_username
 from deception.forensic_tracker import get_tracker
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -134,7 +134,9 @@ class DecoyExplorer(QFrame):
         self.drag_position = QPoint()
 
         # Navigation State
-        self.current_path = "C:\\Users\\Dell\\Desktop\\clg"
+        synth_user = get_synthetic_username()
+        base_user = f"C:\\Users\\{synth_user}" if self.vfs.exists(f"C:\\Users\\{synth_user}") else "C:\\Users\\Dell"
+        self.current_path = f"{base_user}\\Desktop\\clg"
         self.path_history: List[str] = [self.current_path]
         self.history_index: int = 0
         self.view_mode: str = "details"  # "details" or "icons"
@@ -531,12 +533,14 @@ class DecoyExplorer(QFrame):
         qa_root = QTreeWidgetItem(self.sidebar_tree, ["⭐ Quick access"])
         qa_root.setExpanded(True)
 
+        synth_user = get_synthetic_username()
+        base_user = f"C:\\Users\\{synth_user}" if self.vfs.exists(f"C:\\Users\\{synth_user}") else "C:\\Users\\Dell"
         qa_items = [
-            ("🖥️ Desktop", "C:\\Users\\Dell\\Desktop"),
-            ("📁 clg", "C:\\Users\\Dell\\Desktop\\clg"),
-            ("📄 Documents", "C:\\Users\\Dell\\Documents"),
-            ("📥 Downloads", "C:\\Users\\Dell\\Downloads"),
-            ("🖼️ Pictures", "C:\\Users\\Dell\\Pictures")
+            ("🖥️ Desktop", f"{base_user}\\Desktop"),
+            ("📁 clg", f"{base_user}\\Desktop\\clg"),
+            ("📄 Documents", f"{base_user}\\Documents"),
+            ("📥 Downloads", f"{base_user}\\Downloads"),
+            ("🖼️ Pictures", f"{base_user}\\Pictures")
         ]
         for label, path in qa_items:
             child = QTreeWidgetItem(qa_root, [label])
@@ -566,8 +570,10 @@ class DecoyExplorer(QFrame):
 
     def on_vfs_changed(self, action: str, path: str):
         """Callback invoked whenever the VirtualFileSystem is modified."""
-        # Refresh current view if the affected path is in or child of current directory
-        self.render_current_folder()
+        if QThread.currentThread() == self.thread():
+            self.render_current_folder()
+        else:
+            QTimer.singleShot(0, self.render_current_folder)
 
     def navigate_to(self, new_path: str, record_history: bool = True, navigation_method: str = "DOUBLE_CLICK"):
         norm = PathUtils.normalize(new_path)
@@ -596,7 +602,8 @@ class DecoyExplorer(QFrame):
 
         folder_name = PathUtils.split_path(norm)[1] or "Local Disk (C:)"
         self.title_lbl.setText(f"{folder_name} - File Explorer")
-        self.addr_lbl.setText(f"📁 This PC > {self.current_path.replace(':', '').replace('\\', ' > ')}")
+        clean_breadcrumb = self.current_path.replace(":", "").replace("\\", " > ")
+        self.addr_lbl.setText(f"📁 This PC > {clean_breadcrumb}")
         self.address_input.setText(self.current_path)
 
         self.update_breadcrumbs()
@@ -993,9 +1000,7 @@ class DecoyExplorer(QFrame):
 
     def permanently_delete_node(self, node: VirtualNode):
         entry_id = getattr(node, "_recycle_entry_id", node.name)
-        with self.vfs._lock:
-            if entry_id in self.vfs.recycle_bin:
-                del self.vfs.recycle_bin[entry_id]
+        self.vfs.permanently_delete_from_recycle_bin(entry_id)
         self.tracker.record_file_access(node.name, action="DELETE_PERMANENT")
         self.refresh_current_folder()
 

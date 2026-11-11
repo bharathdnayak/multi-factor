@@ -21,7 +21,9 @@ Features:
 
 import os
 import sys
+import json
 import time
+import atexit
 import signal
 import socket
 import psutil
@@ -47,6 +49,7 @@ if PROJECT_ROOT not in sys.path:
 
 LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
+SUPERVISOR_LOCK_PATH = os.path.join(LOGS_DIR, "supervisor.lock")
 
 
 def create_shield_icon(color_hex: str = "#27ae60") -> Optional[Any]:
@@ -125,12 +128,32 @@ class WorkerProcess:
 
     def stop(self, timeout: float = 3.0):
         if self.proc and self.is_alive():
+            descendants = []
+            try:
+                parent_proc = psutil.Process(self.proc.pid)
+                descendants = parent_proc.children(recursive=True)
+            except Exception:
+                descendants = []
+
+            for child in descendants:
+                try:
+                    child.terminate()
+                except Exception:
+                    pass
+
             try:
                 self.proc.terminate()
                 self.proc.wait(timeout=timeout)
             except Exception:
                 try:
                     self.proc.kill()
+                except Exception:
+                    pass
+
+            for child in descendants:
+                try:
+                    if child.is_running():
+                        child.kill()
                 except Exception:
                     pass
 
@@ -148,7 +171,7 @@ class SystemSupervisor:
     Supervises background security micro-services, monitors their health,
     and manages the Windows system tray and browser integration.
     """
-    def __init__(self, port: int = 8000, host: Optional[str] = None, enable_browser: bool = True, enable_tray: bool = True):
+    def __init__(self, port: int = 8000, host: Optional[str] = None, enable_browser: bool = True, enable_tray: bool = True, lock_path: Optional[str] = None):
         self.port = port
         self.host = host or os.environ.get("HOST", "127.0.0.1")
         self.enable_browser = enable_browser
@@ -156,6 +179,8 @@ class SystemSupervisor:
         self.running = False
         self.tray_icon = None
         self.app = None
+        self.lock_path = lock_path or SUPERVISOR_LOCK_PATH
+        self._owns_lock = False
 
         py = sys.executable
         self.workers: Dict[str, WorkerProcess] = {
@@ -176,13 +201,58 @@ class SystemSupervisor:
             )
         }
 
+    def _acquire_supervisor_lock(self):
+        """Prevents duplicate supervisor instances from spawning parallel workers on the same workspace."""
+        os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
+        my_pid = os.getpid()
+        if os.path.exists(self.lock_path):
+            try:
+                with open(self.lock_path, "r", encoding="utf-8") as f:
+                    info = json.load(f)
+                old_pid = int(info.get("pid", -1))
+                old_port = info.get("port")
+                if old_pid > 0 and old_pid != my_pid and psutil.pid_exists(old_pid):
+                    proc = psutil.Process(old_pid)
+                    if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                        cmdline = " ".join(proc.cmdline()).lower()
+                        if "run_system.py" in cmdline:
+                            raise RuntimeError(
+                                f"Duplicate supervisor blocked: active instance already running "
+                                f"(PID {old_pid}, port {old_port}). Stop the existing supervisor first."
+                            )
+            except RuntimeError:
+                raise
+            except Exception:
+                # Stale/corrupted lock file; safe to replace
+                pass
+
+        with open(self.lock_path, "w", encoding="utf-8") as f:
+            json.dump({"pid": my_pid, "port": self.port, "started_at": time.time()}, f)
+        self._owns_lock = True
+        atexit.register(self._release_supervisor_lock)
+
+    def _release_supervisor_lock(self):
+        if not self._owns_lock:
+            return
+        self._owns_lock = False
+        try:
+            if os.path.exists(self.lock_path):
+                with open(self.lock_path, "r", encoding="utf-8") as f:
+                    info = json.load(f)
+                if int(info.get("pid", -1)) == os.getpid():
+                    os.remove(self.lock_path)
+        except Exception:
+            pass
+
     def start_all_workers(self):
         print("\n" + "=" * 74)
         print("  BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION - PROCESS SUPERVISOR")
         print("  Department of ISE | Team 30 | Major Project")
         print("=" * 74)
 
-        # Pre-check port availability
+        self._acquire_supervisor_lock()
+
+        # Pre-check port availability BEFORE spawning any worker processes
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(0.5)
         try:
@@ -193,8 +263,14 @@ class SystemSupervisor:
             sock.close()
 
         if in_use:
-            print(f"  [!] WARNING: Port {self.port} is already IN USE by another process.")
-            print(f"      Web Dashboard may fail to bind. Terminate previous instances or use --port <N>.\n")
+            self._release_supervisor_lock()
+            msg = (
+                f"Port {self.port} is already IN USE by another process. "
+                f"Aborting startup to prevent duplicate telemetry/evaluator workers "
+                f"(terminate previous instance or use --port <N>)."
+            )
+            print(f"  [ERROR] {msg}\n", flush=True)
+            raise RuntimeError(msg)
 
         for key, worker in self.workers.items():
             worker.start()
@@ -258,6 +334,7 @@ class SystemSupervisor:
                 print(f"  [-] Stopping {worker.name} (PID {worker.pid()})...", flush=True)
                 worker.stop()
 
+        self._release_supervisor_lock()
         print("[SUPERVISOR] All workers stopped cleanly. Workstation security restored to idle.\n", flush=True)
 
     def get_status_summary(self) -> Dict[str, Any]:
@@ -295,17 +372,44 @@ class SystemSupervisor:
         menu.addAction(action_title)
         menu.addSeparator()
 
-        action_open = QAction("Open Web Dashboard", menu)
-        action_open.triggered.connect(lambda: webbrowser.open(f"http://localhost:{self.port}"))
-        menu.addAction(action_open)
+        action_open_web = QAction("🌐 Open Web Defense Console", menu)
+        action_open_web.triggered.connect(lambda: webbrowser.open(f"http://localhost:{self.port}"))
+        menu.addAction(action_open_web)
 
-        action_logs = QAction("Open Logs Folder", menu)
+        action_forensics = QAction("🖥️ Open Forensic Desktop Dashboard", menu)
+        action_forensics.triggered.connect(lambda: subprocess.Popen([sys.executable, "dashboard/forensic_dashboard.py"], cwd=PROJECT_ROOT))
+        menu.addAction(action_forensics)
+
+        action_honeypot = QAction("🪤 Launch Honeypot Desktop (Simulation)", menu)
+        action_honeypot.triggered.connect(lambda: subprocess.Popen([sys.executable, "deception/honey_desktop.py"], cwd=PROJECT_ROOT))
+        menu.addAction(action_honeypot)
+
+        action_viva = QAction("🧪 Run Interactive Viva Demonstration", menu)
+        def _launch_viva():
+            if sys.platform == "win32":
+                subprocess.Popen([sys.executable, "demo_viva_runner.py"], cwd=PROJECT_ROOT, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
+                subprocess.Popen([sys.executable, "demo_viva_runner.py"], cwd=PROJECT_ROOT)
+        action_viva.triggered.connect(_launch_viva)
+        menu.addAction(action_viva)
+
+        menu.addSeparator()
+
+        action_dir_forensics = QAction("📁 Open Forensic Evidence Folder", menu)
+        action_dir_forensics.triggered.connect(lambda: os.startfile(os.path.join(PROJECT_ROOT, "data", "forensics")) if sys.platform == "win32" else None)
+        menu.addAction(action_dir_forensics)
+
+        action_dir_sandbox = QAction("📁 Open Honeypot Sandbox Folder", menu)
+        action_dir_sandbox.triggered.connect(lambda: os.startfile(os.path.join(PROJECT_ROOT, "data", "sandbox")) if sys.platform == "win32" else None)
+        menu.addAction(action_dir_sandbox)
+
+        action_logs = QAction("📁 Open System Logs Folder", menu)
         action_logs.triggered.connect(lambda: os.startfile(LOGS_DIR) if sys.platform == "win32" else None)
         menu.addAction(action_logs)
 
         menu.addSeparator()
 
-        action_stop = QAction("Stop Services & Exit", menu)
+        action_stop = QAction("🛑 Stop Services & Exit", menu)
         action_stop.triggered.connect(self._on_tray_exit)
         menu.addAction(action_stop)
 
@@ -343,7 +447,11 @@ def run_supervisor(port: int = 8000, enable_browser: bool = True, enable_tray: b
     except Exception:
         pass
 
-    supervisor.start_all_workers()
+    try:
+        supervisor.start_all_workers()
+    except RuntimeError as exc:
+        print(f"[SUPERVISOR] [ABORTED] {exc}", file=sys.stderr, flush=True)
+        return None
 
     # If auto-stop specified (for unit tests / automated validation)
     if auto_stop_sec is not None and auto_stop_sec > 0:
@@ -385,15 +493,51 @@ def run_supervisor(port: int = 8000, enable_browser: bool = True, enable_tray: b
     return supervisor
 
 
+def _load_local_env_defaults():
+    env_path = os.path.join(PROJECT_ROOT, ".env")
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                if s and not s.startswith("#") and "=" in s:
+                    k, v = s.split("=", 1)
+                    key = k.strip()
+                    val = v.strip().strip('"').strip("'")
+                    if key and val and not os.environ.get(key):
+                        os.environ[key] = val
+    except Exception:
+        pass
+
+
 def main():
+    _load_local_env_defaults()
+    default_port = int(os.environ.get("PORT", 8000))
     parser = argparse.ArgumentParser(description="Unified One-Click Launcher & Process Supervisor")
-    parser.add_argument("--port", type=int, default=8000, help="Web dashboard port (default: 8000)")
+    parser.add_argument("--port", type=int, default=default_port, help=f"Web dashboard port (default: {default_port})")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically launch web browser")
     parser.add_argument("--no-tray", action="store_true", help="Disable PyQt system tray icon (CLI-only mode)")
     parser.add_argument("--auto-stop", type=float, default=None, help="Automatically terminate after N seconds (for tests)")
     parser.add_argument("--status", action="store_true", help="Check status of running system and exit")
+    parser.add_argument("--wait-ready", type=float, default=0.0, help="Poll dashboard /api/status up to N seconds until HTTP 200")
 
     args = parser.parse_args()
+
+    if args.wait_ready > 0:
+        import urllib.request
+        deadline = time.time() + args.wait_ready
+        ready = False
+        url = f"http://127.0.0.1:{args.port}/api/status"
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(url, timeout=1.5) as resp:
+                    if resp.status == 200:
+                        ready = True
+                        break
+            except Exception:
+                time.sleep(0.5)
+        sys.exit(0 if ready else 1)
 
     if args.status:
         # Check if dashboard port is listening
@@ -413,12 +557,14 @@ def main():
         print("=" * 60 + "\n")
         sys.exit(0 if is_running else 1)
 
-    run_supervisor(
+    sup = run_supervisor(
         port=args.port,
         enable_browser=not args.no_browser,
         enable_tray=not args.no_tray,
         auto_stop_sec=args.auto_stop
     )
+    if sup is None:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

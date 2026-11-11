@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 import unittest
 import shutil
 
@@ -9,6 +10,7 @@ if PROJECT_ROOT not in sys.path:
 
 from PyQt6.QtWidgets import QApplication
 from deception.forensic_tracker import get_tracker
+from deception.virtual_fs import get_vfs
 from deception.honey_desktop import HoneyShell
 
 
@@ -20,20 +22,19 @@ class TestHoneyNetworkRecon(unittest.TestCase):
             cls.app = QApplication(sys.argv)
 
     def setUp(self):
-        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "test_sandbox_network")
-        self.log_dir = os.path.join(PROJECT_ROOT, "data", "test_forensics_network")
-        os.makedirs(self.sandbox_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
-
+        self.tmp_dir = tempfile.TemporaryDirectory(prefix="honey_net_test_")
         self.tracker = get_tracker()
-        self.tracker.reset_session()
+        self.tracker.use_temp_storage(self.tmp_dir.name)
+        self.vfs = get_vfs()
+        self.vfs.use_temp_state(os.path.join(self.tmp_dir.name, "vfs_state.json"))
+        self.sandbox_dir = self.tracker.sandbox_dir
+        self.log_dir = self.tracker.log_dir
         self.shell = HoneyShell(self.sandbox_dir, self.log_dir)
 
     def tearDown(self):
-        if os.path.exists(self.sandbox_dir):
-            shutil.rmtree(self.sandbox_dir, ignore_errors=True)
-        if os.path.exists(self.log_dir):
-            shutil.rmtree(self.log_dir, ignore_errors=True)
+        self.vfs.restore_state_file()
+        self.tracker.restore_storage()
+        self.tmp_dir.cleanup()
 
     def test_01_ping_emulation(self):
         print("\n--- Testing HoneyShell Ping Diagnostic Emulation ---")

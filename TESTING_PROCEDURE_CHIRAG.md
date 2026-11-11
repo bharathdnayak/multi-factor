@@ -88,9 +88,10 @@ Look at the logs printed in your command window:
 ### How to Test the Deception Flow:
 
 #### 1. Launch the Live System
-Double-click the file **`run_security_system.bat`** in the project folder. This opens two CMD windows:
-* One running the Telemetry hook.
-* One running the Threat Evaluator watcher daemon.
+Double-click **`start_system.bat`** (or **`bat/run_security_system.bat`**) in the project folder. This starts the unified Process Supervisor managing:
+* The background Telemetry hook (`telemetry/agent.py`).
+* The Threat Evaluator watcher daemon (`telemetry/evaluator.py`).
+* The Cyber-Ops Web Dashboard (`http://localhost:8000`).
 
 #### 2. Trigger the Breach
 To trigger the lock screen, act like an intruder for 30 seconds:
@@ -106,8 +107,8 @@ To trigger the lock screen, act like an intruder for 30 seconds:
 
 #### 4. Test the Honeypot Container (Deceive the Attacker)
 1. Trigger the lock screen again.
-2. Enter a wrong PIN 3 times (or click **Bypass Prompt**).
-3. **Verify:** The lock screen will disappear, and the **Honeypot Desktop** overlay will open, showing decoy icons (My Documents, Secret Passwords) and an open command terminal (**Honey-Shell**).
+2. Enter a wrong OTP PIN 3 times (unauthenticated bypass buttons and trivial defaults like `admin` are strictly rejected).
+3. **Verify:** The lock screen transitions seamlessly into the **Honeypot Desktop** overlay, showing decoy icons (My Documents, Passwords Vault), Decoy Explorer, Decoy Chrome, and an interactive **HoneyShell** terminal.
 4. **Test Command Interception:** Inside the mock Command Prompt, run commands:
    * Type `dir` to see mock secret files.
    * Type `type confidential_passwords.txt` to see decoy admin credentials.

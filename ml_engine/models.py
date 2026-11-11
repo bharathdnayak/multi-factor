@@ -65,7 +65,13 @@ class BehavioralModels:
         # Auto-calibrated thresholds
         self.biometric_threshold = 0.0
         self.context_threshold = 0.0
-        
+
+        # Robust per-user mouse kinematics baseline [velocity, accel, jerk, straightness]
+        self.mouse_baseline = {
+            "medians": [271.79, 21.75, 3.26, 0.906],
+            "mads": [31.30, 2.51, 0.38, 0.0292]
+        }
+
         self.is_trained = False
 
     def extract_features(self, json_data):
@@ -149,7 +155,31 @@ class BehavioralModels:
         self.biometric_threshold = float(np.percentile(bio_decisions, 4))
         # 3rd percentile for context
         self.context_threshold = float(np.percentile(ctx_decisions, 3))
-        
+
+        # 4. Fit per-user robust mouse kinematics baseline (median & scaled MAD)
+        mouse_rows = [
+            r for r in active_rows
+            if r.get("mouse_events", 0) >= 5 and float(r.get("mouse_velocity_mean", 0.0)) > 0.0
+        ]
+        if len(mouse_rows) >= 15:
+            m_feats = np.array([
+                [
+                    min(float(r.get("mouse_velocity_mean", 271.79)), 3000.0),
+                    float(r.get("mouse_acceleration_mean", 21.75)),
+                    float(r.get("mouse_jerk_mean", 3.26)),
+                    min(max(float(r.get("mouse_straightness_mean", 0.906)), 0.0), 1.0),
+                ]
+                for r in mouse_rows
+            ], dtype=float)
+            meds = np.median(m_feats, axis=0)
+            raw_mads = np.median(np.abs(m_feats - meds), axis=0)
+            floors = np.array([10.0, 1.0, 0.2, 0.01], dtype=float)
+            scaled_mads = np.maximum(1.4826 * raw_mads, floors)
+            self.mouse_baseline = {
+                "medians": [round(float(x), 4) for x in meds],
+                "mads": [round(float(x), 4) for x in scaled_mads]
+            }
+
         self.is_trained = True
         print(f"[INFO] Models trained successfully. Calibrated Biometric Thresh: {self.biometric_threshold:.6f}, Context Thresh: {self.context_threshold:.6f}", flush=True)
 
@@ -199,6 +229,7 @@ class BehavioralModels:
             "context_scaler": self.context_scaler,
             "biometric_threshold": self.biometric_threshold,
             "context_threshold": self.context_threshold,
+            "mouse_baseline": self.mouse_baseline,
             "is_trained": self.is_trained
         }
         with open(filepath, "wb") as f:
@@ -225,5 +256,9 @@ class BehavioralModels:
         self.context_scaler = data["context_scaler"]
         self.biometric_threshold = data.get("biometric_threshold", 0.0)
         self.context_threshold = data.get("context_threshold", 0.0)
+        self.mouse_baseline = data.get("mouse_baseline") or {
+            "medians": [271.79, 21.75, 3.26, 0.906],
+            "mads": [31.30, 2.51, 0.38, 0.0292]
+        }
         self.is_trained = data["is_trained"]
         print(f"[INFO] Loaded model checkpoint from '{filepath}'", flush=True)

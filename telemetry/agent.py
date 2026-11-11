@@ -51,7 +51,11 @@ class MicroSessionTracker:
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.history_file = os.path.join(self.sessions_dir, "session_history.jsonl")
         self.active_file = os.path.join(self.sessions_dir, "active_session.json")
-        self.controller = BehavioralAIController()
+        self.controller = BehavioralAIController(
+            baselines_path=os.path.join(self.sessions_dir, "app_baselines.json"),
+            history_path=self.history_file,
+            active_session_path=self.active_file,
+        )
         self.lock = threading.Lock()
         
         self.current_app = "unknown"
@@ -363,6 +367,8 @@ class TelemetryAgent:
         # Mouse telemetry storage
         self.current_stroke = []  # List of (x, y, timestamp)
         self.stroke_lock = threading.Lock()
+        self._data_lock = threading.Lock()
+        self._proc_cache = {}
         self.stroke_idle_threshold = 0.1  # 100ms of inactivity ends a stroke
         
         # Processed mouse metrics for the current window
@@ -412,10 +418,16 @@ class TelemetryAgent:
                 
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 if pid:
-                    proc = psutil.Process(pid)
+                    proc = self._proc_cache.get(pid)
+                    if proc is None:
+                        proc = psutil.Process(pid)
+                        proc.cpu_percent(interval=None)  # Prime delta counter on first observation
+                        if len(self._proc_cache) > 64:
+                            self._proc_cache.clear()
+                        self._proc_cache[pid] = proc
                     app_name = proc.name()
                     ram_usage = proc.memory_info().rss / (1024 * 1024)
-                    cpu_usage = proc.cpu_percent()
+                    cpu_usage = proc.cpu_percent(interval=None)
         except Exception:
             pass
 
@@ -425,89 +437,102 @@ class TelemetryAgent:
     def on_press(self, key):
         if not self.running:
             return
-        
-        self.key_count += 1
+
         key_hash = self._hash_key(key)
         now = time.time()
-        
+
         # Character inspection for code symbols and error correction
         is_backspace = False
         is_symbol = False
         char_val = None
-        
+
         if key in (keyboard.Key.backspace, keyboard.Key.delete):
-            self.backspace_count += 1
             is_backspace = True
-        elif key in (keyboard.Key.enter, keyboard.Key.tab, keyboard.Key.shift, keyboard.Key.shift_r, 
+        elif key in (keyboard.Key.enter, keyboard.Key.tab, keyboard.Key.shift, keyboard.Key.shift_r,
                      keyboard.Key.ctrl, keyboard.Key.ctrl_r, keyboard.Key.alt, keyboard.Key.cmd):
-            self.special_count += 1
+            pass
         else:
             if hasattr(key, 'char') and key.char:
                 char_val = key.char
                 if char_val in CODE_SYMBOLS:
-                    self.special_count += 1
                     is_symbol = True
+
+        with self._data_lock:
+            self.key_count += 1
+            if is_backspace:
+                self.backspace_count += 1
+            elif is_symbol or key in (
+                keyboard.Key.enter, keyboard.Key.tab, keyboard.Key.shift, keyboard.Key.shift_r,
+                keyboard.Key.ctrl, keyboard.Key.ctrl_r, keyboard.Key.alt, keyboard.Key.cmd
+            ):
+                self.special_count += 1
+
+            # Track inter-keystroke thinking/reading pauses (1.5s to 30.0s)
+            if self.last_release_time is not None:
+                gap = now - self.last_release_time
+                if 1.5 <= gap <= 30.0:
+                    self.pause_durations.append(gap)
+                elif gap < 5.0:
+                    self.flight_times.append(gap)
+                self.last_release_time = None
+
+            if key_hash not in self.active_presses:
+                self.active_presses[key_hash] = now
 
         # Inform MicroSessionTracker
         self.session_tracker.record_key_press(char_val, is_backspace=is_backspace, is_symbol=is_symbol)
-            
-        # Track inter-keystroke thinking/reading pauses (1.5s to 30.0s)
-        if self.last_release_time is not None:
-            gap = now - self.last_release_time
-            if 1.5 <= gap <= 30.0:
-                self.pause_durations.append(gap)
-            elif gap < 5.0:
-                self.flight_times.append(gap)
-            self.last_release_time = None
-        
-        if key_hash not in self.active_presses:
-            self.active_presses[key_hash] = now
 
     def on_release(self, key):
         if not self.running:
             return
-        
+
         key_hash = self._hash_key(key)
         now = time.time()
-        self.last_release_time = now
-        
-        dwell = None
-        if key_hash in self.active_presses:
-            press_time = self.active_presses.pop(key_hash)
-            dwell = now - press_time
-            if dwell <= 2.0:
-                self.dwell_times.append(dwell)
-                self.dwell_sequence.append(round(dwell, 4))
 
-        flight = self.flight_times[-1] if self.flight_times else None
-        if flight is not None and flight <= 5.0:
-            self.flight_sequence.append(round(flight, 4))
+        dwell = None
+        flight = None
+        with self._data_lock:
+            self.last_release_time = now
+            if key_hash in self.active_presses:
+                press_time = self.active_presses.pop(key_hash)
+                dwell = now - press_time
+                if 0.0 <= dwell <= 2.0:
+                    self.dwell_times.append(dwell)
+                    self.dwell_sequence.append(round(dwell, 4))
+
+            flight = self.flight_times[-1] if self.flight_times else None
+            if flight is not None and flight <= 5.0:
+                self.flight_sequence.append(round(flight, 4))
+
         self.session_tracker.record_key_release(dwell, flight)
 
     # --- Mouse Callbacks & Stroke Analysis ---
     def on_move(self, x, y):
         if not self.running:
             return
-            
+
         now = time.time()
-        self.mouse_event_count += 1
+        with self._data_lock:
+            self.mouse_event_count += 1
         self.session_tracker.record_mouse_event("move")
-        
+
         with self.stroke_lock:
             if self.current_stroke and (now - self.current_stroke[-1][2] > self.stroke_idle_threshold):
                 self._process_stroke()
-            
+
             self.current_stroke.append((x, y, now))
 
     def on_click(self, x, y, button, pressed):
         if self.running and pressed:
-            self.mouse_clicks += 1
+            with self._data_lock:
+                self.mouse_clicks += 1
             self.session_tracker.record_mouse_event("click")
 
     def on_scroll(self, x, y, dx, dy):
         if self.running:
             delta = abs(dy) if dy != 0 else 1
-            self.mouse_scrolls += delta
+            with self._data_lock:
+                self.mouse_scrolls += delta
             self.session_tracker.record_mouse_event("scroll", delta=delta)
 
     def _process_stroke(self):
@@ -604,38 +629,78 @@ class TelemetryAgent:
             # Send heartbeat to MicroSessionTracker
             self.session_tracker.heartbeat(app_name, win_title)
             
+            # Snapshot and reset window accumulators atomically under _data_lock
+            now_snap = time.time()
+            with self._data_lock:
+                # Prune held keys older than 10s (e.g. missed keyup on UAC/focus change)
+                stale_keys = [k for k, ts in self.active_presses.items() if now_snap - ts > 10.0]
+                for k in stale_keys:
+                    self.active_presses.pop(k, None)
+
+                dwell_snapshot = list(self.dwell_times)
+                flight_snapshot = list(self.flight_times)
+                key_count_snap = self.key_count
+                backspace_snap = self.backspace_count
+                special_snap = self.special_count
+                pause_snapshot = list(self.pause_durations)
+                d_seq_snapshot = list(self.dwell_sequence)
+                f_seq_snapshot = list(self.flight_sequence)
+
+                vel_snapshot = list(self.velocities)
+                acc_snapshot = list(self.accelerations)
+                jerk_snapshot = list(self.jerks)
+                straight_snapshot = list(self.straightness_scores)
+                mouse_event_snap = self.mouse_event_count
+                mouse_click_snap = self.mouse_clicks
+                mouse_scroll_snap = self.mouse_scrolls
+
+                self.dwell_times = []
+                self.flight_times = []
+                self.key_count = 0
+                self.backspace_count = 0
+                self.special_count = 0
+                self.pause_durations = []
+
+                self.velocities = []
+                self.accelerations = []
+                self.jerks = []
+                self.straightness_scores = []
+                self.mouse_event_count = 0
+                self.mouse_clicks = 0
+                self.mouse_scrolls = 0
+
             # Aggregate Keystroke features
-            avg_dwell = np.mean(self.dwell_times) if self.dwell_times else 0.0
-            std_dwell = np.std(self.dwell_times) if self.dwell_times else 0.0
-            avg_flight = np.mean(self.flight_times) if self.flight_times else 0.0
-            std_flight = np.std(self.flight_times) if self.flight_times else 0.0
-            
+            avg_dwell = np.mean(dwell_snapshot) if dwell_snapshot else 0.0
+            std_dwell = np.std(dwell_snapshot) if dwell_snapshot else 0.0
+            avg_flight = np.mean(flight_snapshot) if flight_snapshot else 0.0
+            std_flight = np.std(flight_snapshot) if flight_snapshot else 0.0
+
             # Aggregate Mouse features
-            avg_vel = np.mean(self.velocities) if self.velocities else 0.0
-            avg_acc = np.mean(self.accelerations) if self.accelerations else 0.0
-            avg_jerk = np.mean(self.jerks) if self.jerks else 0.0
-            avg_straight = np.mean(self.straightness_scores) if self.straightness_scores else 1.0
+            avg_vel = np.mean(vel_snapshot) if vel_snapshot else 0.0
+            avg_acc = np.mean(acc_snapshot) if acc_snapshot else 0.0
+            avg_jerk = np.mean(jerk_snapshot) if jerk_snapshot else 0.0
+            avg_straight = np.mean(straight_snapshot) if straight_snapshot else 1.0
 
             # Calculate Intra-Application Behavioral Ratios
-            total_keys = max(1, self.key_count)
-            backspace_ratio = self.backspace_count / total_keys
-            special_ratio = self.special_count / total_keys
-            pause_ratio = min(1.0, (sum(self.pause_durations) / self.window_size_seconds)) if self.pause_durations else 0.0
-            avg_pause_sec = float(np.mean(self.pause_durations)) if self.pause_durations else 0.0
+            total_keys = max(1, key_count_snap)
+            backspace_ratio = backspace_snap / total_keys
+            special_ratio = special_snap / total_keys
+            pause_ratio = min(1.0, (sum(pause_snapshot) / self.window_size_seconds)) if pause_snapshot else 0.0
+            avg_pause_sec = float(np.mean(pause_snapshot)) if pause_snapshot else 0.0
 
             # Granular Task Classification
             interaction_mode = classify_activity_context(app_name, win_title)
 
             # Update Persistent Per-Application Profiler
-            if avg_dwell > 0.0 or self.key_count > 0:
+            if avg_dwell > 0.0 or key_count_snap > 0:
                 self.profiler.update_profile(
-                    app_name, avg_dwell, avg_flight, backspace_ratio, 
-                    special_ratio, self.mouse_scrolls, pause_ratio
+                    app_name, avg_dwell, avg_flight, backspace_ratio,
+                    special_ratio, mouse_scroll_snap, pause_ratio
                 )
 
             # Build Deep SVDD 30-item sequence arrays
-            d_seq = list(self.dwell_sequence)
-            f_seq = list(self.flight_sequence)
+            d_seq = d_seq_snapshot
+            f_seq = f_seq_snapshot
             pad_d = avg_dwell if avg_dwell > 0 else 0.092
             pad_f = avg_flight if avg_flight > 0 else 0.145
             while len(d_seq) < 30:
@@ -647,7 +712,7 @@ class TelemetryAgent:
             telemetry_row = {
                 "timestamp": time.time(),
                 "hour_of_day": time.localtime().tm_hour,
-                "keystroke_count": self.key_count,
+                "keystroke_count": key_count_snap,
                 "dwell_mean": float(avg_dwell),
                 "dwell_std": float(std_dwell),
                 "flight_mean": float(avg_flight),
@@ -656,13 +721,13 @@ class TelemetryAgent:
                 "app_flight_mean": float(avg_flight),
                 "app_backspace_ratio": float(round(backspace_ratio, 4)),
                 "app_special_ratio": float(round(special_ratio, 4)),
-                "app_click_count": int(self.mouse_clicks),
-                "app_scroll_count": int(self.mouse_scrolls),
+                "app_click_count": int(mouse_click_snap),
+                "app_scroll_count": int(mouse_scroll_snap),
                 "app_pause_ratio": float(round(pause_ratio, 4)),
                 "avg_thinking_pause_sec": float(round(avg_pause_sec, 3)),
                 "interaction_mode": interaction_mode,
                 "micro_session_id": self.session_tracker.session_id,
-                "mouse_events": self.mouse_event_count,
+                "mouse_events": mouse_event_snap,
                 "mouse_velocity_mean": float(avg_vel),
                 "mouse_acceleration_mean": float(avg_acc),
                 "mouse_jerk_mean": float(avg_jerk),
@@ -674,29 +739,13 @@ class TelemetryAgent:
                 "dwell_sequence": d_seq[:30],
                 "flight_sequence": f_seq[:30]
             }
-            
+
             # Merge Passive Environmental Ambient Sensors (TASK-8)
             try:
                 env_snapshot = self.env_sensor.get_environmental_snapshot()
                 telemetry_row.update(env_snapshot)
             except Exception:
                 pass
-            
-            # Reset window logs
-            self.dwell_times = []
-            self.flight_times = []
-            self.key_count = 0
-            self.backspace_count = 0
-            self.special_count = 0
-            self.pause_durations = []
-            
-            self.velocities = []
-            self.accelerations = []
-            self.jerks = []
-            self.straightness_scores = []
-            self.mouse_event_count = 0
-            self.mouse_clicks = 0
-            self.mouse_scrolls = 0
 
             json_str = json.dumps(telemetry_row)
             if self.friendly:

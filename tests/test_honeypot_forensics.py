@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 import unittest
 import json
 import time
@@ -11,6 +12,7 @@ if PROJECT_ROOT not in sys.path:
 from PyQt6.QtWidgets import QApplication
 
 from deception.forensic_tracker import ForensicTracker, get_tracker
+from deception.virtual_fs import get_vfs
 from deception.ai_intent_analyzer import IntruderIntentAnalyzer
 from dashboard.pdf_generator import ForensicReportGenerator
 
@@ -22,9 +24,19 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
         cls.app = QApplication.instance()
         if cls.app is None:
             cls.app = QApplication(sys.argv)
+        cls.tmp_dir = tempfile.TemporaryDirectory(prefix="hp_forensics_test_")
+        cls.tracker = get_tracker()
+        cls.tracker.use_temp_storage(cls.tmp_dir.name)
+        cls.vfs = get_vfs()
+        cls.vfs.use_temp_state(os.path.join(cls.tmp_dir.name, "vfs_state.json"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.vfs.restore_state_file()
+        cls.tracker.restore_storage()
+        cls.tmp_dir.cleanup()
 
     def setUp(self):
-        self.tracker = get_tracker()
         self.tracker.reset_session()
 
     def test_01_forensic_tracker_recording(self):
@@ -64,7 +76,7 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
         from deception.honey_desktop import DecoyExplorer
         
         # Test DecoyChrome
-        chrome = DecoyChrome()
+        chrome = DecoyChrome(sandbox_dir=self.tracker.sandbox_dir)
         self.assertIsNotNone(chrome.omnibox)
         chrome.google_search_input.setText("internal database login")
         chrome.execute_google_search()
@@ -76,9 +88,7 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
         print("[OK] DecoyChrome executed and recorded search query.")
         
         # Test DecoyExplorer
-        sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
-        log_dir = os.path.join(PROJECT_ROOT, "data", "forensics")
-        explorer = DecoyExplorer(sandbox_dir, log_dir)
+        explorer = DecoyExplorer(self.tracker.sandbox_dir, self.tracker.log_dir)
         
         # Navigate to a subfolder
         explorer.on_folder_clicked("Behavioral-Drift-Security")
@@ -118,7 +128,7 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
 
     def test_04_pdf_report_generation(self):
         print("\n--- Testing Forensic PDF Report Generator ---")
-        gen = ForensicReportGenerator()
+        gen = ForensicReportGenerator(output_dir=self.tracker.log_dir)
         pdf_path = gen.generate_report()
         
         self.assertTrue(os.path.exists(pdf_path))
@@ -134,10 +144,8 @@ class TestHoneypotForensicsPipeline(unittest.TestCase):
     def test_05_nested_folder_navigation_telemetry(self):
         print("\n--- Testing Nested Folder Navigation & Telemetry Reliability ---")
         from deception.decoy_explorer import DecoyExplorer
-        sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
-        log_dir = os.path.join(PROJECT_ROOT, "data", "forensics")
 
-        explorer = DecoyExplorer(sandbox_dir, log_dir)
+        explorer = DecoyExplorer(self.tracker.sandbox_dir, self.tracker.log_dir)
         initial_count = len(self.tracker.get_timeline())
 
         # 1. Navigate through nested virtual directories

@@ -18,6 +18,12 @@ def capture_intruder(output_dir=None):
     elif not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
 
+    # Explicit Workstation Privacy & Authorization Consent Policy
+    policy_flag = os.environ.get("ENABLE_WEBCAM_CAPTURE", os.environ.get("ENABLE_WEBCAM", "1")).strip().lower()
+    if policy_flag in ("0", "false", "no", "disable", "disabled"):
+        print("[WEBCAM] Optical capture idle: Workstation privacy/consent policy has optical recording disabled.", flush=True)
+        return None
+
     print("[WEBCAM] Triggering silent intruder capture...", flush=True)
     os.makedirs(output_dir, exist_ok=True)
     

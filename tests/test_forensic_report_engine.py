@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import hashlib
+import tempfile
 import unittest
 from typing import List, Dict, Any
 
@@ -55,9 +56,14 @@ class TestForensicReportEngine(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.test_out_dir = os.path.join(PROJECT_ROOT, "data", "test_report_artifacts")
+        cls.tmp_dir = tempfile.TemporaryDirectory(prefix="forensic_pdf_test_")
+        cls.test_out_dir = os.path.join(cls.tmp_dir.name, "test_report_artifacts")
         os.makedirs(cls.test_out_dir, exist_ok=True)
         cls.generator = ForensicReportGenerator(output_dir=cls.test_out_dir)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp_dir.cleanup()
 
     def test_01_all_12_sections_present_in_generated_report(self):
         """Verifies that all 12 DFIR sections exist in the compiled PDF report."""

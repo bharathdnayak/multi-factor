@@ -105,6 +105,7 @@ class PortabilityValidator:
             ("psutil", "psutil", "Process context, CPU and RAM telemetry extraction"),
             ("fastapi", "FastAPI", "Cyber-Ops Web Dashboard REST API"),
             ("uvicorn", "Uvicorn", "ASGI web server daemon"),
+            ("websockets", "WebSockets", "Real-time WebSocket protocol transport for Uvicorn"),
             ("fpdf", "fpdf2", "FIPS 180-4 compliant 12-section DFIR PDF generator"),
             ("cv2", "OpenCV", "Optical sensor Haar-cascade presence detection"),
             ("PIL", "Pillow", "Image evidence rendering and thumbnail synthesis"),

@@ -17,6 +17,7 @@ env/
 # Machine Secrets and Active Transient Keys
 security/config.json
 models/.active_otp
+models/.session_reset
 
 # Local environment file (copy from .env.example)
 .env
@@ -68,7 +69,8 @@ data/*
 # Whitelist baseline telemetry log
 !telemetry_data.jsonl
 
-# Whitelist model checkpoints & metadata (excluding temporary OTP)
+# Whitelist model checkpoints & metadata (excluding temporary OTP/IPC state)
 !models/
 !models/**
 models/.active_otp
+models/.session_reset

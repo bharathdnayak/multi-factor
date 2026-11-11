@@ -1,23 +1,23 @@
 {
   "chrome.exe": {
-    "observations": 9,
-    "avg_dwell": 0.2064,
-    "avg_flight": 0.1112,
-    "avg_backspace_ratio": 0.0556,
-    "avg_special_ratio": 0.1818,
-    "avg_scroll_count": 5.3,
-    "avg_pause_ratio": 0.4267,
-    "last_updated": "2026-09-25 20:32:40"
+    "observations": 15,
+    "avg_dwell": 0.2019,
+    "avg_flight": 0.1146,
+    "avg_backspace_ratio": 0.0334,
+    "avg_special_ratio": 0.3591,
+    "avg_scroll_count": 3.9,
+    "avg_pause_ratio": 0.4534,
+    "last_updated": "2026-10-15 22:00:27"
   },
   "WindowsTerminal.exe": {
-    "observations": 12,
-    "avg_dwell": 0.1689,
-    "avg_flight": 0.2029,
-    "avg_backspace_ratio": 0.0192,
-    "avg_special_ratio": 0.2196,
+    "observations": 19,
+    "avg_dwell": 0.182,
+    "avg_flight": 0.1638,
+    "avg_backspace_ratio": 0.012,
+    "avg_special_ratio": 0.4303,
     "avg_scroll_count": 0.4,
-    "avg_pause_ratio": 0.3771,
-    "last_updated": "2026-09-25 20:32:50"
+    "avg_pause_ratio": 0.4828,
+    "last_updated": "2026-10-16 14:04:00"
   },
   "Antigravity.exe": {
     "observations": 15,
@@ -40,14 +40,14 @@
     "last_updated": "2026-09-25 20:02:26"
   },
   "explorer.exe": {
-    "observations": 7,
-    "avg_dwell": 0.2752,
-    "avg_flight": 0.3652,
+    "observations": 13,
+    "avg_dwell": 0.2542,
+    "avg_flight": 0.3726,
     "avg_backspace_ratio": 0.0,
-    "avg_special_ratio": 0.3741,
-    "avg_scroll_count": 2.0,
-    "avg_pause_ratio": 0.3803,
-    "last_updated": "2026-09-25 20:31:00"
+    "avg_special_ratio": 0.5271,
+    "avg_scroll_count": 1.1,
+    "avg_pause_ratio": 0.4091,
+    "last_updated": "2026-10-16 14:17:14"
   },
   "brave.exe": {
     "observations": 141,
@@ -60,13 +60,23 @@
     "last_updated": "2026-09-25 20:25:15"
   },
   "msedge.exe": {
-    "observations": 5,
-    "avg_dwell": 0.0975,
-    "avg_flight": 0.1656,
+    "observations": 10,
+    "avg_dwell": 0.1088,
+    "avg_flight": 0.239,
     "avg_backspace_ratio": 0.0,
-    "avg_special_ratio": 0.0053,
-    "avg_scroll_count": 36.4,
-    "avg_pause_ratio": 0.4,
-    "last_updated": "2026-09-25 20:22:44"
+    "avg_special_ratio": 0.1026,
+    "avg_scroll_count": 19.1,
+    "avg_pause_ratio": 0.3847,
+    "last_updated": "2026-10-16 13:21:05"
+  },
+  "python.exe": {
+    "observations": 25,
+    "avg_dwell": 0.1032,
+    "avg_flight": 0.3842,
+    "avg_backspace_ratio": 0.199,
+    "avg_special_ratio": 0.2106,
+    "avg_scroll_count": 0.0,
+    "avg_pause_ratio": 0.6293,
+    "last_updated": "2026-10-16 14:20:07"
   }
 }

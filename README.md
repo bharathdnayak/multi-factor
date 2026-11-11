@@ -69,6 +69,7 @@ Once setup is complete, choose any launcher according to your task:
 
 | Launcher | Mode | Description | Endpoint / Output |
 | :--- | :--- | :--- | :--- |
+| **[`VIVA_START.bat`](VIVA_START.bat)** | **Master Coordinated Viva Launcher (Recommended)** | Runs pre-flight diagnostics, prevents duplicate instances, coordinates the Unified Supervisor + Web SOC terminal with HTTP readiness polling, and launches the 5-stage Interactive Viva Runner. | Supervisor Window + Viva Terminal + Web Console (`http://localhost:8000`) |
 | **[`start_system.bat`](start_system.bat)**<br>*(or `bat/run_security_system.bat`)* | **Production Security Daemon** | Launches Unified Process Supervisor, background telemetry sensor, continuous threat evaluator, system tray shield icon, and SOC Dashboard. | Web Console:<br>[`http://localhost:8000`](http://localhost:8000) |
 | **[`run_viva_demo.bat`](run_viva_demo.bat)**<br>*(or `bat/run_viva_demo.bat`)* | **5-Stage Live Viva Defense Runner** | Presentation runner designed for viva evaluation panels: walks through baseline auth, walk-away drift, autonomous defense, honeypot diversion, and executive AI forensic PDF generation. | Interactive Terminal + Auto-Launched PDF |
 | **[`bat/simulate_unauthorized_attack.bat`](bat/simulate_unauthorized_attack.bat)** | **Attacker Simulation** | Injects acute imposter typing anomalies, triggers webcam snapshot, dispatches OTP, and deploys screen lockdown. | Terminal + System Forensics |
@@ -137,12 +138,12 @@ All configuration files use secure template separation:
 | `security/config.json` | [`security/config.json.example`](security/config.json.example) | Yes (`.gitignore`) | Emergency credentials, Gmail SMTP, and Twilio alert configurations. |
 | `models/.active_otp` | N/A (Generated at runtime) | Yes (`.gitignore`) | Ephemeral 6-digit session OTP generated during active lockouts. |
 
-### Emergency Recovery Passwords:
-- **Master Bypass Password:** `admin` (or `admin123` / `123456`)  
-  Can be entered into the Verification Lock Screen or Honeypot Recovery Dialog to instantly restore normal workstation access.
+### Emergency Recovery Credentials:
+- **Session OTP:** Cryptographic 6-digit OTP generated per breach (`models/.active_otp`, TTL 300s) and dispatched via configured Email / Telegram channels. Trivial default passwords (`admin`, `123456`, etc.) are strictly blocked.
+- **Emergency Recovery Key (Optional):** Set `EMERGENCY_RECOVERY_KEY` (at least 8 non-trivial characters) in `.env` or `security/config.json` as an offline fallback recovery key.
 - **Emergency Recovery Hotkey:** `Ctrl + Alt + Shift + U`  
   Spawns the identity verification recovery dialog from within the fullscreen honeypot desktop.
-- **Emergency Honeypot Exit:** Press `Escape` twice rapidly (within 1.5s) to exit the honeypot window.
+- **Development-Only Demo Escape:** Rapid `Escape` exit in the honeypot desktop is disabled by default; set `ALLOW_DEMO_ESCAPE=1` only during local UI debugging.
 
 ---
 
@@ -160,7 +161,7 @@ python tests/verify_models.py
 # 3. Comprehensive End-to-End Subsystems Verification (14 Systems)
 python scripts/verify_all_components.py
 
-# 4. Full Unit Test Discovery Suite (79 Automated Tests)
+# 4. Full Unit Test Discovery Suite (110+ Automated Tests)
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
@@ -254,7 +255,7 @@ Behavioral-Drift-Security/
 | **`Port 8000 is currently in use`** | Another application or previous supervisor instance is running on port 8000. | Change `PORT=8080` in `.env`, or terminate the orphaned process via Task Manager (`python.exe` / `uvicorn`). |
 | **Webcam returns black frame or warning** | Camera is in use by another app (e.g. Teams, Zoom) or camera index is `1`. | Close competing video apps, or set `WEBCAM_DEVICE_INDEX=1` in `.env`. System continues safely even if camera is offline. |
 | **Ollama times out during viva report** | Model is running on CPU and took longer than default timeout. | Set `OLLAMA_TIMEOUT=90` in `.env` or switch to the faster `OLLAMA_MODEL=qwen2.5:3b`. |
-| **Lock screen appears and cannot unlock** | Imposter simulation triggered lockout. | Enter master bypass password: `admin` in the PIN box, or press `Ctrl + Alt + Shift + U` for owner recovery. |
+| **Lock screen appears and cannot unlock** | Imposter simulation triggered lockout. | Enter the active 6-digit Session OTP (see `models/.active_otp` or alert email) or your configured `EMERGENCY_RECOVERY_KEY`, or press `Ctrl + Alt + Shift + U` from inside the honeypot. |
 | **`docker build` fails on Linux** | Platform-specific dependency without environment marker. | Handled automatically: `requirements.txt` specifies `pywin32>=306; sys_platform == 'win32'`. |
 
 ---

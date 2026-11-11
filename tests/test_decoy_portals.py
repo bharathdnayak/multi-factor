@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 import unittest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,9 +20,14 @@ class TestDecoyWebPortals(unittest.TestCase):
             cls.app = QApplication(sys.argv)
 
     def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory(prefix="decoy_portals_test_")
         self.tracker = get_tracker()
-        self.tracker.reset_session()
-        self.chrome = DecoyChrome()
+        self.tracker.use_temp_storage(self.tmp_dir.name)
+        self.chrome = DecoyChrome(sandbox_dir=self.tracker.sandbox_dir)
+
+    def tearDown(self):
+        self.tracker.restore_storage()
+        self.tmp_dir.cleanup()
 
     def test_01_corporate_netbanking_portal_trap(self):
         print("\n--- Testing Decoy Corporate NetBanking Credential Trap ---")

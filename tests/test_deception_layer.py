@@ -1,12 +1,17 @@
 import sys
 import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 # Append project root
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_dir)
 
 from PyQt6.QtWidgets import QApplication
+from deception.forensic_tracker import get_tracker
+from deception.virtual_fs import get_vfs
+
 
 class TestDeceptionUI(unittest.TestCase):
     @classmethod
@@ -15,6 +20,24 @@ class TestDeceptionUI(unittest.TestCase):
         cls.app = QApplication.instance()
         if cls.app is None:
             cls.app = QApplication(sys.argv)
+        cls.tmp_dir = tempfile.TemporaryDirectory(prefix="deception_ui_test_")
+        cls.tracker = get_tracker()
+        cls.tracker.use_temp_storage(cls.tmp_dir.name)
+        cls.vfs = get_vfs()
+        cls.vfs.use_temp_state(os.path.join(cls.tmp_dir.name, "vfs_state.json"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.vfs.restore_state_file()
+        cls.tracker.restore_storage()
+        for fname in (".active_otp", ".session_reset"):
+            p = os.path.join(project_dir, "models", fname)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        cls.tmp_dir.cleanup()
             
     def test_lock_screen_initialization(self):
         print("\n--- Testing PyQt6 Lock Screen Initialization ---")
@@ -37,7 +60,9 @@ class TestDeceptionUI(unittest.TestCase):
         evaluator.is_breached = True
         evaluator.active_otp = "999999"
         evaluator._save_active_otp("999999")
-        self.assertTrue(evaluator.verify_otp_and_reset("999999"))
+        with patch("ml_engine.train.adapt_to_verified_drift"), \
+             patch.object(evaluator.controller, "learn_from_session"):
+            self.assertTrue(evaluator.verify_otp_and_reset("999999"))
         print("[OK] VerificationLockScreen widget and bypass logic verified successfully.")
 
     def test_honey_desktop_initialization(self):

@@ -8,6 +8,11 @@
         "sender_password": "your_smtp_app_password",
         "recipient_email": "owner_email@gmail.com"
     },
+    "telegram": {
+        "enabled": false,
+        "bot_token": "your_telegram_bot_token",
+        "chat_id": "your_telegram_chat_id"
+    },
     "twilio": {
         "enabled": false,
         "account_sid": "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",

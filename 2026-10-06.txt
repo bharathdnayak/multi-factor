@@ -1,7 +1,7 @@
 ================================================================================
 BEHAVIORAL DRIFT CONTINUOUS AUTHENTICATION - MASTER PROJECT TASK CATALOG
 Created / Updated: 2026-10-06
-Workspace: C:\Users\Dell\Desktop\clg\major project\Behavioral-Drift-Security
+Workspace: <repository-root>/Behavioral-Drift-Security
 Department: Information Science & Engineering (ISE) | Team 30
 Active GitHub Remote: https://github.com/bharathdnayak/multi-factor.git
 Upstream Backup Remote: https://github.com/anushshettyyy/multi-factor-majorproject.git

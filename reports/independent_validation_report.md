@@ -28,11 +28,11 @@ A comprehensive technical audit, statistical verification, and security analysis
    - **Validation-Selected Thresholds:** Tuning thresholds on validation data to force $\text{FAR}_{\text{val}} \le 5.0\%$ drops held-out Test FAR to $0.00\% - 2.00\%$, but causes single-window Test FRR to surge to **$44.29\% - 95.71\%$**. This empirically proves that single-window isolated thresholding is unsuitable for standalone operational gating.
 
 2. **Resolution via Continuous Streaming Multi-Scale Smoothing:**
-   - In production runtime, decisions are not made on isolated 5-second frames. [`ThreatEvaluator`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/telemetry/evaluator.py) applies dual-tier temporal smoothing: a 30-second moving-average sliding queue (`maxlen=3`), dynamic modality weight adaptation, and 120-second alert cooldown hysteresis.
+   - In production runtime, decisions are not made on isolated 5-second frames. [`ThreatEvaluator`](../telemetry/evaluator.py) applies dual-tier temporal smoothing: a 30-second moving-average sliding queue (`maxlen=3`), dynamic modality weight adaptation, and 120-second alert cooldown hysteresis.
    - Across continuous streaming of all 12 segmented genuine sessions ($N=370$ contiguous windows $\approx$ 30.83 minutes), the observed false lockout count is **exactly 0 (0.00 lockouts/hour)**, with a peak smoothed risk of $0.5122 < 0.5500$.
    - Simultaneously, across 7 held-out impostor sessions ($N=200$ windows), the engine achieves **100.0% detection (7/7)** with a **median detection latency of 5.0 seconds** and mean latency of **7.9 seconds**.
 
-3. **Telemetry Dataset Provenance Audit ([`data/sessions/session_history.jsonl`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/data/sessions/session_history.jsonl)):**
+3. **Telemetry Dataset Provenance Audit ([`data/sessions/session_history.jsonl`](../data/sessions/session_history.jsonl)):**
    - The repository's longitudinal dataset spans **616 sessions** totaling **91,209.5 seconds (25.34 hours)**.
    - **Synthetic Background Sessions (`sess_gen_*`):** 500 sessions totaling **86,222.6s (23.95 hours / 94.5%)**, generated across 7 dates (2026-09-18 to 2026-09-24) to establish application baseline distributions and background noise models.
    - **Genuinely Recorded Hardware Sessions (`sess_20260925_*`, `sess_20261006_*`):** 116 sessions totaling **4,986.9s (1.39 hours / 83.1 minutes / 5.5%)**, recorded from physical workstation hardware across **2 distinct calendar dates** (2026-09-25: 103 sessions, 4,395.2s; 2026-10-06: 13 sessions, 591.7s) separated by an 11-day interval.
@@ -106,7 +106,7 @@ To assess whether a candidate can achieve $\text{FAR} \le 5.0\%$ via strict thre
 
 ### 2.4 Deployed Runtime Configuration & Rollback Mechanisms
 
-During normal startup, [`ThreatEvaluator`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/telemetry/evaluator.py) is instantiated with:
+During normal startup, [`ThreatEvaluator`](../telemetry/evaluator.py) is instantiated with:
 - **Active Engine:** `dynamic_fusion=True` (Dynamic Modality-Aware Fusion).
 - **Decision Threshold:** $\theta = 0.5500$.
 - **Temporal Filter:** 30-second multi-scale moving-average sliding queue (`maxlen=3`).
@@ -116,7 +116,7 @@ During normal startup, [`ThreatEvaluator`](file:///c:/Users/Dell/Desktop/clg/maj
 #### Operational Justification for Dynamic Fusion at Runtime:
 In a live operating system, user input is inherently bursty. During web browsing or code reading, the user may generate hundreds of mouse kinematics events over several minutes with zero keystrokes. Static weighting penalizes the missing keystroke modality or requires arbitrary imputation. Dynamic Modality-Aware Fusion detects the active modality, safely re-weights active channels (e.g., 60% mouse kinematics, 25% window context, 15% BLE proximity), and prevents false alarms.
 
-#### Verified Rollback Options ([`tests/test_model_packaging_and_rollback.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/tests/test_model_packaging_and_rollback.py)):
+#### Verified Rollback Options ([`tests/test_model_packaging_and_rollback.py`](../tests/test_model_packaging_and_rollback.py)):
 - **Rollback Option 1 (Static Calibrated 5-Factor):** Setting `dynamic_fusion=False` restores static 5-factor calibrated fusion.
 - **Rollback Option 2 (Legacy 4-Factor Baseline):** Setting `legacy_mode=True` restores the exact original 4-factor configuration (0.35 keystroke, 0.35 app, 0.15 cognitive, 0.15 BLE) without mouse kinematics.
 - **Physical Model Artifacts Preserved:**
@@ -143,7 +143,7 @@ At $\text{FRR} = 1.43\%$, this formula predicted $10.3\text{ lockouts/hour}$. At
 
 ### 3.2 Continuous Streaming Evaluation Across Genuine Owner Sessions ($N=370$ Windows)
 
-Streaming evaluation was executed across all 12 segmented genuine owner sessions ($N=370$ contiguous windows = 1,850 seconds $\approx$ 30.83 minutes) in [`scripts/evaluate_genuine_user_sessions.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/scripts/evaluate_genuine_user_sessions.py):
+Streaming evaluation was executed across all 12 segmented genuine owner sessions ($N=370$ contiguous windows = 1,850 seconds $\approx$ 30.83 minutes) in [`scripts/evaluate_genuine_user_sessions.py`](../scripts/evaluate_genuine_user_sessions.py):
 
 | Task Condition | Motor Style | Windows | Duration | Mean Instant Risk | Mean Smoothed Risk | Peak Smoothed Risk | False Alerts | Real Lockout Rate |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -167,7 +167,7 @@ Under continuous streaming, **zero false lockouts occurred (0.00 / hour)**. Peak
 
 ## 4. Telemetry Dataset Provenance & Missing Modality Stress Tests
 
-### 4.1 Provenance Breakdown: 25.34 Hours in [`data/sessions/session_history.jsonl`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/data/sessions/session_history.jsonl)
+### 4.1 Provenance Breakdown: 25.34 Hours in [`data/sessions/session_history.jsonl`](../data/sessions/session_history.jsonl)
 
 A rigorous audit of the longitudinal telemetry storage revealed the following exact composition:
 
@@ -199,7 +199,7 @@ Total Records: 616 micro-sessions | Total Monitored Time: 91,209.5s (25.34 hours
 
 ### 4.2 Sensor Dropout & Missing Modality Stress Tests
 
-Evaluated using [`scripts/evaluate_smoothing_and_adaptation.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/scripts/evaluate_smoothing_and_adaptation.py):
+Evaluated using [`scripts/evaluate_smoothing_and_adaptation.py`](../scripts/evaluate_smoothing_and_adaptation.py):
 1. **Zero-Keystroke Technical Reading ($N=65$ windows):**
    - Mean Smoothed Risk: **0.3331**, Peak Smoothed Risk: **0.5122** ($< 0.5500$).
    - False Lockouts: **0 of 65**.
@@ -257,9 +257,9 @@ Evaluating 7 held-out impostor test sessions ($N=200$ windows) from multiple hum
 ```
 
 ### Verification Evidence:
-- **Deterministic Unit Tests ([`tests/test_otp_and_recovery.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/tests/test_otp_and_recovery.py)):**
+- **Deterministic Unit Tests ([`tests/test_otp_and_recovery.py`](../tests/test_otp_and_recovery.py)):**
   - All 8 unit tests passed: Breach generation, invalid code rejection, trivial blacklist rejection, expired token rejection, fresh OTP acceptance, missing config safety, emergency recovery key acceptance, and Risk Orchestrator step-up challenge handling.
-- **Packaging & Rollback Tests ([`tests/test_model_packaging_and_rollback.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/tests/test_model_packaging_and_rollback.py)):**
+- **Packaging & Rollback Tests ([`tests/test_model_packaging_and_rollback.py`](../tests/test_model_packaging_and_rollback.py)):**
   - Confirmed legacy 4-factor rollback and 5-factor static rollback work seamlessly.
 - **Model Adaptation Retraining Safety:**
   - Online retraining via `adapt_to_verified_drift()` is strictly gated behind authenticated recovery; no online retraining occurs on unverified activity.
@@ -268,7 +268,7 @@ Evaluating 7 held-out impostor test sessions ($N=200$ windows) from multiple hum
 
 ## 7. End-to-End DFIR Workflow & Runtime Test Evidence
 
-Executed the full security incident lifecycle in [`scripts/test_end_to_end_forensic_flow.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/scripts/test_end_to_end_forensic_flow.py) and verified across the entire test suite:
+Executed the full security incident lifecycle in [`scripts/test_end_to_end_forensic_flow.py`](../scripts/test_end_to_end_forensic_flow.py) and verified across the entire test suite:
 
 ### Incident Lifecycle Execution:
 1. **Telemetry Ingestion:** Real-time stream scored through `ThreatEvaluator`.
@@ -276,7 +276,7 @@ Executed the full security incident lifecycle in [`scripts/test_end_to_end_foren
 3. **Deception Sandboxing:** Adversary diverted into `HoneyShell` and `DecoyChrome`. Trapped banking credentials (`corp_finance_lead`), canary tokens (`AKIA5HONEYPOT7X92Q0`), and copied environment secrets.
 4. **Offline AI Threat Reasoning:** Local Ollama engine synthesized attacker goals into MITRE ATT&CK tactics (`T1552.001`, `T1082`, `T1059.001`, `T1485`).
 5. **Digitally Sealed PDF Report:** Generated publication-grade forensic document:
-   - Output: [`data/forensics/Forensic_Report_20261011_150229.pdf`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/data/forensics/Forensic_Report_20261011_150229.pdf) (149,293 bytes).
+   - Output: [`data/forensics/Forensic_Report_20261011_150229.pdf`](../data/forensics/Forensic_Report_20261011_150229.pdf) (149,293 bytes).
    - Digital SHA-256 Seal: `8e64eface6b2fa0c77ec71ab69991decb4c55260d118520863bddbd3cf573468`.
 
 ### Full Test Suite Execution:
@@ -293,5 +293,5 @@ Executed the full security incident lifecycle in [`scripts/test_end_to_end_foren
 ### Commercial Enterprise Fleet Deployment: **CONDITIONAL / EXTENDED PILOT REQUIRED**
 - **Documented Enterprise Roadmap:**
   1. **Enrollment Wizard & Multi-Device Normalization:** Implement an automated onboarding tool to record 30 minutes of telemetry across distinct keyboards (laptop scissor vs. external mechanical switches) and pointing devices (trackpad vs. high-DPI optical mouse).
-  2. **Multi-User Pilot Cohort:** Expand baseline collection using [`scripts/harvest_real_telemetry.py`](file:///c:/Users/Dell/Desktop/clg/major%20project/Behavioral-Drift-Security/scripts/harvest_real_telemetry.py) across 15+ diverse operators over a 30-day window.
+  2. **Multi-User Pilot Cohort:** Expand baseline collection using [`scripts/harvest_real_telemetry.py`](../scripts/harvest_real_telemetry.py) across 15+ diverse operators over a 30-day window.
   3. **Enterprise Identity Integration:** Replace local recovery keys with corporate IdP integrations (Duo, Okta MFA, or FIDO2 hardware tokens) for production step-up authentication.

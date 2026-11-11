@@ -145,7 +145,7 @@ class VerificationLockScreen(QWidget):
         layout.addWidget(title)
         
         sub = QLabel("Desktop interactions do not match the registered owner's baseline patterns.\n"
-                     "Enter the 6-digit OTP code dispatched to owner (or Master Bypass: admin)")
+                     "Enter the 6-digit OTP code dispatched to the owner or emergency recovery key.")
         sub.setObjectName("sub_title")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(sub)
@@ -153,7 +153,7 @@ class VerificationLockScreen(QWidget):
         # OTP input field
         self.otp_input = QLineEdit()
         self.otp_input.setMaxLength(32)
-        self.otp_input.setPlaceholderText("Enter OTP or Bypass Password")
+        self.otp_input.setPlaceholderText("Enter 6-digit OTP or Recovery Key")
         self.otp_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.otp_input.returnPressed.connect(self.check_otp)
         layout.addWidget(self.otp_input)
@@ -167,11 +167,13 @@ class VerificationLockScreen(QWidget):
         self.verify_btn.setObjectName("verify_btn")
         self.verify_btn.clicked.connect(self.check_otp)
         btn_layout.addWidget(self.verify_btn)
-        
-        self.bypass_btn = QPushButton("Bypass Prompt")
-        self.bypass_btn.setObjectName("bypass_btn")
-        self.bypass_btn.clicked.connect(self.trigger_deception)
-        btn_layout.addWidget(self.bypass_btn)
+
+        # Unauthenticated demo shortcut is disabled by default in production.
+        if os.environ.get("ALLOW_DEMO_ESCAPE") == "1":
+            self.bypass_btn = QPushButton("Simulate Intruder Bypass")
+            self.bypass_btn.setObjectName("bypass_btn")
+            self.bypass_btn.clicked.connect(self.trigger_deception)
+            btn_layout.addWidget(self.bypass_btn)
         
         layout.addLayout(btn_layout)
         
@@ -218,7 +220,7 @@ class VerificationLockScreen(QWidget):
         self.close()
         from deception.honey_desktop import HoneypotDesktop
         global _active_honeypot_instance
-        _active_honeypot_instance = HoneypotDesktop()
+        _active_honeypot_instance = HoneypotDesktop(evaluator=self.evaluator)
         _active_honeypot_instance.showFullScreen()
 
     def keyPressEvent(self, event):

@@ -146,6 +146,7 @@ class VivaDemoRunner:
         self.tracker = get_tracker()
         self.ai_analyzer = IntruderIntentAnalyzer()
         self.pdf_generator = ForensicReportGenerator()
+        self.sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
         print(f"{Colors.GREEN}[INIT] All security subsystems initialized successfully.{Colors.RESET}\n")
 
     def prompt_user(self, stage_num: int, stage_name: str) -> str:
@@ -455,7 +456,10 @@ class VivaDemoRunner:
                 except Exception:
                     pass
         if not self.generated_otp:
-            self.generated_otp = "831187"
+            from security.otp_service import generate_otp
+            self.generated_otp = generate_otp()
+            self.evaluator.active_otp = self.generated_otp
+            self.evaluator._save_active_otp(self.generated_otp, is_breach=True)
 
         # Check for latest webcam snapshot in data/forensics
         forensics_dir = os.path.join(PROJECT_ROOT, "data", "forensics")
@@ -485,8 +489,8 @@ class VivaDemoRunner:
         # If UI mode requested and not headless, optionally display the lock screen
         if self.show_ui and not os.environ.get("HEADLESS_TEST"):
             print(f"{Colors.CYAN}[UI NOTE] In live viva mode, the Verification Lock Screen appears on screen.")
-            print(f"          The presenter can enter '{self.generated_otp}' to unlock or click 'Bypass Prompt'")
-            print(f"          to demonstrate the Deception Honeypot trap!{Colors.RESET}\n")
+            print(f"          The presenter can enter '{self.generated_otp}' to unlock or enter 3 wrong codes")
+            print(f"          to trigger automatic Deception Honeypot diversion!{Colors.RESET}\n")
 
         res = {
             "success": True,
@@ -530,7 +534,7 @@ class VivaDemoRunner:
         print(f"  [OK] Trapped 5 active network reconnaissance commands via HoneyShell emulation")
 
         print(f"\n{Colors.BOLD}[TRAP 3] Remote C2 Payload Download Interception:{Colors.RESET}")
-        sandbox_dir = os.path.join(PROJECT_ROOT, "data", "sandbox")
+        sandbox_dir = self.sandbox_dir
         os.makedirs(sandbox_dir, exist_ok=True)
         decoy_payload_path = os.path.join(sandbox_dir, "malicious_c2_dropper.exe")
         with open(decoy_payload_path, "wb") as f:

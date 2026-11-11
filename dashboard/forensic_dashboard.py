@@ -30,8 +30,9 @@ class ForensicDashboard(QWidget):
     4. Sandboxed file interceptions (zero host damage verification)
     5. Direct button to export the comprehensive Forensic PDF Report.
     """
-    def __init__(self):
+    def __init__(self, quit_app_on_close: bool = False):
         super().__init__()
+        self._quit_app_on_close = quit_app_on_close
         self.forensics_dir = os.path.join(project_dir, "data", "forensics")
         self.sandbox_dir = os.path.join(project_dir, "data", "sandbox")
         self.log_path = os.path.join(self.forensics_dir, "honeypot_commands.log")
@@ -355,13 +356,22 @@ class ForensicDashboard(QWidget):
             QMessageBox.critical(self, "PDF Export Error", f"Failed to generate forensic report: {e}")
 
 
+    def closeEvent(self, event):
+        event.accept()
+        if self._quit_app_on_close:
+            app = QApplication.instance()
+            if app:
+                app.setQuitOnLastWindowClosed(True)
+                app.quit()
+
+
 def launch_forensic_dashboard():
     """Starts the Forensic Dashboard PyQt6 event loop."""
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
         
-    dash = ForensicDashboard()
+    dash = ForensicDashboard(quit_app_on_close=True)
     dash.show()
     
     app.exec()

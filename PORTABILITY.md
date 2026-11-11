@@ -180,10 +180,10 @@ You can independently verify that your laptop's environment is 100% operational:
 
 | Verification Target | Command | Expected Output |
 | :--- | :--- | :--- |
-| **Portability Pre-Flight** | `python scripts\validate_portability.py` | `37 PASSED \| 0 WARNINGS \| 0 FAILED` |
+| **Portability Pre-Flight** | `python scripts\validate_portability.py` | `0 FAILED` (all core checks passed; optional Ollama/camera warn if absent) |
 | **Clean-Clone Simulation** | `python scripts\test_clean_checkout_simulation.py` | `CLEAN-CHECKOUT PORTABILITY TEST COMPLETED 100% SUCCESSFULLY!` |
 | **Forensic PDF Engine** | `python -m unittest tests\test_forensic_report_engine.py` | `Ran 8 tests ... OK` |
-| **Full Regression Suite** | `python -m unittest discover tests -v` | `Ran 95 tests ... OK` |
+| **Full Regression Suite** | `python -m unittest discover -s tests -p "test_*.py" -v` | All unit & regression tests `OK` |
 
 ---
 
@@ -195,11 +195,11 @@ You can independently verify that your laptop's environment is 100% operational:
 
 ### Issue 2: Port 8000 Already in Use
 *Error:* `[ERROR] Port 8000 is occupied by another process.`  
-*Fix:* Open `.env` and change `PORT=8000` to `PORT=8080` or `PORT=8500`.
+*Fix:* Open `.env` and change `PORT=8000` to `PORT=8080` (or pass `--port 8080` to `run_system.py` / `VIVA_START.bat`).
 
 ### Issue 3: Recovery Code Rejected
 *Notice:* Trivial passwords like `admin`, `123456`, or `password` are intentionally blocked by the anti-bypass security policy.  
-*Fix:* Use the cryptographic 6-digit session OTP generated during breach, or configure a non-trivial key in `.env` (`MASTER_BYPASS_PASSWORD=YourSecureKey2026!`).
+*Fix:* Use the cryptographic 6-digit session OTP generated during breach, or configure a non-trivial key in `.env` (`EMERGENCY_RECOVERY_KEY=YourSecureKey2026!`).
 
 ---
 

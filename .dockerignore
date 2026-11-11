@@ -27,6 +27,7 @@ __pycache__/
 !.env.example
 security/config.json
 models/.active_otp
+models/.session_reset
 
 # Host transient logs, captures, and sandboxed test files
 data/logs/*
