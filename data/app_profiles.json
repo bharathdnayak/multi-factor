@@ -10,14 +10,14 @@
     "last_updated": "2026-10-15 22:00:27"
   },
   "WindowsTerminal.exe": {
-    "observations": 19,
-    "avg_dwell": 0.182,
-    "avg_flight": 0.1638,
-    "avg_backspace_ratio": 0.012,
-    "avg_special_ratio": 0.4303,
+    "observations": 20,
+    "avg_dwell": 0.1781,
+    "avg_flight": 0.1556,
+    "avg_backspace_ratio": 0.0114,
+    "avg_special_ratio": 0.4588,
     "avg_scroll_count": 0.4,
-    "avg_pause_ratio": 0.4828,
-    "last_updated": "2026-10-16 14:04:00"
+    "avg_pause_ratio": 0.4925,
+    "last_updated": "2026-11-14 12:12:31"
   },
   "Antigravity.exe": {
     "observations": 15,

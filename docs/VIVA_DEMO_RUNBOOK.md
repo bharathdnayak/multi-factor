@@ -16,19 +16,19 @@ cd "<path-to>\Behavioral-Drift-Security"
 
 Execute the system doctor to verify environment readiness:
 ```powershell
-.\doctor.bat --no-pause
+.\bat\doctor.bat --no-pause
 ```
 *Expected Output:* `[DOCTOR VERDICT] ALL CHECKS PASSED: System is operational.`
 
 ---
 
-## 2. One-Click Coordinated Startup (`VIVA_START.bat` / `start_system.bat`)
+## 2. One-Click Coordinated Startup (`bat\VIVA_START.bat` / `bat\start_system.bat`)
 
 Launch the coordinated Viva environment (pre-flight diagnostics + dedicated Supervisor/SOC terminal + readiness wait + 5-Stage Viva Runner):
 ```powershell
-.\VIVA_START.bat
+.\bat\VIVA_START.bat
 ```
-*(Or launch only the production supervisor via `.\start_system.bat` or double-click either `.bat` in Windows File Explorer.)*
+*(Or launch only the production supervisor via `.\bat\start_system.bat` or double-click either `.bat` in Windows File Explorer.)*
 
 ### Immediate Observable State:
 1. **Supervisor Console:** Shows 3 background workers running:
@@ -105,15 +105,17 @@ Launch the coordinated Viva environment (pre-flight diagnostics + dedicated Supe
 ---
 
 ### Stage 6: Executive AI Forensic PDF Report & Analyst Workbench
-- **Talking Point:** *"The system automatically compiles all digital evidence into an executive forensic PDF report sealed with a cryptographic SHA-256 tamper-evident digest."*
+- **Talking Point:** *"The system automatically compiles all digital evidence into an executive forensic PDF report featuring dedicated Section 5 File & Directory Impact Analysis and sealed with a cryptographic SHA-256 tamper-evident digest."*
 - **Action:**
   1. On the Web SOC console, click **📄 Download Executive Forensic PDF** (or click **🖥️ Open Forensic Desktop App** to show the PyQt6 Analyst Workbench).
   2. Open the downloaded PDF in your browser or PDF viewer.
 - **Expected Observations in the PDF:**
   - **Cryptographic Seal:** Header displays the SHA-256 digital signature of the report.
   - **Surveillance Evidence:** Embedded high-resolution photo of the intruder.
+  - **Section 5 File Impact Analysis:** Forensically confirmed file deletions table (pre-size, SHA-256 pre-hashes, source app) and unauthorized file modifications with rendered monospaced unified diff blocks (`--- before / +++ after`).
+  - **Section 7 Risk Reconciliation:** Explains the two-stage defense model reconciling host biometric drift trigger (Threshold $\ge 0.55$) with honeypot activity floor.
   - **AI Threat Intelligence:** Persona classification (*"Financial Cybercriminal & Credential Harvester"*) and primary intent analysis.
-  - **MITRE ATT&CK Mapping:** Explicit tactic tags (`T1552.001 - Credentials in Files`, `T1082 - System Information Discovery`, `T1059.001 - Command and Scripting Interpreter`).
+  - **MITRE ATT&CK Mapping:** Explicit tactic tags (`T1485 - Data Destruction`, `T1552.001 - Credentials in Files`, `T1082 - System Information Discovery`, `T1059.001 - Command and Scripting Interpreter`).
   - **Forensic Event Log:** Chronological table of all decoy interactions and trapped credentials.
 
 ---
@@ -124,7 +126,7 @@ If you wish to demonstrate specific subsystems independently without running the
 
 ### Option A: Interactive Viva Demonstration CLI Runner
 ```powershell
-.\run_viva_demo.bat
+.\bat\run_viva_demo.bat
 ```
 *(Provides a guided 5-stage console demonstration with on-screen examiner talking points)*
 

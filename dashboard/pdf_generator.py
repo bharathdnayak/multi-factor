@@ -429,12 +429,18 @@ class ForensicReportGenerator:
         photo_path: Optional[str] = None,
         incident_id: Optional[str] = None,
         save_filename: Optional[str] = None,
-        privacy_mode: bool = False
+        privacy_mode: bool = False,
+        file_changes: Optional[List[Dict[str, Any]]] = None,
+        custom_output_filename: Optional[str] = None,
+        **kwargs
     ) -> str:
         """
         Compiles the complete 12-section digital forensic incident report.
         Returns the absolute filepath of the generated PDF.
         """
+        if save_filename is None and custom_output_filename is not None:
+            save_filename = custom_output_filename
+
         # Resolve ground truth telemetry
         if timeline is None:
             timeline = self.tracker.get_timeline()
@@ -454,6 +460,10 @@ class ForensicReportGenerator:
                 session_id = timeline[0]["session_id"]
             else:
                 session_id = f"SESS_{timestamp_slug}"
+
+        if file_changes is None:
+            file_changes = self.tracker.get_file_changes(session_id=session_id)
+        self._validate_incident_evidence(timeline, stats, ai_report, file_changes)
 
         if save_filename:
             pdf_path = os.path.join(self.output_dir, save_filename)
@@ -487,8 +497,8 @@ class ForensicReportGenerator:
         # SECTION 4: Chronological Incident Timeline
         self._add_section_4_incident_timeline(pdf, timeline)
 
-        # SECTION 5: Themed Investigative Findings
-        self._add_section_5_investigative_findings(pdf, timeline, ai_report)
+        # SECTION 5: File & Directory Impact Analysis & Investigative Findings
+        self._add_section_5_investigative_findings(pdf, timeline, ai_report, file_changes)
 
         # SECTION 6: AI-Assisted Behavioral Reconstruction
         self._add_section_6_ai_behavioral_reconstruction(pdf, ai_report, timeline)
@@ -529,6 +539,23 @@ class ForensicReportGenerator:
     def generate_pdf(self, *args, **kwargs) -> str:
         """Convenience alias for generate_report."""
         return self.generate_report(*args, **kwargs)
+
+    def _validate_incident_evidence(self, timeline: list, stats: dict, ai_report: dict, file_changes: list):
+        """
+        Validates evidence consistency across timeline, metrics, and threat assessment
+        prior to report rendering to eliminate conflicting statements or mismatched KPIs.
+        """
+        # Ensure session consistency
+        sess_id = stats.get("session_id")
+        if timeline and not sess_id:
+            stats["session_id"] = timeline[0].get("session_id", "SESS_DEFAULT")
+
+        # Reconcile app count with indicators
+        indicators = ai_report.setdefault("behavioral_indicators", {})
+        distinct_apps = indicators.get("distinct_applications", [])
+        if not distinct_apps and timeline:
+            raw_apps = list({e.get("application") for e in timeline if e.get("application") and e.get("application") not in ("SYSTEM", "VFS")})
+            indicators["distinct_applications"] = [{"application": a, "event_ids": []} for a in raw_apps]
 
     # -----------------------------------------------------------------------
     # SECTION 1: Report Cover and Incident Identification
@@ -620,13 +647,23 @@ class ForensicReportGenerator:
         threat_score = ai_report.get("threat_score", 0.75)
 
         # 1. Plain-Language Summary Box
+        if total_events <= 1:
+            observed_desc = (
+                f"Within this sandbox, {total_events} initial containment event was recorded. The operator was intercepted "
+                f"and quarantined at the honeypot deception boundary before exploring virtual desktop folders or interacting with applications."
+            )
+        else:
+            observed_desc = (
+                f"Within this sandbox, {total_events} distinct interaction events were recorded. The operator navigated "
+                f"deceptive interfaces, interacting with virtual files, simulated applications, and decoy system assets."
+            )
+
         plain_text = (
             f"What Triggered Detection: On {detection_ts}, the continuous behavioral authentication daemon detected "
             f"an acute anomaly in biometric interaction dynamics (typing flight/dwell rhythm and mouse curvature) "
-            f"exceeding nominal safety baselines. "
+            f"exceeding nominal safety baselines (Threshold >= 0.55). "
             f"\n\nWhat Was Observed: The active user desktop was immediately locked and diverted into an emulated honey-desktop "
-            f"environment. Within this sandbox, {total_events} distinct interaction events were recorded. The operator explored "
-            f"desktop folders, inspected synthetic credential assets, and executed diagnostic discovery commands. "
+            f"environment. {observed_desc} "
             f"\n\nWhat Was Verified: All observed modifications were strictly confined to the virtual filesystem and sandbox quarantine "
             f"(data/sandbox/). Zero host operating system writes were detected within the monitored deception paths. "
             f"\n\nWhat Remains Uncertain: Actor identity, external network orchestration, and intentionality remain analytical inferences. "
@@ -667,14 +704,21 @@ class ForensicReportGenerator:
         card_h = 15.0
 
         indicators = ai_report.get("behavioral_indicators", {})
-        apps = [a.get("application") for a in indicators.get("distinct_applications", []) if a.get("application")]
-        app_str = ", ".join(apps[:3]) if apps else "Explorer, PowerShell"
+        apps = [a.get("application") for a in indicators.get("distinct_applications", []) if a.get("application") and a.get("application") not in ("SYSTEM", "VFS")]
+        if apps:
+            app_str = ", ".join(apps[:3])
+            app_sub = f"{len(apps)} distinct decoy interfaces"
+            app_status = "info"
+        else:
+            app_str = "None (No Decoy Apps)"
+            app_sub = "0 decoy interfaces engaged"
+            app_status = "safe"
 
         cards_data = [
             ("Detection Timestamp", detection_ts, "Biometric drift trigger point", "info"),
             ("Total Recorded Events", f"{total_events} Events", f"Captured in {stats.get('session_duration_seconds', 0)}s window", "info"),
             ("Assessed Threat Level", f"{threat_level} ({threat_score:.2f})", "Deterministic risk evaluation", "critical" if threat_level in ("CRITICAL", "HIGH") else "warning"),
-            ("Simulated Apps Engaged", app_str, f"{len(apps)} distinct decoy interfaces", "info"),
+            ("Simulated Apps Engaged", app_str, app_sub, app_status),
             ("Containment Status", "Contained in Sandbox", "0 host writes in monitored paths", "safe"),
             ("Investigation Status", "Triage Completed", "Awaiting operator review", "info")
         ]
@@ -820,60 +864,176 @@ class ForensicReportGenerator:
         pdf.ln(3.0)
 
     # -----------------------------------------------------------------------
-    # SECTION 5: Themed Investigative Findings
+    # SECTION 5: File & Directory Impact Analysis & Investigative Findings
     # -----------------------------------------------------------------------
-    def _add_section_5_investigative_findings(self, pdf: ForensicPDF, timeline: list, ai_report: dict):
-        pdf.section_header("5. Investigative Findings", subtitle="Categorized Behavioral Evidence with Corroborating Event References", min_space_needed=35)
+    def _add_section_5_investigative_findings(self, pdf: ForensicPDF, timeline: list, ai_report: dict, file_changes: Optional[list] = None):
+        pdf.section_header("5. Investigative Findings: File & Directory Impact Analysis", subtitle="Cryptographic File Lifecycle, Deletion Evidence & Behavioral Observations", min_space_needed=35)
 
-        # Categorize events from timeline
+        if file_changes is None:
+            file_changes = self.tracker.get_file_changes(session_id=pdf.session_id)
+
+        deleted = [c for c in (file_changes or []) if c.get("operation") in ("DELETION", "DELETED") or c.get("change_type") in ("DELETION", "DELETED")]
+        modified = [c for c in (file_changes or []) if c.get("operation") in ("MODIFICATION", "MODIFIED") or c.get("change_type") in ("MODIFICATION", "MODIFIED")]
+        created = [c for c in (file_changes or []) if c.get("operation") in ("CREATION", "CREATED") or c.get("change_type") in ("CREATION", "CREATED")]
+
+        # --- SUBSECTION 5.1: File Deletion Evidence ---
+        if deleted:
+            pdf.subsection_header(f"5.1 Forensically Confirmed File Deletions ({len(deleted)} Items Purged)", min_space_needed=22)
+            col_w = (42, 28, 20, 52, 22, 18)
+            hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_RED_ALERT)
+            row_odd = FontFace(fill_color=ForensicDesignSystem.COLOR_RED_BG)
+            row_even = FontFace(fill_color=(255, 255, 255))
+            
+            pdf.set_font(pdf.doc_font_family, size=6.8)
+            with pdf.table(col_widths=col_w, headings_style=hdr_style, repeat_headings=1, line_height=4.2) as table:
+                h = table.row()
+                h.cell("Virtual Target Path", align='L')
+                h.cell("Filename", align='L')
+                h.cell("Pre-Size", align='C')
+                h.cell("Pre-Deletion SHA-256 Digest", align='C')
+                h.cell("Source App", align='C')
+                h.cell("Recovery", align='C')
+
+                for idx, item in enumerate(deleted):
+                    r = table.row(style=row_odd if idx % 2 else row_even)
+                    vp = item.get("virtual_path", "")
+                    fn = item.get("filename", os.path.basename(vp))
+                    sz = f"{item.get('old_size_bytes', 0)} B"
+                    hsh = item.get("sha256_pre_delete") or "N/A"
+                    app = item.get("source_application", "VFS")
+                    to_rb = item.get("details", {}).get("to_recycle_bin", True)
+                    rec = "Recycle Bin" if to_rb else "Permanent"
+
+                    r.cell(vp, align='L')
+                    r.cell(fn, align='L')
+                    r.cell(sz, align='C')
+                    r.cell(hsh if len(hsh) <= 16 else f"{hsh[:12]}...{hsh[-8:]}", align='C')
+                    r.cell(app, align='C')
+                    r.cell(rec, align='C')
+            pdf.ln(2.5)
+
+        # --- SUBSECTION 5.2: File Modification & Content Diffs ---
+        if modified:
+            pdf.subsection_header(f"5.2 Unauthorized File Modifications & Unified Diffs ({len(modified)} Items Mutated)", min_space_needed=22)
+            for m in modified[:4]:
+                pdf.check_page_space(min_space_needed=24)
+                vp = m.get("virtual_path", "")
+                old_sz = m.get("old_size_bytes", 0)
+                new_sz = m.get("new_size_bytes", 0)
+                app = m.get("source_application", "VFS")
+                diff = m.get("content_diff")
+
+                pdf.set_font(pdf.doc_font_family, 'B', 7.5)
+                pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
+                pdf.cell(0, 4.0, f"Target: {vp} | Size: {old_sz}B -> {new_sz}B | App: {app}", new_x="LMARGIN", new_y="NEXT")
+
+                if diff:
+                    diff_clean = sanitize_pdf_text(diff.strip())
+                    pdf.set_fill_color(*ForensicDesignSystem.COLOR_BG_LIGHT)
+                    pdf.set_draw_color(*ForensicDesignSystem.COLOR_BORDER)
+                    diff_h = pdf.multi_cell(pdf.printable_width, 3.2, diff_clean, dry_run=True, output='HEIGHT') + 3.0
+                    box_y = pdf.get_y()
+                    pdf.rect(14, box_y, pdf.printable_width, diff_h, style='FD', round_corners=True, corner_radius=1.5)
+                    pdf.set_xy(16, box_y + 1.5)
+                    pdf.set_font("Courier", "", 6.5)
+                    pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+                    pdf.multi_cell(pdf.printable_width - 4, 3.2, diff_clean)
+                    pdf.set_y(box_y + diff_h + 2.0)
+                else:
+                    pdf.set_font(pdf.doc_font_family, 'I', 7.0)
+                    pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+                    pdf.cell(0, 3.6, "No textual diff available (binary format or identical content write).", new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(1.0)
+            pdf.ln(1.5)
+
+        # --- SUBSECTION 5.3: Created & Downloaded Artifacts ---
+        if created:
+            pdf.subsection_header(f"5.3 Newly Created & Downloaded Virtual Files ({len(created)} Items)", min_space_needed=18)
+            col_w = (70, 30, 42, 40)
+            hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
+            pdf.set_font(pdf.doc_font_family, size=6.8)
+            with pdf.table(col_widths=col_w, headings_style=hdr_style, line_height=4.2) as table:
+                h = table.row()
+                h.cell("Virtual Path", align='L')
+                h.cell("Size (Bytes)", align='C')
+                h.cell("Source Application", align='C')
+                h.cell("Quarantine Status", align='C')
+                for c in created:
+                    r = table.row()
+                    r.cell(c.get("virtual_path", ""), align='L')
+                    r.cell(f"{c.get('new_size_bytes', 0)} B", align='C')
+                    r.cell(c.get("source_application", "VFS"), align='C')
+                    r.cell("Isolated in Sandbox", align='C')
+            pdf.ln(2.5)
+
+        # If zero file mutations occurred
+        if not deleted and not modified and not created:
+            pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_BG)
+            pdf.set_draw_color(*ForensicDesignSystem.COLOR_GREEN_BORDER)
+            card_h = 14.0
+            box_y = pdf.get_y()
+            pdf.rect(14, box_y, pdf.printable_width, card_h, style='FD', round_corners=True, corner_radius=2)
+            pdf.set_fill_color(*ForensicDesignSystem.COLOR_GREEN_SAFE)
+            pdf.rect(14, box_y, 2.5, card_h, 'F')
+            pdf.set_xy(18, box_y + 2.0)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.8)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_GREEN_SAFE)
+            pdf.cell(0, 3.8, "FILESYSTEM INTEGRITY: Zero File Mutations or Deletions Observed", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_xy(18, box_y + 6.2)
+            pdf.set_font(pdf.doc_font_family, '', 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
+            pdf.cell(0, 3.6, "No virtual filesystem items were deleted, modified, or overwritten. Decoy assets remained in authentic baseline state.", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_y(box_y + card_h + 3.0)
+
+        # --- SUBSECTION 5.4: Themed Behavioral Observations ---
+        pdf.subsection_header("5.4 Categorized Behavioral Observations", min_space_needed=18)
         findings_groups = {
-            "File & Directory Discovery": [],
             "Decoy Asset & Credential Access": [],
             "Simulated Authentication Activity": [],
             "Command-Line & Diagnostic Probing": [],
             "Browser & Portal Interaction": [],
-            "File Modification & Deletion Activity": []
+            "File & Directory Discovery": []
         }
-
         for ev in timeline:
             atype = ev.get("action_type", "").upper()
             tgt = ev.get("target", "")
             eid = ev.get("event_id", "")
-
-            if "FOLDER" in atype or atype == "FOLDER_NAVIGATED":
-                findings_groups["File & Directory Discovery"].append((eid, atype, tgt))
-            elif "CREDENTIAL" in atype or "PASSWORD" in tgt.upper() or "KEY" in tgt.upper() or ".ENV" in tgt.upper():
+            if "CREDENTIAL" in atype or any(k in tgt.upper() for k in ["PASSWORD", "KEY", ".ENV", "SECRET", "ROOT_CREDENTIAL"]):
                 findings_groups["Decoy Asset & Credential Access"].append((eid, atype, tgt))
-            elif "LOGIN" in atype or "BANK" in tgt.upper() or "PORTAL" in tgt.upper():
+            elif "LOGIN" in atype or any(k in tgt.upper() for k in ["BANK", "PORTAL", "AWS"]):
                 findings_groups["Simulated Authentication Activity"].append((eid, atype, tgt))
             elif atype in ("SHELL_COMMAND", "COMMAND_EXECUTION", "NETWORK_RECONNAISSANCE"):
                 findings_groups["Command-Line & Diagnostic Probing"].append((eid, atype, tgt))
             elif "BROWSER" in atype or "URL" in atype:
                 findings_groups["Browser & Portal Interaction"].append((eid, atype, tgt))
-            elif "DELETE" in atype or "MODIFY" in atype or "SANDBOX" in atype:
-                findings_groups["File Modification & Deletion Activity"].append((eid, atype, tgt))
+            elif "FOLDER" in atype or atype == "FOLDER_NAVIGATED" or "FILE_VIEW" in atype:
+                findings_groups["File & Directory Discovery"].append((eid, atype, tgt))
 
+        active_cats = 0
         for cat_name, items in findings_groups.items():
             if not items:
                 continue
-
-            pdf.check_page_space(min_space_needed=18)
+            active_cats += 1
+            pdf.check_page_space(min_space_needed=16)
             eids = [x[0] for x in items if x[0]]
             eid_str = ", ".join(eids[:5])
             if len(eids) > 5:
                 eid_str += f" (+{len(eids)-5} more)"
-
-            pdf.set_font(pdf.doc_font_family, 'B', 8.2)
+            pdf.set_font(pdf.doc_font_family, 'B', 7.8)
             pdf.set_text_color(*ForensicDesignSystem.COLOR_NAVY_MID)
-            pdf.cell(0, 4.0, f"[OBSERVED] {cat_name} ({len(items)} events)", new_x="LMARGIN", new_y="NEXT")
-
-            pdf.set_font(pdf.doc_font_family, '', 7.3)
+            pdf.cell(0, 3.8, f"[OBSERVED] {cat_name} ({len(items)} events)", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font(pdf.doc_font_family, '', 7.2)
             pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
             summary_txt = f"Corroborating Event IDs: [{eid_str}]. Targets engaged: {', '.join(set([os.path.basename(x[2]) for x in items[:4]]))}. Activity confirmed via local session log."
-            pdf.multi_cell(pdf.printable_width - 4, 3.5, summary_txt)
-            pdf.ln(1.5)
+            pdf.multi_cell(pdf.printable_width - 4, 3.4, summary_txt)
+            pdf.ln(1.2)
 
-        pdf.ln(2.0)
+        if active_cats == 0:
+            pdf.set_font(pdf.doc_font_family, 'I', 7.2)
+            pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
+            pdf.cell(0, 3.6, "No additional specialized behavioral interaction events recorded beyond session boundary activation.", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.ln(2.5)
 
     # -----------------------------------------------------------------------
     # SECTION 6: AI-Assisted Behavioral Reconstruction
@@ -971,23 +1131,23 @@ class ForensicReportGenerator:
         threat_level = ai_report.get("threat_level", "HIGH").upper()
         threat_score = ai_report.get("threat_score", 0.75)
 
-        if threat_score >= 0.55:
-            threshold_phrase = "exceeding the calibrated operating threshold (Threshold = 0.55)"
-        else:
-            threshold_phrase = "registering below the general drift threshold (Threshold = 0.55), with honeypot containment engaged upon heuristic trigger"
-
-        risk_text = (
-            f"The continuous authentication engine computes risk using a calibrated multimodal fusion pipeline. "
-            f"During the incident window, the instantaneous anomaly score reached {threat_score:.4f}, {threshold_phrase}. "
-            f"Rule-based deterministic evaluation classified the severity as {threat_level} based on verified honeypot risk factors."
+        reconcile_text = (
+            "Architecture & Threshold Calibration Reconciliation: Behavioral Drift Security operates a two-stage security model: "
+            "(1) Host Continuous Authentication Layer: Monitored multimodal keystroke and cursor biometrics on the host operating system. "
+            "When instantaneous or smoothed drift exceeds the calibrated policy threshold (Threshold >= 0.55), the active session is locked, and the operator "
+            "is silently diverted into the deception sandbox. "
+            f"(2) Deception Sandbox Threat Evaluation: Evaluates the post-diversion activities performed inside the honeypot. "
+            f"During the current session, honeypot telemetry recorded an activity threat score of {threat_score:.2f} ({threat_level} severity). "
+            "A low honeypot threat score indicates the intruder performed minimal or non-destructive actions after diversion, "
+            "corroborating effective containment."
         )
-        pdf.set_font(pdf.doc_font_family, '', 7.5)
+        pdf.set_font(pdf.doc_font_family, '', 7.3)
         pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_DARK)
-        pdf.multi_cell(pdf.printable_width, 3.6, risk_text)
+        pdf.multi_cell(pdf.printable_width, 3.5, reconcile_text)
         pdf.ln(2.0)
 
         # Multi-Component Agreement Table
-        col_w = (42, 45, 45, 50)
+        col_w = (46, 42, 44, 50)
         hdr_style = FontFace(emphasis='B', color=(255, 255, 255), fill_color=ForensicDesignSystem.COLOR_NAVY_DARK)
         row_style = FontFace(fill_color=ForensicDesignSystem.COLOR_BG_LIGHT)
 
@@ -1000,9 +1160,9 @@ class ForensicReportGenerator:
             h.cell("Assessment Finding", align='L')
 
             components = [
-                ("Multimodal Biometric Engine", f"Risk Score: {threat_score:.2f}", "Threshold >= 0.55", "Elevated Drift Detected"),
-                ("Deterministic Heuristic Rules", f"Threat Level: {threat_level}", "Critical Asset Probing", "Confirmed Decoy Engagement"),
-                ("Offline Intent Reasoner", f"Persona: {ai_report.get('attacker_persona', 'Assessed')}", "Behavioral Match", "Tactical Consistency Verified")
+                ("Continuous Biometric Auth (Host)", "Breach Anomaly Trigger", "Threshold >= 0.55", "Elevated Drift -> Quarantined"),
+                ("Honeypot Activity Threat Floor", f"Threat Score: {threat_score:.2f}", "Floor: 0.10 - 1.00", f"Assessed as {threat_level}"),
+                ("Cognitive Threat Reasoner", f"Persona: {ai_report.get('attacker_persona', 'Assessed')}", "Tactical TTP Match", f"Source: {ai_report.get('source', 'Offline Engine')[:22]}")
             ]
             for c in components:
                 r = table.row(style=row_style)
@@ -1290,6 +1450,10 @@ class ForensicReportGenerator:
         pdf.set_font(pdf.doc_font_family, 'I', 6.8)
         pdf.set_text_color(*ForensicDesignSystem.COLOR_TEXT_MUTED)
         pdf.cell(0, 3.5, "Raw Telemetry Appendix: Complete unredacted JSON Lines event audit log preserved at: data/forensics/session_actions.jsonl", new_x="LMARGIN", new_y="NEXT")
+
+
+# Backward compatibility alias
+IncidentReportGenerator = ForensicReportGenerator
 
 
 if __name__ == "__main__":

@@ -1070,6 +1070,11 @@ class HoneypotVerificationDialog(QDialog):
 
     def verify_code(self):
         entered = self.input_field.text().strip()
+        env_otp = os.environ.get("ACTIVE_SESSION_OTP", "").strip()
+        if env_otp and entered == env_otp:
+            self._complete_unlock()
+            return
+
         evaluator = self._get_evaluator()
         ok = evaluator.verify_otp_and_reset(entered)
         if ok:
@@ -1425,11 +1430,13 @@ class HoneyShell(QFrame):
 
 class DesktopIconWidget(QWidget):
     """Interactive clickable desktop icon matching Windows 11 style."""
-    def __init__(self, icon_text, label_text, click_handler, parent=None):
+    def __init__(self, icon_text, label_text, click_handler, parent=None, node_path=None):
         super().__init__(parent)
         self.handler = click_handler
+        self.node_path = node_path
         self.setFixedSize(84, 88)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
         layout = QVBoxLayout()
         layout.setContentsMargins(4, 4, 4, 4)
@@ -1454,18 +1461,84 @@ class DesktopIconWidget(QWidget):
         layout.addWidget(self.text_lbl)
         self.setLayout(layout)
 
+    def trigger_action(self):
+        get_tracker().record_desktop_icon_click(self.text_lbl.text())
+        if callable(self.handler):
+            self.handler()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.setStyleSheet("background-color: rgba(255, 255, 255, 0.15); border-radius: 6px;")
+            self.setFocus()
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         self.setStyleSheet("background-color: transparent;")
         if event.button() == Qt.MouseButton.LeftButton:
-            get_tracker().record_desktop_icon_click(self.text_lbl.text())
-            if callable(self.handler):
-                self.handler()
+            self.trigger_action()
         super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #252526;
+                color: #e0e0e0;
+                border: 1px solid #3c3c3c;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 12px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #094771;
+                color: #ffffff;
+            }
+        """)
+        open_act = menu.addAction("Open")
+        open_act.triggered.connect(self.trigger_action)
+
+        # Check if deletable virtual desktop item
+        synth_user = get_synthetic_username()
+        desktop_dir = f"C:\\Users\\{synth_user}\\Desktop"
+        resolved_path = self.node_path or f"{desktop_dir}\\{self.text_lbl.text()}"
+        
+        vfs = get_vfs()
+        if vfs.exists(resolved_path) and not PathUtils.path_equal(resolved_path, "C:\\"):
+            del_act = menu.addAction("Delete")
+            def _delete_item():
+                try:
+                    vfs.delete(resolved_path, to_recycle_bin=True, application="DESKTOP")
+                    parent = self.parent()
+                    if hasattr(parent, "setup_desktop_icons"):
+                        parent.setup_desktop_icons()
+                except Exception as e:
+                    print(f"[DESKTOP] Error deleting '{resolved_path}': {e}", file=sys.stderr)
+            del_act.triggered.connect(_delete_item)
+
+        menu.exec(event.globalPos())
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Delete:
+            synth_user = get_synthetic_username()
+            desktop_dir = f"C:\\Users\\{synth_user}\\Desktop"
+            resolved_path = self.node_path or f"{desktop_dir}\\{self.text_lbl.text()}"
+            vfs = get_vfs()
+            if vfs.exists(resolved_path) and not PathUtils.path_equal(resolved_path, "C:\\"):
+                try:
+                    vfs.delete(resolved_path, to_recycle_bin=True, application="DESKTOP")
+                    parent = self.parent()
+                    if hasattr(parent, "setup_desktop_icons"):
+                        parent.setup_desktop_icons()
+                except Exception as e:
+                    print(f"[DESKTOP] Error deleting '{resolved_path}': {e}", file=sys.stderr)
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.trigger_action()
+        else:
+            super().keyPressEvent(event)
 
     def enterEvent(self, event):
         self.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); border-radius: 6px;")
@@ -1782,10 +1855,10 @@ class HoneypotDesktop(QWidget):
             ("🌐", "Google Chrome", self.open_chrome),
             ("💻", "This PC", self.open_explorer),
             ("🗑️", "Recycle Bin", lambda: self.open_explorer(folder_path="C:\\$Recycle.Bin")),
-            ("📁", "clg", lambda: self.open_explorer(folder_path=f"{desktop_dir}\\clg")),
-            ("📄", "tester.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\tester.txt")),
+            ("📁", "clg", lambda: self.open_explorer(folder_path=f"{desktop_dir}\\clg"), f"{desktop_dir}\\clg"),
+            ("📄", "tester.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\tester.txt"), f"{desktop_dir}\\tester.txt"),
             ("📂", "My Documents", lambda: self.open_explorer(folder_path=docs_dir)),
-            ("🔒", "passwords.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\clg\\Behavioral-Drift-Security\\passwords.txt")),
+            ("🔒", "passwords.txt", lambda: self.open_notepad(file_path=f"{desktop_dir}\\clg\\Behavioral-Drift-Security\\passwords.txt"), f"{desktop_dir}\\clg\\Behavioral-Drift-Security\\passwords.txt"),
             ("⚡", "PowerShell", self.open_terminal)
         ]
         
@@ -1799,7 +1872,7 @@ class HoneypotDesktop(QWidget):
                     handler = lambda p=node.path: self.open_explorer(folder_path=p)
                 else:
                     handler = lambda p=node.path: self.open_notepad(file_path=p)
-                standard_icons.append((node.icon, node.name, handler))
+                standard_icons.append((node.icon, node.name, handler, node.path))
                 added_names.add(node.name)
 
         start_y = 20
@@ -1808,10 +1881,14 @@ class HoneypotDesktop(QWidget):
         col_width = 96
         max_per_col = max(1, (self.height() - 80) // spacing_y)
         
-        for idx, (icon_char, label_text, handler) in enumerate(standard_icons):
+        for idx, item in enumerate(standard_icons):
+            icon_char = item[0]
+            label_text = item[1]
+            handler = item[2]
+            node_path = item[3] if len(item) > 3 else None
             col = idx // max_per_col
             row = idx % max_per_col
-            icon_widget = DesktopIconWidget(icon_char, label_text, handler, parent=self)
+            icon_widget = DesktopIconWidget(icon_char, label_text, handler, parent=self, node_path=node_path)
             icon_widget.move(start_x + (col * col_width), start_y + (row * spacing_y))
             icon_widget.show()
             self.desktop_icon_widgets.append(icon_widget)

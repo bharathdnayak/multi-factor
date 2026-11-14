@@ -615,7 +615,8 @@ async function launchHoneypotGui() {
         const res = await fetch('/api/system/launch_honeypot_gui', { method: 'POST' });
         const data = await res.json();
         if (data.status === 'success') {
-            showToast('Honeypot Desktop window launched!', 'success');
+            const otpNotice = data.recovery_otp ? ` (Recovery OTP: ${data.recovery_otp})` : '';
+            showToast(`Honeypot Desktop window launched!${otpNotice}`, 'success');
         } else {
             showToast(data.message || 'Failed to open Honeypot Desktop', 'critical');
         }

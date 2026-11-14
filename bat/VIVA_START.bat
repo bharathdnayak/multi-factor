@@ -10,9 +10,10 @@ echo         Department of Information Science and Engineering, NMAMIT
 echo =====================================================================
 echo.
 
-:: 1. Resolve absolute project root safely (supports paths with spaces)
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 echo [INFO] Project Directory : "%PROJECT_DIR%"
 
@@ -87,7 +88,7 @@ if not defined PYTHON_EXE (
 
 if not defined PYTHON_EXE (
     echo [ERROR] Python executable not found in .venv, venv, or system PATH!
-    echo         Please run setup.bat first to initialize the environment.
+    echo         Please run bat\setup.bat first to initialize the environment.
     if not defined NO_PAUSE_FLAG pause
     exit /b 1
 )

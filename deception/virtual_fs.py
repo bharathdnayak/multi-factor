@@ -3,10 +3,30 @@ import sys
 import time
 import copy
 import json
+import hashlib
+import difflib
 import threading
 from typing import Optional, List, Dict, Tuple, Any, Callable
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def _compute_diff(old_content: str, new_content: str, filename: str = "file") -> Optional[str]:
+    """Computes a clean, sanitized unified diff snippet between previous and current file contents."""
+    try:
+        old_lines = (old_content or "").splitlines(keepends=True)
+        new_lines = (new_content or "").splitlines(keepends=True)
+        diff_lines = list(difflib.unified_diff(
+            old_lines, new_lines,
+            fromfile=f"before/{filename}", tofile=f"after/{filename}",
+            n=2
+        ))
+        if not diff_lines:
+            return None
+        # Cap to max 35 lines to prevent excessive memory/log bloat
+        capped = diff_lines[:35]
+        return "".join(capped)
+    except Exception:
+        return None
 
 def get_synthetic_username() -> str:
     """
@@ -410,13 +430,16 @@ class VirtualFileSystem:
                 cls._instance = VirtualFileSystem()
             return cls._instance
 
-    def __init__(self, state_file_path: Optional[str] = None, seed_standard_dirs: bool = True):
+    def __init__(self, state_file_path: Optional[str] = None, seed_standard_dirs: bool = True, storage_path: Optional[str] = None):
+        effective_path = state_file_path or storage_path
         self._lock = threading.RLock()
         self.clipboard = VirtualClipboard()
         self.recycle_bin: Dict[str, VirtualRecycleBinEntry] = {}
         self.listeners: List[Callable[[str, str], None]] = []
-        if state_file_path is not None:
-            self.state_file_path = state_file_path
+        self._tracking_enabled = False
+        self._active_application = "VFS"
+        if effective_path is not None:
+            self.state_file_path = effective_path
         elif seed_standard_dirs:
             self.state_file_path = os.path.join(PROJECT_ROOT, "data", "sandbox", "virtual_fs_state.json")
         else:
@@ -435,6 +458,45 @@ class VirtualFileSystem:
             self._seed_filesystem()
             if self.state_file_path:
                 self.save_state(self.state_file_path)
+
+        # Enable forensic tracking after seeding is complete
+        self._tracking_enabled = True
+
+    def _get_tracker(self):
+        """Thread-safe accessor for the centralized ForensicTracker."""
+        if hasattr(self, "forensic_tracker") and self.forensic_tracker is not None:
+            return self.forensic_tracker
+        try:
+            from deception.forensic_tracker import get_tracker
+            return get_tracker()
+        except Exception:
+            return None
+
+    @property
+    def active_application(self) -> str:
+        return getattr(self, "_active_application", "VFS")
+
+    @active_application.setter
+    def active_application(self, app_name: str):
+        self._active_application = str(app_name or "VFS")
+
+    class _AppScope:
+        def __init__(self, vfs: "VirtualFileSystem", app_name: str):
+            self.vfs = vfs
+            self.app_name = app_name
+            self.prev_app = "VFS"
+
+        def __enter__(self):
+            self.prev_app = self.vfs.active_application
+            self.vfs.active_application = self.app_name
+            return self.vfs
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.vfs.active_application = self.prev_app
+
+    def as_application(self, app_name: str):
+        """Context manager to execute VFS operations on behalf of a specific application."""
+        return self._AppScope(self, app_name)
 
     def register_change_listener(self, callback: Callable[[str, str], None]):
         """Registers a callback(action, path) invoked whenever VFS changes."""
@@ -1007,7 +1069,7 @@ class VirtualFileSystem:
                 return []
             return node.list_children(include_hidden=include_hidden)
 
-    def mkdir(self, path: str, parents: bool = True, notify: bool = True) -> VirtualDirectory:
+    def mkdir(self, path: str, parents: bool = True, notify: bool = True, application: Optional[str] = None) -> VirtualDirectory:
         """Creates a virtual directory."""
         with self._lock:
             norm = PathUtils.normalize(path)
@@ -1033,6 +1095,11 @@ class VirtualFileSystem:
             parent_node.add_child(new_dir)
             if notify:
                 self._notify_change("mkdir", norm)
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    tr.record_directory_operation("CREATE", norm, application=app)
             return new_dir
 
     def create_file(
@@ -1041,7 +1108,8 @@ class VirtualFileSystem:
         content: str = "",
         overwrite: bool = False,
         icon: str = "📄",
-        notify: bool = True
+        notify: bool = True,
+        application: Optional[str] = None
     ) -> VirtualFile:
         """Creates a new virtual file."""
         with self._lock:
@@ -1053,9 +1121,31 @@ class VirtualFileSystem:
                     raise IsADirectoryError(f"'{norm}' is an existing directory.")
                 if not overwrite:
                     raise FileExistsError(f"File '{norm}' already exists.")
+                
+                old_content = existing.content if isinstance(existing.content, str) else ""
+                old_size = len(old_content.encode("utf-8"))
+                sha256_before = hashlib.sha256(old_content.encode("utf-8")).hexdigest()
+                
                 existing.set_content(content)
+                new_size = len((content or "").encode("utf-8"))
+                sha256_after = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+                diff = _compute_diff(old_content, content, existing.name)
+
                 if notify:
                     self._notify_change("modify", norm)
+                if self._tracking_enabled and notify:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_file_modification(
+                            virtual_path=norm,
+                            old_size=old_size,
+                            new_size=new_size,
+                            sha256_before=sha256_before,
+                            sha256_after=sha256_after,
+                            diff=diff,
+                            application=app
+                        )
                 return existing
 
             parent_path, name = PathUtils.split_path(norm)
@@ -1067,15 +1157,51 @@ class VirtualFileSystem:
             parent_node.add_child(new_file)
             if notify:
                 self._notify_change("create", norm)
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    sz = len((content or "").encode("utf-8"))
+                    digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+                    tr.record_file_creation(
+                        virtual_path=norm,
+                        file_size=sz,
+                        sha256_hash=digest,
+                        is_overwrite=False,
+                        application=app
+                    )
             return new_file
 
-    def read_file(self, path: str) -> str:
+    def read_file(self, path: str, application: Optional[str] = None) -> str:
         with self._lock:
             node = self.get_node(path)
             if not node:
+                if self._tracking_enabled:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_failed_access(path, reason=f"File not found: '{path}'", application=app)
                 raise FileNotFoundError(f"Cannot find path '{path}'.")
             if node.is_dir:
+                if self._tracking_enabled:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_failed_access(path, reason=f"Path is a directory: '{path}'", application=app)
                 raise IsADirectoryError(f"'{path}' is a directory.")
+
+            if self._tracking_enabled:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    raw = (node.content or "").encode("utf-8")
+                    digest = hashlib.sha256(raw).hexdigest()
+                    tr.record_file_read(
+                        virtual_path=node.path,
+                        file_size=len(raw),
+                        sha256_hash=digest,
+                        application=app
+                    )
             return node.content
 
     def write_file(
@@ -1083,22 +1209,47 @@ class VirtualFileSystem:
         path: str,
         content: str,
         append: bool = False,
-        notify: bool = True
+        notify: bool = True,
+        application: Optional[str] = None,
+        source_app: Optional[str] = None,
+        **kwargs
     ) -> VirtualFile:
+        application = source_app or application
         with self._lock:
             norm = PathUtils.normalize(path)
             node = self.get_node(norm)
             if node:
                 if node.is_dir:
                     raise IsADirectoryError(f"'{norm}' is a directory.")
+                old_content = node.content if isinstance(node.content, str) else ""
+                old_size = len(old_content.encode("utf-8"))
+                sha256_before = hashlib.sha256(old_content.encode("utf-8")).hexdigest()
+
                 new_text = (node.content + content) if append else content
                 node.set_content(new_text)
+                new_size = len((new_text or "").encode("utf-8"))
+                sha256_after = hashlib.sha256((new_text or "").encode("utf-8")).hexdigest()
+                diff = _compute_diff(old_content, new_text, node.name)
+
                 if notify:
                     self._notify_change("modify", norm)
+                if self._tracking_enabled and notify:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_file_modification(
+                            virtual_path=norm,
+                            old_size=old_size,
+                            new_size=new_size,
+                            sha256_before=sha256_before,
+                            sha256_after=sha256_after,
+                            diff=diff,
+                            application=app
+                        )
                 return node
-            return self.create_file(norm, content=content, notify=notify)
+            return self.create_file(norm, content=content, notify=notify, application=application)
 
-    def rename(self, old_path: str, new_name_or_path: str, notify: bool = True) -> VirtualNode:
+    def rename(self, old_path: str, new_name_or_path: str, notify: bool = True, application: Optional[str] = None) -> VirtualNode:
         """Renames a file or directory."""
         with self._lock:
             norm_old = PathUtils.normalize(old_path)
@@ -1143,6 +1294,16 @@ class VirtualFileSystem:
 
             if notify:
                 self._notify_change("rename", f"{norm_old}->{norm_new}")
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    tr.record_directory_operation(
+                        "RENAME",
+                        norm_new,
+                        application=app,
+                        details={"old_path": norm_old, "new_path": norm_new}
+                    )
             return node
 
     def _update_subtree_paths(self, dir_node: VirtualDirectory):
@@ -1152,8 +1313,20 @@ class VirtualFileSystem:
             if child.is_dir:
                 self._update_subtree_paths(child)
 
-    def delete(self, path: str, to_recycle_bin: bool = True, notify: bool = True) -> bool:
+    def delete(
+        self,
+        path: str,
+        to_recycle_bin: bool = True,
+        notify: bool = True,
+        application: Optional[str] = None,
+        permanent: Optional[bool] = None,
+        source_app: Optional[str] = None,
+        **kwargs
+    ) -> bool:
         """Deletes a node, optionally moving to virtual recycle bin."""
+        if permanent is not None:
+            to_recycle_bin = not permanent
+        application = source_app or application
         with self._lock:
             norm = PathUtils.normalize(path)
             if PathUtils.path_equal(norm, "C:\\"):
@@ -1161,12 +1334,31 @@ class VirtualFileSystem:
 
             node = self.get_node(norm)
             if not node:
+                if self._tracking_enabled and notify:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_failed_access(norm, reason=f"Cannot delete: '{path}' not found", application=app)
                 raise FileNotFoundError(f"Cannot find path '{path}'.")
 
             parent_path, _ = PathUtils.split_path(norm)
             parent = self.get_node(parent_path)
             if not parent or not parent.is_dir:
                 return False
+
+            # Capture complete pre-deletion metadata & hash before unlinking
+            is_file = not node.is_dir
+            filename = node.name
+            type_desc = node.type_description() if callable(getattr(node, "type_description", None)) else getattr(node, "type_description", "File")
+            created_ts = getattr(node, "created_time", time.time())
+            modified_ts = getattr(node, "modified_time", time.time())
+            if is_file:
+                raw_bytes = (node.content or "").encode("utf-8")
+                pre_hash = hashlib.sha256(raw_bytes).hexdigest()
+                file_sz = len(raw_bytes)
+            else:
+                pre_hash = "N/A (DIRECTORY)"
+                file_sz = 0
 
             removed = parent.remove_child(node.name)
             if removed and to_recycle_bin:
@@ -1175,10 +1367,42 @@ class VirtualFileSystem:
 
             if notify:
                 self._notify_change("delete", norm)
+
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    if is_file:
+                        tr.record_file_deletion(
+                            virtual_path=norm,
+                            filename=filename,
+                            file_type=type_desc,
+                            file_size=file_sz,
+                            sha256_pre_delete=pre_hash,
+                            to_recycle_bin=to_recycle_bin,
+                            application=app,
+                            success=True,
+                            metadata={"created_time": created_ts, "modified_time": modified_ts}
+                        )
+                    else:
+                        tr.record_directory_operation(
+                            action="DELETE",
+                            target_path=norm,
+                            application=app,
+                            details={"to_recycle_bin": to_recycle_bin}
+                        )
             return True
 
-    def restore_from_recycle_bin(self, entry_id_or_path: str, notify: bool = True) -> Optional[VirtualNode]:
+    def restore_from_recycle_bin(
+        self,
+        entry_id_or_path: str,
+        notify: bool = True,
+        application: Optional[str] = None,
+        source_app: Optional[str] = None,
+        **kwargs
+    ) -> Optional[VirtualNode]:
         """Restores a deleted item from the virtual recycle bin to its original location."""
+        application = source_app or application
         with self._lock:
             entry: Optional[VirtualRecycleBinEntry] = None
             if entry_id_or_path in self.recycle_bin:
@@ -1201,19 +1425,52 @@ class VirtualFileSystem:
             parent.add_child(entry.node)
             if notify:
                 self._notify_change("restore", entry.original_path)
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    tr.record_recycle_bin_action("RESTORE_FILE", entry.original_path, application=app)
             return entry.node
 
     def get_recycle_bin_items(self) -> List[VirtualRecycleBinEntry]:
         with self._lock:
             return list(self.recycle_bin.values())
 
-    def empty_recycle_bin(self, notify: bool = True):
+    def is_in_recycle_bin(self, name_or_path: str) -> bool:
+        """Checks if a file by name, path, or entry_id is currently in the recycle bin."""
         with self._lock:
+            norm_target = PathUtils.normalize(name_or_path).lower() if "\\" in name_or_path or "/" in name_or_path else name_or_path.lower()
+            for entry in self.recycle_bin.values():
+                if entry.node.name.lower() == norm_target or entry.original_path.lower() == norm_target or entry.entry_id == name_or_path:
+                    return True
+            return False
+
+    def empty_recycle_bin(
+        self,
+        notify: bool = True,
+        application: Optional[str] = None,
+        source_app: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        application = source_app or application
+        with self._lock:
+            purged_count = len(self.recycle_bin)
             self.recycle_bin.clear()
             if notify:
                 self._notify_change("empty_recycle_bin", "C:\\$Recycle.Bin")
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    tr.record_recycle_bin_action(
+                        "EMPTY_RECYCLE_BIN",
+                        "C:\\$Recycle.Bin",
+                        details={"purged_items_count": purged_count},
+                        application=app
+                    )
+            return purged_count
 
-    def permanently_delete_from_recycle_bin(self, entry_id_or_path: str, notify: bool = True) -> bool:
+    def permanently_delete_from_recycle_bin(self, entry_id_or_path: str, notify: bool = True, application: Optional[str] = None) -> bool:
         """Permanently removes a single entry from the virtual recycle bin and persists state."""
         with self._lock:
             removed = self.recycle_bin.pop(entry_id_or_path, None)
@@ -1225,10 +1482,15 @@ class VirtualFileSystem:
             if removed is not None:
                 if notify:
                     self._notify_change("permanent_delete", removed.original_path)
+                if self._tracking_enabled and notify:
+                    tr = self._get_tracker()
+                    if tr:
+                        app = application or self.active_application
+                        tr.record_recycle_bin_action("DELETE_PERMANENT", removed.original_path, application=app)
                 return True
             return False
 
-    def copy(self, src_path: str, dst_dir_or_path: str, notify: bool = True) -> VirtualNode:
+    def copy(self, src_path: str, dst_dir_or_path: str, notify: bool = True, application: Optional[str] = None) -> VirtualNode:
         """Deep copies a file or directory into a destination directory or path."""
         with self._lock:
             norm_src = PathUtils.normalize(src_path)
@@ -1255,6 +1517,16 @@ class VirtualFileSystem:
 
             if notify:
                 self._notify_change("copy", f"{norm_src}->{target_path}")
+            if self._tracking_enabled and notify:
+                tr = self._get_tracker()
+                if tr:
+                    app = application or self.active_application
+                    tr.record_directory_operation(
+                        "COPY",
+                        target_path,
+                        application=app,
+                        details={"source": norm_src, "destination": target_path}
+                    )
             return copied_node
 
     def _clone_node(self, node: VirtualNode, new_path: str) -> VirtualNode:
@@ -1285,7 +1557,7 @@ class VirtualFileSystem:
                 icon=node.icon
             )
 
-    def move(self, src_path: str, dst_dir_or_path: str, notify: bool = True) -> VirtualNode:
+    def move(self, src_path: str, dst_dir_or_path: str, notify: bool = True, application: Optional[str] = None) -> VirtualNode:
         """Moves a file or directory to another directory or new path."""
         with self._lock:
             norm_src = PathUtils.normalize(src_path)
@@ -1297,7 +1569,7 @@ class VirtualFileSystem:
             else:
                 target_path = norm_dst
 
-            return self.rename(norm_src, target_path, notify=notify)
+            return self.rename(norm_src, target_path, notify=notify, application=application)
 
     def search(self, query: str, root_path: str = "C:\\", recursive: bool = True) -> List[VirtualNode]:
         """Searches files and folders matching query substring."""
@@ -1335,6 +1607,10 @@ class VirtualFileSystem:
             drive = current_dir[:2] if len(current_dir) >= 2 and current_dir[1] == ":" else "C:"
             return PathUtils.normalize(f"{drive}{t}")
         return PathUtils.join(current_dir, t)
+
+    # Convenience aliases
+    write = write_file
+
 
 
 # Helper accessor

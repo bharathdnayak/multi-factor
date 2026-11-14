@@ -212,10 +212,9 @@ class VirtualCommandEngine:
 
         target = args[0].strip().strip('"').strip("'")
         resolved = self.vfs.resolve_path(self.current_dir, target)
-        self.tracker.record_file_access(resolved, action="SHELL_CAT")
 
         try:
-            content = self.vfs.read_file(resolved)
+            content = self.vfs.read_file(resolved, application="POWERSHELL")
             return content
         except FileNotFoundError:
             # Strictly contained sandbox read fallback (prevents host path traversal)
@@ -239,8 +238,7 @@ class VirtualCommandEngine:
         dir_name = args[0].strip().strip('"').strip("'")
         resolved = self.vfs.resolve_path(self.current_dir, dir_name)
         try:
-            new_dir = self.vfs.mkdir(resolved, parents=True)
-            self.tracker.record_file_access(resolved, action="CREATE_DIR")
+            new_dir = self.vfs.mkdir(resolved, parents=True, application="POWERSHELL")
             return (
                 f"\n    Directory: {PathUtils.split_path(new_dir.path)[0]}\n\n"
                 f"Mode                 LastWriteTime         Length Name\n"
@@ -268,13 +266,12 @@ class VirtualCommandEngine:
         resolved = self.vfs.resolve_path(self.current_dir, name)
         try:
             if "dir" in item_type:
-                node = self.vfs.mkdir(resolved, parents=True)
+                node = self.vfs.mkdir(resolved, parents=True, application="POWERSHELL")
                 mode = "d----"
             else:
-                node = self.vfs.create_file(resolved, content="", overwrite=True)
+                node = self.vfs.create_file(resolved, content="", overwrite=True, application="POWERSHELL")
                 mode = "-a---"
 
-            self.tracker.record_file_access(resolved, action="CREATE")
             return (
                 f"\n    Directory: {PathUtils.split_path(node.path)[0]}\n\n"
                 f"Mode                 LastWriteTime         Length Name\n"
@@ -290,8 +287,7 @@ class VirtualCommandEngine:
         src = self.vfs.resolve_path(self.current_dir, args[0].strip('"').strip("'"))
         dst = self.vfs.resolve_path(self.current_dir, args[1].strip('"').strip("'"))
         try:
-            self.vfs.copy(src, dst)
-            self.tracker.record_file_access(src, action="COPY")
+            self.vfs.copy(src, dst, application="POWERSHELL")
             return ""
         except Exception as e:
             return f"Copy-Item : {e}"
@@ -302,8 +298,7 @@ class VirtualCommandEngine:
         src = self.vfs.resolve_path(self.current_dir, args[0].strip('"').strip("'"))
         dst = self.vfs.resolve_path(self.current_dir, args[1].strip('"').strip("'"))
         try:
-            self.vfs.move(src, dst)
-            self.tracker.record_file_access(src, action="MOVE")
+            self.vfs.move(src, dst, application="POWERSHELL")
             return ""
         except Exception as e:
             return f"Move-Item : {e}"
@@ -314,8 +309,7 @@ class VirtualCommandEngine:
         src = self.vfs.resolve_path(self.current_dir, args[0].strip('"').strip("'"))
         new_name = args[1].strip('"').strip("'")
         try:
-            self.vfs.rename(src, new_name)
-            self.tracker.record_file_access(src, action="RENAME")
+            self.vfs.rename(src, new_name, application="POWERSHELL")
             return ""
         except Exception as e:
             return f"Rename-Item : {e}"
@@ -326,8 +320,7 @@ class VirtualCommandEngine:
         target = args[0].strip('"').strip("'")
         resolved = self.vfs.resolve_path(self.current_dir, target)
         try:
-            self.vfs.delete(resolved, to_recycle_bin=True)
-            self.tracker.record_file_access(resolved, action="DELETE")
+            self.vfs.delete(resolved, to_recycle_bin=True, application="POWERSHELL")
             return ""
         except Exception as e:
             return f"Remove-Item : {e}"
@@ -385,7 +378,7 @@ class VirtualCommandEngine:
 
         # Write into VFS
         try:
-            self.vfs.write_file(resolved, text + "\n", append=append)
+            self.vfs.write_file(resolved, text + "\n", append=append, application="POWERSHELL")
         except Exception as e:
             return f"Error writing to virtual file: {e}"
 

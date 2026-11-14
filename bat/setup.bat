@@ -10,9 +10,10 @@ echo       Department of Information Science and Engineering, NMAMIT
 echo =====================================================================
 echo.
 
-:: 1. Compute absolute project root directory (handles paths with spaces)
-set "PROJECT_DIR=%~dp0"
-if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
+:: 1. Compute absolute project root directory (parent of bat folder)
+set "BAT_DIR=%~dp0"
+if "%BAT_DIR:~-1%"=="\" set "BAT_DIR=%BAT_DIR:~0,-1%"
+for %%I in ("%BAT_DIR%\..") do set "PROJECT_DIR=%%~fI"
 cd /d "%PROJECT_DIR%"
 
 echo [STEP 1/7] Validating Project Root Directory...
@@ -145,21 +146,24 @@ echo =====================================================================
 echo.
 echo [QUICK LAUNCH COMMANDS]
 echo.
-echo  1. Start Complete Security Daemon (Dashboard + Supervisor + Tray):
-echo     - Double-click 'start_system.bat' or 'bat\run_security_system.bat'
+echo  1. Master Viva Interactive Launcher:
+echo     - Double-click 'bat\VIVA_START.bat'
+echo.
+echo  2. Start Complete Security Daemon (Dashboard + Supervisor + Tray):
+echo     - Double-click 'bat\start_system.bat' or 'bat\run_security_system.bat'
 echo     - Opens Web Console at http://localhost:8000
 echo.
-echo  2. Run Live Viva Defense Demonstration:
-echo     - Double-click 'run_viva_demo.bat' or 'bat\run_viva_demo.bat'
+echo  3. Run Live Viva Defense Demonstration:
+echo     - Double-click 'bat\run_viva_demo.bat'
 echo.
-echo  3. Run Containerized Web Dashboard (Docker Compose - Optional):
+echo  4. Run Containerized Web Dashboard (Docker Compose - Optional):
 echo     - Run: docker compose up -d
 echo.
-echo  4. Simulate Unauthorized Intrusion Breach:
+echo  5. Simulate Unauthorized Intrusion Breach:
 echo     - Double-click 'bat\simulate_unauthorized_attack.bat'
 echo.
-echo  5. Run Full Component Test Suite:
-echo     - Run: "%PYTHON_EXE%" scripts\verify_all_components.py
+echo  6. Run Diagnostic Doctor:
+echo     - Double-click 'bat\doctor.bat'
 echo =====================================================================
 echo.
 if "%NO_PAUSE%"=="" if "%~1" neq "--no-pause" pause

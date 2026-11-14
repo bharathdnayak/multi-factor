@@ -1090,13 +1090,37 @@ async def launch_forensics_gui_endpoint():
 
 @app.post("/api/system/launch_honeypot_gui")
 async def launch_honeypot_gui_endpoint():
-    """Spawns the native PyQt6 isolated Sandboxed Windows 11 Honeypot Desktop."""
+    """Spawns the native PyQt6 isolated Sandboxed Windows 11 Honeypot Desktop with active session OTP."""
     try:
         honeypot_script = os.path.join(PROJECT_ROOT, "deception", "honey_desktop.py")
         if not os.path.exists(honeypot_script):
             raise HTTPException(status_code=404, detail="Honeypot desktop script not found.")
-        subprocess.Popen([sys.executable, honeypot_script], cwd=PROJECT_ROOT)
-        return {"status": "success", "message": "Sandboxed Honeypot Desktop launched."}
+
+        # Ensure active 6-digit session OTP is generated and persisted for recovery
+        from security.otp_service import generate_otp
+        active_otp = evaluator.active_otp or evaluator._load_active_otp()
+        if not active_otp:
+            active_otp = generate_otp()
+            evaluator.active_otp = active_otp
+        evaluator._save_active_otp(active_otp, is_breach=True)
+        evaluator.is_breached = True
+
+        # Ensure tracker has active session initialized
+        if not tracker.events:
+            tracker.start_new_session(archive_previous=False)
+
+        child_env = os.environ.copy()
+        child_env["ALLOW_DEMO_ESCAPE"] = "1"
+        child_env["ACTIVE_SESSION_OTP"] = active_otp
+
+        subprocess.Popen([sys.executable, honeypot_script], cwd=PROJECT_ROOT, env=child_env)
+        return {
+            "status": "success",
+            "message": "Sandboxed Honeypot Desktop launched.",
+            "recovery_otp": active_otp,
+            "session_id": tracker.session_id,
+            "incident_id": tracker.incident_id
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to launch honeypot GUI: {str(e)}")
 

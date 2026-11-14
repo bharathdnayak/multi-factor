@@ -8,7 +8,7 @@ We wrote this guide so that it is super simple to follow. Each member's task (Me
 
 ## 🛠️ Step 0: Get Things Ready (Install Python Stuff)
 Before we run anything, we need to download the Python code libraries that make this project run.
-- **Fast automated option:** Simply double-click **`setup.bat`** in the project folder! It will automatically set up your environment, install all libraries, and verify the models for you.
+- **Fast automated option:** Simply double-click **`bat\setup.bat`** in the project folder! It will automatically set up your environment, install all libraries, and verify the models for you.
 - **Manual option:** Open your Command Prompt (CMD) in the project directory and run:
    ```bash
    pip install -r requirements.txt
@@ -88,7 +88,7 @@ Look at the logs printed in your command window:
 ### How to Test the Deception Flow:
 
 #### 1. Launch the Live System
-Double-click **`start_system.bat`** (or **`bat/run_security_system.bat`**) in the project folder. This starts the unified Process Supervisor managing:
+Double-click **`bat\start_system.bat`** (or **`bat\run_security_system.bat`**) in the project folder. This starts the unified Process Supervisor managing:
 * The background Telemetry hook (`telemetry/agent.py`).
 * The Threat Evaluator watcher daemon (`telemetry/evaluator.py`).
 * The Cyber-Ops Web Dashboard (`http://localhost:8000`).

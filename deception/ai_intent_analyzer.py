@@ -3,6 +3,8 @@ import os
 import sys
 import json
 import time
+import shutil
+import subprocess
 import urllib.request
 import urllib.error
 
@@ -12,17 +14,38 @@ if PROJECT_ROOT not in sys.path:
 
 from deception.forensic_tracker import get_tracker, SENSITIVE_KEYWORDS
 
-# Default target offline model from environment variable, defaulting to qwen3.5:4b
-DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:4b")
+def detect_ollama_executable():
+    """Auto-detects the local Ollama CLI executable across Windows standard locations and PATH."""
+    which_exe = shutil.which("ollama")
+    if which_exe and os.path.isfile(which_exe):
+        return which_exe
 
-# Preferred offline models in order of priority
+    candidates = [
+        os.path.expanduser(r"~\AppData\Local\Programs\Ollama\ollama.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Ollama\ollama.exe"),
+        r"C:\Users\Dell\AppData\Local\Programs\Ollama\ollama.exe",
+        r"C:\Program Files\Ollama\ollama.exe",
+        r"C:\Program Files (x86)\Ollama\ollama.exe",
+        "/usr/local/bin/ollama",
+        "/usr/bin/ollama"
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return os.path.abspath(c)
+    return None
+
+
+# Default target offline model from environment variable, defaulting to qwen2.5:1.5b for fast local CPU/GPU inference
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
+
+# Preferred offline models in order of priority (compact fast models first for responsive offline operation)
 OLLAMA_PREFERRED_MODELS = [
     DEFAULT_OLLAMA_MODEL,
-    "qwen3.5:4b",
-    "qwen2.5:3b",
     "qwen2.5:1.5b",
     "deepseek-r1:1.5b",
-    "qwen2.5-coder:1.5b"
+    "qwen2.5-coder:1.5b",
+    "qwen2.5:3b",
+    "qwen3.5:4b"
 ]
 
 # Dedicated Cyber Forensics & Incident Response (DFIR) Unit System Prompt
@@ -109,9 +132,9 @@ class IntruderIntentAnalyzer:
             self.timeout = timeout
         else:
             try:
-                self.timeout = int(os.environ.get("OLLAMA_TIMEOUT", "15"))
+                self.timeout = int(os.environ.get("OLLAMA_TIMEOUT", "35"))
             except ValueError:
-                self.timeout = 15
+                self.timeout = 35
         self.tracker = get_tracker()
 
     def check_ollama_available(self):
@@ -124,6 +147,56 @@ class IntruderIntentAnalyzer:
                 return True, models
         except Exception:
             return False, []
+
+    def ensure_service_running(self, wait_seconds: float = 5.0) -> bool:
+        """Verifies Ollama connectivity; if offline, attempts to auto-launch the local Ollama daemon."""
+        up, _ = self.check_ollama_available()
+        if up:
+            return True
+        exe = detect_ollama_executable()
+        if not exe:
+            return False
+        try:
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            subprocess.Popen(
+                [exe, "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=creation_flags,
+                close_fds=True
+            )
+            start_t = time.time()
+            while time.time() - start_t < wait_seconds:
+                time.sleep(0.5)
+                up, _ = self.check_ollama_available()
+                if up:
+                    return True
+        except Exception as e:
+            print(f"[AI INTENT] [WARNING] Could not auto-start Ollama: {e}", file=sys.stderr)
+        return False
+
+    def warmup_model(self, model_name: str, warmup_timeout: int = 15) -> bool:
+        """Lightweight 1-token probe to ensure model weights are loaded in memory."""
+        try:
+            payload = {
+                "model": model_name,
+                "prompt": "ping",
+                "stream": False,
+                "options": {"num_predict": 1, "temperature": 0.0}
+            }
+            req = urllib.request.Request(
+                f"{self.ollama_url}/api/generate",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "User-Agent": "SecurityForensics/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=warmup_timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return bool(data)
+        except Exception:
+            return False
 
     def select_best_model(self, available_models):
         """Selects the most suitable model from available Ollama models."""
@@ -232,7 +305,10 @@ class IntruderIntentAnalyzer:
             level = "LOW"
 
         # Determine authoritative grounded persona and objective
-        if delete_events and (cred_events or fin_events):
+        if len(timeline) <= 1:
+            persona = "Inconclusive Probe / Intercepted Intruder"
+            objective = "Intruder diverted into honeypot sandbox; trapped at perimeter before interacting with virtual filesystem or application assets."
+        elif delete_events and (cred_events or fin_events):
             persona = "Targeted Corporate Infiltrator & Data Saboteur"
             objective = "Harvest administrative credentials, inspect sensitive corporate records, and execute destructive deletions to impede operations."
         elif fin_events and cred_events:
@@ -253,9 +329,12 @@ class IntruderIntentAnalyzer:
         elif recon_events or shell_events:
             persona = "Active Reconnaissance Operator"
             objective = "Enumerate local system accounts, network configuration, and directory hierarchy."
-        else:
+        elif any(ev.get("action_type") in ("FOLDER_NAVIGATED", "FILE_VIEW", "FILE_OPENED", "APP_LAUNCH") for ev in timeline):
             persona = "Opportunistic Workstation Snooper"
             objective = "Casual or unauthorized exploration of local folders without targeted credential probing."
+        else:
+            persona = "Contained Perimeter Intruder"
+            objective = "Unauthorized access attempt contained within honeypot deception perimeter without asset interaction."
 
         # Construct balanced grounded evidence rows (max 6) across distinct categories
         evidence_rows = []
@@ -471,8 +550,15 @@ class IntruderIntentAnalyzer:
         det_eval = self.evaluate_deterministic_threat(timeline, stats)
         det_eval["behavioral_indicators"] = self.extract_behavioral_indicators(timeline)
 
+        # Attach active file changes
+        det_eval["file_changes"] = self.tracker.get_file_changes(session_id=stats.get("session_id"))
+
         # Attempt to run via local Ollama LLM
         is_ollama_up, installed_models = self.check_ollama_available()
+        if not is_ollama_up:
+            if self.ensure_service_running(wait_seconds=4.0):
+                is_ollama_up, installed_models = self.check_ollama_available()
+
         if is_ollama_up and installed_models:
             models_to_try = []
             if self.model_name and self.model_name in installed_models:
@@ -544,6 +630,26 @@ class IntruderIntentAnalyzer:
 
         factors_summary = ", ".join(det_eval.get("factors", [])) or "None identified"
 
+        # Structured File Impact Telemetry (Deletions, Modifications with diffs, Creations)
+        file_changes = det_eval.get("file_changes")
+        if file_changes is None:
+            file_changes = self.tracker.get_file_changes(session_id=stats.get("session_id"))
+        file_impact_lines = []
+        for chg in (file_changes or []):
+            op = chg.get("operation", "UNKNOWN")
+            vp = chg.get("virtual_path", "")
+            app = chg.get("source_application", "VFS")
+            pre_hash = chg.get("sha256_pre_delete") or chg.get("sha256_before") or "N/A"
+            diff = chg.get("content_diff")
+            if op == "DELETION":
+                file_impact_lines.append(f"- [DELETED] {vp} (Pre-hash: {pre_hash[:16]}..., Original size: {chg.get('old_size_bytes', 0)}B, App: {app})")
+            elif op == "MODIFICATION":
+                diff_summary = f"\n    Diff snippet:\n{diff}" if diff else ""
+                file_impact_lines.append(f"- [MODIFIED] {vp} (Before: {chg.get('old_size_bytes', 0)}B -> After: {chg.get('new_size_bytes', 0)}B, App: {app}){diff_summary}")
+            elif op == "CREATION":
+                file_impact_lines.append(f"- [CREATED] {vp} (Size: {chg.get('new_size_bytes', 0)}B, App: {app})")
+        file_impact_text = "\n".join(file_impact_lines) if file_impact_lines else "No file modifications or deletions recorded."
+
         prompt = f"""[INCIDENT RESPONSE CASE REPORT: DFIR FORENSIC UNIT]
 Operational Context: Workstation continuous biometric anomaly detectors flagged an unauthorized intruder and diverted them into our high-interaction sandboxed deception honeypot.
 Review the forensic telemetry capturing the adversary's actions:
@@ -558,6 +664,17 @@ Authoritative Minimum Threat Floor: {det_eval.get('threat_level')}
 --- CHRONOLOGICAL ACTION SEQUENCE ---
 {events_dump}
 
+--- DETAILED FILE SYSTEM MODIFICATIONS & IMPACT ---
+{file_impact_text}
+
+--- ADVERSARY MOTIVE ASSESSMENT GUIDELINES ---
+Analyze and report the primary and secondary motives of the adversary based on observed evidence:
+- DATA EXFILTRATION: Targeted inspection, copying, or staging of credential files, financial records, or client databases.
+- SABOTAGE & DESTRUCTION: Intentional deletion of documents, wiping logs, or emptying the virtual Recycle Bin.
+- CREDENTIAL HARVESTING: Systematically probing password repositories, .env files, SSH keys, or cloud access portals.
+- SYSTEM TAMPERING & STAGING: Modifying application configuration, writing new files, or attempting command-line tool execution.
+- CASUAL EXPLORATION: Unfocused desktop and folder browsing without sensitive data targeting.
+
 --- THREAT EVALUATION GUIDELINES ---
 - CRITICAL: Credential theft/harvesting, unauthorized modification/deletion of sensitive documents or financial records, payload staging, lateral movement attempts.
 - HIGH: Direct access to credentials, financial documents, tax records, or network reconnaissance.
@@ -566,38 +683,29 @@ Authoritative Minimum Threat Floor: {det_eval.get('threat_level')}
 CRITICAL CONSTRAINT: You must NEVER classify an intrusion that accessed credentials or deleted files as 'LOW'.
 
 --- REQUIRED JSON OUTPUT FORMAT ---
-You are an authoritative DFIR investigator. Output ONLY a valid JSON object strictly conforming to this schema:
+You are an authoritative DFIR investigator. Output ONLY a valid JSON object strictly conforming to this exact schema structure:
 {{
-  "threat_level": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-  "threat_score": 0.0 to 1.0,
-  "attacker_persona": "<authoritative cybersecurity threat persona, e.g. 'Targeted Financial & Credential Exfiltrator'>",
-  "primary_intent": "<comprehensive paragraph explaining the primary strategic objective>",
-  "secondary_intents": ["<secondary objective 1>", "<secondary objective 2>"],
-  "executive_assessment": "<high-level summary paragraph for executives and CISO>",
-  "behavioral_trajectory": "<chronological reconstruction in clear narrative prose describing progression across reconnaissance, discovery, and tampering phases>",
+  "threat_level": "LOW",
+  "threat_score": 0.1,
+  "attacker_persona": "Concise Typology Persona",
+  "primary_intent": "Primary strategic objective paragraph.",
+  "secondary_intents": ["Secondary objective 1", "Secondary objective 2"],
+  "executive_assessment": "Executive incident brief for leadership.",
+  "behavioral_trajectory": "Chronological narrative reconstruction across reconnaissance, discovery, and file impact phases.",
   "supporting_evidence": [
-    {{
-      "event_id": "<real Event ID from chronology, e.g. EVT-0002>",
-      "action": "<action type>",
-      "target": "<target filename or resource>",
-      "relevance": "<specific investigative significance>"
-    }}
+    {{"event_id": "EVT-0001", "action": "ACTION_TYPE", "target": "RESOURCE", "relevance": "Investigative significance"}}
   ],
-  "observed_facts": ["<observed telemetry fact 1>", "<observed telemetry fact 2>"],
-  "inferences": ["<analytical deduction 1>", "<analytical deduction 2>"],
-  "alternative_explanations": ["<alternative plausible hypothesis 1>", "<alternative plausible hypothesis 2>"],
-  "confidence_level": "HIGH" | "MEDIUM" | "LOW",
-  "confidence_score": 0.0 to 1.0,
-  "confidence_justification": "<concise explanation of why this confidence level was assigned>",
-  "limitations": "<analytical caveats and telemetry limits>",
+  "observed_facts": ["Telemetry observation 1", "Telemetry observation 2"],
+  "inferences": ["Deduction 1", "Deduction 2"],
+  "alternative_explanations": ["Alternative explanation 1"],
+  "confidence_level": "HIGH",
+  "confidence_score": 0.85,
+  "confidence_justification": "Corroboration rationale.",
+  "limitations": "Telemetry caveats.",
   "recommended_actions": [
-    {{
-      "priority": 1,
-      "action": "<containment or remediation action>",
-      "timeframe": "<e.g. Immediate (Within 1 hour)>"
-    }}
+    {{"priority": 1, "action": "Remediation step 1", "timeframe": "Immediate (Within 1 hour)"}}
   ],
-  "mitre_tactics": ["T1552.001 (Credentials in Files)", "T1082 (System Discovery)"]
+  "mitre_tactics": ["T1083 - File and Directory Discovery"]
 }}
 CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or text outside the JSON object. Output valid JSON only."""
         return prompt
@@ -614,7 +722,7 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "options": {
                 "temperature": 0.15,
                 "top_p": 0.9,
-                "num_predict": 500
+                "num_predict": 800
             }
         }
         
@@ -879,9 +987,11 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "primary_intent": primary_intent,
             "secondary_intents": secondary_intents,
             "executive_assessment": exec_summary,
+            "summary": exec_summary,
             "behavioral_trajectory": clean_traj,
             "trajectory_analysis": clean_traj,
             "supporting_evidence": evidence_list,
+            "evidence_chain": evidence_list,
             "observed_facts": observed_facts,
             "inferences": inferences,
             "alternative_explanations": alternative_explanations,
@@ -925,42 +1035,72 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
         objective = det_eval.get("objective", "Harvest administrative credentials and confidential financial records.")
         evidence_list = det_eval.get("evidence_rows", [])
 
-        exec_summary = (
-            f"An unauthorized actor engaged the workstation environment, generating {len(timeline)} telemetry events. "
-            f"The engagement was successfully contained inside the deceptive honeypot sandbox with zero host modifications. "
-            f"Forensic telemetry detected critical risk factors ({', '.join(det_eval.get('factors', []))}), "
-            f"indicating high-intent targeting of credentials and financial records."
-        )
+        # Minimal session handling
+        if len(timeline) <= 1:
+            exec_summary = (
+                f"The honeypot deception subsystem was activated upon host behavioral anomaly detection ({len(timeline)} telemetry event recorded). "
+                f"The unauthorized session was immediately quarantined with zero subsequent filesystem or application interactions. Host OS remains secure."
+            )
+            trajectory = "Honeypot deception sandbox engaged; intruder was isolated at the perimeter before exploring virtual desktop or file assets."
+            observed_facts = [
+                f"Recorded {len(timeline)} honeypot activation event.",
+                "Zero sensitive credentials accessed or viewed.",
+                "Zero file modifications or deletions executed."
+            ]
+            inferences = [
+                "Intrusion attempt was neutralized at containment boundary before adversary could initiate local reconnaissance."
+            ]
+        else:
+            exec_summary = (
+                f"An unauthorized actor engaged the workstation environment, generating {len(timeline)} telemetry events. "
+                f"The engagement was successfully contained inside the deceptive honeypot sandbox with zero host modifications. "
+                f"Forensic telemetry detected critical risk factors ({', '.join(det_eval.get('factors', []))}), "
+                f"indicating high-intent targeting of credentials and financial records."
+            )
 
-        traj_parts = [
-            f"The adversary initiated session activity by traversing desktop directories and inspecting user repositories."
-        ]
-        if det_eval.get("cred_count", 0) > 0:
-            traj_parts.append(f"The intruder targeted sensitive credential repositories ({det_eval['cred_count']} access events observed).")
-        if det_eval.get("fin_count", 0) > 0:
-            traj_parts.append(f"Confidential corporate financial and banking records were opened ({det_eval['fin_count']} access events observed).")
-        if det_eval.get("tamper_count", 0) > 0:
-            traj_parts.append(f"File modification attempts were trapped and isolated by the deception sandbox.")
-        if det_eval.get("delete_count", 0) > 0:
-            traj_parts.append(f"Destructive file deletions were executed targeting financial files ({det_eval['delete_count']} deletion events).")
-        trajectory = " ".join(traj_parts)
+            traj_parts = [
+                f"The adversary initiated session activity by traversing desktop directories and inspecting user repositories."
+            ]
+            if det_eval.get("cred_count", 0) > 0:
+                traj_parts.append(f"The intruder targeted sensitive credential repositories ({det_eval['cred_count']} access events observed).")
+            if det_eval.get("fin_count", 0) > 0:
+                traj_parts.append(f"Confidential corporate financial and banking records were opened ({det_eval['fin_count']} access events observed).")
+            if det_eval.get("tamper_count", 0) > 0:
+                traj_parts.append(f"File modification attempts were trapped and isolated by the deception sandbox.")
+            if det_eval.get("delete_count", 0) > 0:
+                traj_parts.append(f"Destructive file deletions were executed targeting financial files ({det_eval['delete_count']} deletion events).")
+            trajectory = " ".join(traj_parts)
 
-        observed_facts = [
-            f"Recorded {len(timeline)} discrete honeypot interaction events across desktop, notepad, and browser.",
-            f"Observed access to {det_eval.get('cred_count', 0)} credential-related resources and {det_eval.get('fin_count', 0)} financial records.",
-            f"Trapped {det_eval.get('tamper_count', 0)} file write/modification events inside isolated sandbox.",
-            f"Recorded {det_eval.get('delete_count', 0)} destructive file deletion events in honeypot folders."
-        ]
+            observed_facts = [
+                f"Recorded {len(timeline)} discrete honeypot interaction events across desktop, notepad, and browser.",
+                f"Observed access to {det_eval.get('cred_count', 0)} credential-related resources and {det_eval.get('fin_count', 0)} financial records.",
+                f"Trapped {det_eval.get('tamper_count', 0)} file write/modification events inside isolated sandbox.",
+                f"Recorded {det_eval.get('delete_count', 0)} destructive file deletion events in honeypot folders."
+            ]
 
-        inferences = []
-        if det_eval.get("cred_count", 0) > 0:
-            inferences.append("Targeting of root credentials and recovery keys indicates deliberate intent to achieve privilege escalation.")
-        if det_eval.get("delete_count", 0) > 0:
-            inferences.append("Destructive deletion of documents indicates deliberate sabotage or anti-forensic activity.")
-        elif det_eval.get("fin_count", 0) > 0:
-            inferences.append("Sequential opening of financial documents indicates deliberate data reconnaissance and exfiltration staging.")
-        if det_eval.get("portal_count", 0) > 0:
-            inferences.append("Engagement with external sign-in portals indicates intent to harvest credentials for external cloud access.")
+            # Incorporate structured file change facts
+            file_changes = det_eval.get("file_changes")
+            if file_changes is None:
+                file_changes = self.tracker.get_file_changes(session_id=stats.get("session_id"))
+            deleted_files = [c for c in (file_changes or []) if c.get("operation") == "DELETION"]
+            modified_files = [c for c in (file_changes or []) if c.get("operation") == "MODIFICATION"]
+            if deleted_files:
+                names = [os.path.basename(c.get("virtual_path", "")) for c in deleted_files[:4]]
+                observed_facts.append(f"Forensically confirmed deletion of {len(deleted_files)} files: {', '.join(names)}.")
+            if modified_files:
+                observed_facts.append(f"Forensically recorded {len(modified_files)} file modification diff records.")
+
+            inferences = []
+            if det_eval.get("cred_count", 0) > 0:
+                inferences.append("Targeting of root credentials and recovery keys indicates deliberate intent to achieve privilege escalation.")
+            if det_eval.get("delete_count", 0) > 0:
+                inferences.append("Destructive deletion of documents indicates deliberate sabotage or anti-forensic activity.")
+            elif det_eval.get("fin_count", 0) > 0:
+                inferences.append("Sequential opening of financial documents indicates deliberate data reconnaissance and exfiltration staging.")
+            if det_eval.get("portal_count", 0) > 0:
+                inferences.append("Engagement with external sign-in portals indicates intent to harvest credentials for external cloud access.")
+            if not inferences:
+                inferences.append("Adversary activity was confined to initial filesystem exploration and directory enumeration without payload execution.")
         if not inferences:
             inferences.append("Adversary activity was confined to initial filesystem exploration and directory enumeration without payload execution.")
 
@@ -1001,14 +1141,17 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "threat_justification": f"Assessed at {final_threat} by authoritative forensic rules based on verified activities: {', '.join(det_eval.get('factors', []))}.",
             "attacker_persona": persona,
             "primary_intent": objective,
+            "motive_assessment": objective,
             "secondary_intents": [
                 "Map local workstation filesystem and internal network architecture",
                 "Stage local reconnaissance tools and test security perimeter responsiveness"
             ],
             "executive_assessment": exec_summary,
+            "summary": exec_summary,
             "behavioral_trajectory": trajectory,
             "trajectory_analysis": trajectory,
             "supporting_evidence": evidence_list,
+            "evidence_chain": evidence_list,
             "observed_facts": observed_facts,
             "inferences": inferences,
             "alternative_explanations": alternative_explanations,
@@ -1052,6 +1195,10 @@ CRITICAL: Do NOT output conversational pleasantries, markdown code fences, or te
             "stats_summary": {"total_actions": 0},
             "behavioral_indicators": self.extract_behavioral_indicators([])
         }
+
+
+# Convenience alias for semantic clarity
+AIIntentAnalyzer = IntruderIntentAnalyzer
 
 
 def extract_behavioral_indicators(timeline=None):

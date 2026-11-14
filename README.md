@@ -22,7 +22,7 @@ Before deploying, understand the project's hybrid architecture:
 | **Cyber-Ops Web Dashboard & REST APIs** | **Native Windows OR Docker Container** | FastAPI/Uvicorn server on port 8000 serving live telemetry, WebSockets, and incident PDF downloads. Fully containerized via `Dockerfile` and `docker-compose.yml`. |
 
 > [!IMPORTANT]
-> **Primary Recommendation:** Run the application **natively on Windows** using the automated setup script (`setup.bat` or `setup.ps1`). This guarantees 100% of the biometrics, hardware camera, and deception honeypot features operate without container limitations.  
+> **Primary Recommendation:** Run the application **natively on Windows** using the automated setup script (`bat/setup.bat` or `setup.ps1`). This guarantees 100% of the biometrics, hardware camera, and deception honeypot features operate without container limitations.  
 > The Docker container is provided as an optional mode for containerized SOC monitoring or remote dashboard viewing.
 
 ---
@@ -45,14 +45,14 @@ cd multi-factor
 ```
 
 ### 3. Run Automated First-Time Setup
-Double-click [`setup.bat`](setup.bat) in File Explorer, or run in Command Prompt:
+Double-click [`bat/setup.bat`](bat/setup.bat) in File Explorer, or run in Command Prompt:
 
 ```cmd
-setup.bat
+bat\setup.bat
 ```
 *(PowerShell users can run: `powershell -ExecutionPolicy Bypass -File .\setup.ps1`)*
 
-**What `setup.bat` executes automatically:**
+**What `bat/setup.bat` executes automatically:**
 1. **Validates Python:** Detects Python in PATH and validates version (3.10 - 3.14).
 2. **Creates Isolated Virtual Environment:** Generates `.venv` if one does not exist.
 3. **Installs Dependencies:** Upgrades pip and installs packages from [`requirements.txt`](requirements.txt) with cross-platform markers.
@@ -69,12 +69,13 @@ Once setup is complete, choose any launcher according to your task:
 
 | Launcher | Mode | Description | Endpoint / Output |
 | :--- | :--- | :--- | :--- |
-| **[`VIVA_START.bat`](VIVA_START.bat)** | **Master Coordinated Viva Launcher (Recommended)** | Runs pre-flight diagnostics, prevents duplicate instances, coordinates the Unified Supervisor + Web SOC terminal with HTTP readiness polling, and launches the 5-stage Interactive Viva Runner. | Supervisor Window + Viva Terminal + Web Console (`http://localhost:8000`) |
-| **[`start_system.bat`](start_system.bat)**<br>*(or `bat/run_security_system.bat`)* | **Production Security Daemon** | Launches Unified Process Supervisor, background telemetry sensor, continuous threat evaluator, system tray shield icon, and SOC Dashboard. | Web Console:<br>[`http://localhost:8000`](http://localhost:8000) |
-| **[`run_viva_demo.bat`](run_viva_demo.bat)**<br>*(or `bat/run_viva_demo.bat`)* | **5-Stage Live Viva Defense Runner** | Presentation runner designed for viva evaluation panels: walks through baseline auth, walk-away drift, autonomous defense, honeypot diversion, and executive AI forensic PDF generation. | Interactive Terminal + Auto-Launched PDF |
+| **[`bat/VIVA_START.bat`](bat/VIVA_START.bat)** | **Master Coordinated Viva Launcher (Recommended)** | Runs pre-flight diagnostics, prevents duplicate instances, coordinates the Unified Supervisor + Web SOC terminal with HTTP readiness polling, and launches the 5-stage Interactive Viva Runner. | Supervisor Window + Viva Terminal + Web Console (`http://localhost:8000`) |
+| **[`bat/start_system.bat`](bat/start_system.bat)**<br>*(or `bat/run_security_system.bat`)* | **Production Security Daemon** | Launches Unified Process Supervisor, background telemetry sensor, continuous threat evaluator, system tray shield icon, and SOC Dashboard. | Web Console:<br>[`http://localhost:8000`](http://localhost:8000) |
+| **[`bat/run_viva_demo.bat`](bat/run_viva_demo.bat)** | **5-Stage Live Viva Defense Runner** | Presentation runner designed for viva evaluation panels: walks through baseline auth, walk-away drift, autonomous defense, honeypot diversion, and executive AI forensic PDF generation. | Interactive Terminal + Auto-Launched PDF |
 | **[`bat/simulate_unauthorized_attack.bat`](bat/simulate_unauthorized_attack.bat)** | **Attacker Simulation** | Injects acute imposter typing anomalies, triggers webcam snapshot, dispatches OTP, and deploys screen lockdown. | Terminal + System Forensics |
 | **[`bat/start_real_data_collection.bat`](bat/start_real_data_collection.bat)** | **Telemetry Harvester** | Runs silently in the background capturing genuine daily typing and mouse interactions without workflow lag. | `data/sessions/` |
 | **[`bat/train_models.bat`](bat/train_models.bat)** | **Model Retraining** | Retrains Deep SVDD 1D-CNN, OC-SVM, Isolation Forest, and AI Controller baselines. | `models/` & `ml_engine/` |
+| **[`bat/doctor.bat`](bat/doctor.bat)** | **Pre-Flight Diagnostics** | Probes hardware sensors (webcam, mouse, keyboard), network ports, and local Ollama service. | Terminal Output |
 
 ---
 
@@ -211,13 +212,17 @@ Behavioral-Drift-Security/
 │   └── templates/         # Cyber-ops responsive HTML dashboard
 │
 ├── bat/                   # Execution Batch Launchers
-│   ├── setup_environment.bat
+│   ├── VIVA_START.bat
+│   ├── setup.bat
+│   ├── start_system.bat
 │   ├── run_security_system.bat
+│   ├── doctor.bat
 │   ├── run_viva_demo.bat
 │   ├── simulate_unauthorized_attack.bat
 │   ├── start_real_data_collection.bat
 │   ├── train_models.bat
-│   └── bootstrap_dataset.bat
+│   ├── bootstrap_dataset.bat
+│   └── README.md
 │
 ├── data/                  # Data Stores, Models & Evidence (Ignored except baselines)
 │   ├── raw/               # Baseline keystroke and mouse kinematics CSVs
@@ -239,9 +244,7 @@ Behavioral-Drift-Security/
 ├── docker-compose.yml     # Docker Compose definition with volume mounts & healthcheck
 ├── .dockerignore          # Excludes host virtualenvs, caches, and evidence from build
 ├── .env.example           # Comprehensive environment variable configuration template
-├── setup.bat              # One-click portable environment setup script (CMD)
 ├── setup.ps1              # One-click portable environment setup script (PowerShell)
-├── start_system.bat       # Production security supervisor launcher
 └── README.md              # Project documentation (this file)
 ```
 

@@ -989,19 +989,16 @@ class DecoyExplorer(QFrame):
     def restore_recycle_bin_node(self, node: VirtualNode):
         entry_id = getattr(node, "_recycle_entry_id", node.name)
         orig = getattr(node, "_recycle_original_path", node.path)
-        self.vfs.restore_from_recycle_bin(entry_id)
-        self.tracker.record_file_access(orig, action="RESTORE_FILE")
+        self.vfs.restore_from_recycle_bin(entry_id, application="FILE_EXPLORER")
         self.refresh_current_folder()
 
     def empty_recycle_bin(self):
-        self.vfs.empty_recycle_bin()
-        self.tracker.record_action("EMPTY_RECYCLE_BIN", target="C:\\$Recycle.Bin", application="FILE_EXPLORER")
+        self.vfs.empty_recycle_bin(application="FILE_EXPLORER")
         self.refresh_current_folder()
 
     def permanently_delete_node(self, node: VirtualNode):
         entry_id = getattr(node, "_recycle_entry_id", node.name)
-        self.vfs.permanently_delete_from_recycle_bin(entry_id)
-        self.tracker.record_file_access(node.name, action="DELETE_PERMANENT")
+        self.vfs.permanently_delete_from_recycle_bin(entry_id, application="FILE_EXPLORER")
         self.refresh_current_folder()
 
     def set_view_mode(self, mode: str):
@@ -1015,8 +1012,7 @@ class DecoyExplorer(QFrame):
         while self.vfs.exists(target_path):
             target_path = PathUtils.join(self.current_path, f"{base_name} ({idx})")
             idx += 1
-        self.vfs.mkdir(target_path)
-        self.tracker.record_file_access(target_path, action="CREATE_FOLDER")
+        self.vfs.mkdir(target_path, application="FILE_EXPLORER")
 
     def prompt_new_document(self):
         base_name = "New Text Document.txt"
@@ -1025,8 +1021,7 @@ class DecoyExplorer(QFrame):
         while self.vfs.exists(target_path):
             target_path = PathUtils.join(self.current_path, f"New Text Document ({idx}).txt")
             idx += 1
-        self.vfs.create_file(target_path, content="")
-        self.tracker.record_file_access(target_path, action="CREATE_FILE")
+        self.vfs.create_file(target_path, content="", application="FILE_EXPLORER")
 
     def prompt_rename(self, node: VirtualNode):
         dlg = QDialog(self)
@@ -1053,15 +1048,13 @@ class DecoyExplorer(QFrame):
             new_name = name_input.text().strip()
             if new_name and new_name != node.name:
                 try:
-                    self.vfs.rename(node.path, new_name)
-                    self.tracker.record_file_access(node.path, action="RENAME")
+                    self.vfs.rename(node.path, new_name, application="FILE_EXPLORER")
                 except Exception as e:
                     QMessageBox.warning(self, "Rename", f"Cannot rename item: {e}")
 
     def delete_node(self, node: VirtualNode):
         try:
-            self.vfs.delete(node.path, to_recycle_bin=True)
-            self.tracker.record_file_access(node.path, action="DELETE")
+            self.vfs.delete(node.path, to_recycle_bin=True, application="FILE_EXPLORER")
         except Exception as e:
             QMessageBox.warning(self, "Delete", f"Cannot delete item: {e}")
 
@@ -1073,11 +1066,9 @@ class DecoyExplorer(QFrame):
         for p in paths:
             try:
                 if mode == "cut":
-                    self.vfs.move(p, self.current_path)
-                    self.tracker.record_file_access(p, action="MOVE")
+                    self.vfs.move(p, self.current_path, application="FILE_EXPLORER")
                 else:
-                    self.vfs.copy(p, self.current_path)
-                    self.tracker.record_file_access(p, action="COPY")
+                    self.vfs.copy(p, self.current_path, application="FILE_EXPLORER")
             except Exception as e:
                 QMessageBox.warning(self, "Paste", f"Cannot paste item '{p}': {e}")
 

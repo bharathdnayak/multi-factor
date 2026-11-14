@@ -34,9 +34,9 @@ The repository includes automated setup scripts that configure the isolated virt
    ```
 2. Run the automated setup launcher:
    ```cmd
-   setup.bat
+   bat\setup.bat
    ```
-   *(Or simply double-click `setup.bat` in File Explorer).*
+   *(Or simply double-click `bat\setup.bat` in File Explorer).*
 
 ### Option B: Using Windows PowerShell
 
@@ -145,7 +145,7 @@ The entire application, including honeypot trapping, telemetry logging, risk sco
 
 ### 1. Launch the Complete Security Daemon & Dashboard
 ```cmd
-start_system.bat
+bat\start_system.bat
 ```
 *(Or run `bat\run_security_system.bat`)*
 - Spawns the continuous biometric collector, evaluation engine, and system tray monitor.
@@ -153,7 +153,7 @@ start_system.bat
 
 ### 2. Run the Academic Viva Defense Demonstration
 ```cmd
-run_viva_demo.bat
+bat\VIVA_START.bat
 ```
 *(Or run `bat\run_viva_demo.bat`)*
 - Executes a guided, step-by-step evaluation demonstration:
@@ -195,7 +195,7 @@ You can independently verify that your laptop's environment is 100% operational:
 
 ### Issue 2: Port 8000 Already in Use
 *Error:* `[ERROR] Port 8000 is occupied by another process.`  
-*Fix:* Open `.env` and change `PORT=8000` to `PORT=8080` (or pass `--port 8080` to `run_system.py` / `VIVA_START.bat`).
+*Fix:* Open `.env` and change `PORT=8000` to `PORT=8080` (or pass `--port 8080` to `run_system.py` / `bat\VIVA_START.bat`).
 
 ### Issue 3: Recovery Code Rejected
 *Notice:* Trivial passwords like `admin`, `123456`, or `password` are intentionally blocked by the anti-bypass security policy.  
@@ -208,7 +208,7 @@ You can independently verify that your laptop's environment is 100% operational:
 When a teammate tests this project on their physical laptop:
 
 - [ ] Clone repository from GitHub (`git clone https://github.com/bharathdnayak/multi-factor.git`).
-- [ ] Run `setup.bat` (or `setup.ps1`) to initialize dependencies and directories.
+- [ ] Run `bat\setup.bat` (or `setup.ps1`) to initialize dependencies and directories.
 - [ ] Run `python scripts\validate_portability.py` and confirm all checks pass.
-- [ ] Run `run_viva_demo.bat` to verify the honeypot desktop and continuous authentication flow.
+- [ ] Run `bat\VIVA_START.bat` (or `bat\run_viva_demo.bat`) to verify the honeypot desktop and continuous authentication flow.
 - [ ] Inspect the generated PDF report in `data\forensics\` to verify formatting, 12 sections, and unbroken SHA-256 digests.

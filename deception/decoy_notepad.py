@@ -402,7 +402,7 @@ class DecoyNotepad(QFrame):
         """Opens a file from the centralized VirtualFileSystem."""
         norm = PathUtils.normalize(vfs_path)
         try:
-            content = self.vfs.read_file(norm)
+            content = self.vfs.read_file(norm, application="NOTEPAD")
             self.current_vfs_path = norm
             if norm not in self.recent_files:
                 self.recent_files.insert(0, norm)
@@ -413,7 +413,6 @@ class DecoyNotepad(QFrame):
             self.is_dirty = False
             self.update_title()
             self.update_status_bar()
-            self.tracker.record_file_access(norm, action="VIEW")
         except Exception as e:
             QMessageBox.warning(self, "Notepad", f"Cannot open file '{vfs_path}': {e}")
 
@@ -466,11 +465,10 @@ class DecoyNotepad(QFrame):
 
         content = self.editor.toPlainText()
         try:
-            self.vfs.write_file(self.current_vfs_path, content, append=False)
+            self.vfs.write_file(self.current_vfs_path, content, append=False, application="NOTEPAD")
             self._detect_sensitive_patterns(content)
             self.is_dirty = False
             self.update_title()
-            self.tracker.record_file_access(self.current_vfs_path, action="SAVE")
             return True
         except Exception as e:
             QMessageBox.warning(self, "Notepad", f"Cannot save file: {e}")
